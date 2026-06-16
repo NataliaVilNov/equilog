@@ -797,6 +797,9 @@ function canManageStable(stable,user){
 function isStableAdmin(){
   return canManageStable(window._ACTIVE_STABLE, window._FBUSER);
 }
+function defaultTeamPermissions(){
+  return {horses:true,trainings:true,tasks:true,expenses:true,health:true,reports:false,stats:false,team:false,stable:false,sale:false,deleteItems:false};
+}
 function myTeamMemberId(){
   const user=window._FBUSER;
   if(!user)return null;
@@ -805,13 +808,30 @@ function myTeamMemberId(){
   const tm=(D.team||[]).find(m=>m.uid===user.uid||m.userId===user.uid||m.authUid===user.uid);
   return tm?tm.id:null;
 }
+function myTeamMember(){
+  const mid=myTeamMemberId();
+  return mid?(D.team||[]).find(m=>m.id===mid):null;
+}
+function myPermissions(){
+  if(isStableAdmin())return {horses:true,trainings:true,tasks:true,expenses:true,health:true,reports:true,stats:true,team:true,stable:true,sale:true,deleteItems:true};
+  const tm=myTeamMember();
+  return {...defaultTeamPermissions(),...(tm&&tm.permissions?tm.permissions:{})};
+}
+function canPerm(k){
+  return !!myPermissions()[k];
+}
+function requirePermissionView(key,msg){
+  if(canPerm(key))return false;
+  return `<div class="view"><div class="vh"><button class="ib" onclick="V={name:'list'};render()">←</button><h1>Acceso limitado</h1></div><div class="em"><div class="big">🔒</div><p>${msg||'No tienes permiso para acceder a esta sección. El administrador puede modificar tus permisos desde Equipo.'}</p></div></div>`;
+}
 function requireAdminView(){
   if(isStableAdmin())return false;
-  return `<div class="view"><div class="vh"><button class="ib" onclick="V={name:'list'};render()">←</button><h1>Acceso limitado</h1></div><div class="em"><div class="big">🔒</div><p>Tu usuario está vinculado como integrante del equipo. Puedes ver los caballos y tus tareas asignadas, pero la gestión de cuadra queda reservada al administrador.</p></div></div>`;
+  return `<div class="view"><div class="vh"><button class="ib" onclick="V={name:'list'};render()">←</button><h1>Acceso limitado</h1></div><div class="em"><div class="big">🔒</div><p>Esta zona queda reservada al administrador. Puedes colaborar en las áreas que tengas activadas: caballos, entrenamientos, tareas, gastos o salud.</p></div></div>`;
 }
 function applyNavPermissions(){
-  const admin=isStableAdmin();
-  ['nb-team','nb-cuadra','nb-stats'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=admin?'flex':'none';});
+  const team=document.getElementById('nb-team');if(team)team.style.display=canPerm('team')?'flex':'none';
+  const cuadra=document.getElementById('nb-cuadra');if(cuadra)cuadra.style.display=canPerm('stable')?'flex':'none';
+  const stats=document.getElementById('nb-stats');if(stats)stats.style.display=canPerm('stats')?'flex':'none';
   const alerts=document.getElementById('nb-alerts');if(alerts)alerts.style.display='flex';
 }
 function visibleTasksForUser(tasks){
@@ -1083,7 +1103,15 @@ function render(){
   const fab=document.getElementById("fab");
   fab.style.display="none";fab.onclick=null;
   let nm=V.name;
-  if(!isStableAdmin() && ['team','addMember','editMember','teamReport','templates','editTemplate','cuadra','newCT','newCE','stats','newHealth','report'].includes(nm)){
+  if((['team','addMember','editMember','teamReport','templates','editTemplate'].includes(nm) && !canPerm('team')) ||
+     (['cuadra','newCT','newCE'].includes(nm) && !canPerm('stable')) ||
+     (nm==='stats' && !canPerm('stats')) ||
+     (nm==='newHealth' && !canPerm('health')) ||
+     (nm==='report' && !canPerm('reports')) ||
+     (nm==='newExpense' && !canPerm('expenses')) ||
+     (nm==='newTraining' && !canPerm('trainings')) ||
+     (['addHorse','editHorse'].includes(nm) && !canPerm('horses')) ||
+     (['newTask','editTask'].includes(nm) && !canPerm('tasks'))){
     nm='list'; V={name:'list'};
   }
   document.getElementById("nb-horses").classList.toggle("active",["list","addHorse","editHorse","horse","newTraining","newHealth","newExpense","report"].includes(nm));
@@ -1109,19 +1137,19 @@ function render(){
     app.innerHTML=`<div class="em"><p style="color:var(--ro)">Error: ${esc(err.message)}</p></div>`;
     console.error(err);
   }
-  if(nm==="list"){fab.style.display="flex";fab.onclick=()=>{V={name:"addHorse"};render()}}
-  if(nm==="day"){fab.style.display="flex";fab.onclick=()=>{V={name:"newTask",dd:V.dd||td()};render()}}
-  if(isStableAdmin()&&nm==="team"){fab.style.display="flex";fab.onclick=()=>{V={name:"addMember"};render()}}
-  if(isStableAdmin()&&nm==="cuadra"&&V.tab==="tareas"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCT"};render()}}
-  if(isStableAdmin()&&nm==="cuadra"&&V.tab==="gastos"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCE"};render()}}
-  if(isStableAdmin()&&nm==="templates"){fab.style.display="flex";fab.onclick=()=>{V={name:"editTemplate",tplid:null};render()}}
+  if(nm==="list"&&canPerm('horses')){fab.style.display="flex";fab.onclick=()=>{V={name:"addHorse"};render()}}
+  if(nm==="day"&&canPerm('tasks')){fab.style.display="flex";fab.onclick=()=>{V={name:"newTask",dd:V.dd||td()};render()}}
+  if(canPerm('team')&&nm==="team"){fab.style.display="flex";fab.onclick=()=>{V={name:"addMember"};render()}}
+  if(canPerm('stable')&&nm==="cuadra"&&V.tab==="tareas"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCT"};render()}}
+  if(canPerm('stable')&&nm==="cuadra"&&V.tab==="gastos"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCE"};render()}}
+  if(canPerm('team')&&nm==="templates"){fab.style.display="flex";fab.onclick=()=>{V={name:"editTemplate",tplid:null};render()}}
   attach();
 }
 
 function rList(){
   const q=(V.search||"").toLowerCase();
   const hs=D.horses.filter(h=>h.name.toLowerCase().includes(q));
-  const sa=isStableAdmin()?sanA():[];const ss=visibleAlertsForUser(sesA());const ov=sa.filter(a=>a.ov).length;
+  const sa=canPerm('health')?sanA():[];const ss=visibleAlertsForUser(sesA());const ov=sa.filter(a=>a.ov).length;
   let h=`<div class="view"><div class="vh"><div><span class="ey">EquiLog</span><h1>Caballos</h1></div></div>`;
   if(sa.length||ss.length){
     const io=ov>0||ss.length>0;
@@ -1156,6 +1184,7 @@ function rList(){
 }
 
 function rHF(horse){
+  const blocked=requirePermissionView('horses','No tienes permiso para crear o editar caballos. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const admin=isStableAdmin();
   const ed=!!horse;
   return`<div class="view">
@@ -1214,7 +1243,7 @@ function rHF(horse){
     <div class="f"><label>Notas</label><textarea id="h-notes">${esc(horse?horse.notes:"")}</textarea></div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-horse-btn">${ed?"Guardar cambios":"Añadir caballo"}</button>
-      ${ed&&admin?`<button type="button" class="btn btr btbl" onclick="delHorse('${horse.id}')">Eliminar caballo</button>`:""}
+      ${ed&&canPerm('deleteItems')?`<button type="button" class="btn btr btbl" onclick="delHorse('${horse.id}')">Eliminar caballo</button>`:""}
     </div>
   </div>`;
 }
@@ -1233,8 +1262,12 @@ function delHorse(id){
 function rHorse(id){
   const h=D.horses.find(x=>x.id===id);if(!h)return`<div class="view"><p>No encontrado.</p></div>`;
   const admin=isStableAdmin();
+  const canHealth=canPerm('health');
+  const canSale=canPerm('sale');
+  const canReports=canPerm('reports');
   let tab=V.tab||"entrenos";
-  if(!admin && ["salud","venta"].includes(tab))tab="entrenos";
+  if(tab==="salud"&&!canHealth)tab="entrenos";
+  if(tab==="venta"&&!canSale)tab="entrenos";
   const tr=D.trainings.filter(t=>t.hid===id).sort((a,b)=>a.date<b.date?1:-1);
   const he=D.health.filter(r=>r.hid===id).sort((a,b)=>a.date<b.date?1:-1);
   const ex=D.expenses.filter(e=>e.hid===id).sort((a,b)=>a.date<b.date?1:-1);
@@ -1245,7 +1278,7 @@ function rHorse(id){
 
   let html=`<div class="view">
     <div class="vh"><button class="ib" onclick="V={name:'list'};render()">←</button><h1>${esc(h.name)}</h1>
-      <div class="vhr"><button class="ib" onclick="V={name:'editHorse',hid:'${h.id}'};render()">✏️</button>${admin?`<button class="ib" onclick="V={name:'report',hid:'${h.id}'};render()">📄</button>`:''}</div>
+      <div class="vhr">${canPerm('horses')?`<button class="ib" onclick="V={name:'editHorse',hid:'${h.id}'};render()">✏️</button>`:''}${canReports?`<button class="ib" onclick="V={name:'report',hid:'${h.id}'};render()">📄</button>`:''}</div>
     </div>
     <div class="hh"><div class="pl">${h.photo?`<img src="${h.photo}" alt="">`:"🐴"}</div>
       <div style="min-width:0">
@@ -1262,21 +1295,21 @@ function rHorse(id){
     </div>
     <div class="tabs">
       <button class="tab ${tab==="entrenos"?"active":""}" onclick="V.tab='entrenos';render()">Entrenos</button>
-      ${admin?`<button class="tab ${tab==="salud"?"active":""}" onclick="V.tab='salud';render()">Salud</button>`:''}
+      ${canHealth?`<button class="tab ${tab==="salud"?"active":""}" onclick="V.tab='salud';render()">Salud</button>`:''}
       <button class="tab ${tab==="gastos"?"active":""}" onclick="V.tab='gastos';render()">Gastos</button>
-      ${admin?`<button class="tab ${tab==="venta"?"active":""}" onclick="V.tab='venta';render()">Venta</button>`:''}
+      ${canSale?`<button class="tab ${tab==="venta"?"active":""}" onclick="V.tab='venta';render()">Venta</button>`:''}
     </div>`;
 
   if(tab==="entrenos"){
     html+=`<div class="sg sg3"><div class="st"><div class="v">${tr.length}</div><div class="l">Sesiones</div></div><div class="st"><div class="v">${avgR}</div><div class="l">Val. media</div></div><div class="st"><div class="v">${totMin}</div><div class="l">Min.</div></div></div>
-    <div class="r2" style="margin-bottom:1rem"><button class="btn bts" onclick="V={name:'newTraining',hid:'${h.id}'};render()">+ Entreno</button>${admin?`<button class="btn" onclick="V={name:'report',hid:'${h.id}'};render()">📄 Informe</button>`:''}</div>`;
+    <div class="r2" style="margin-bottom:1rem"><button class="btn bts" onclick="V={name:'newTraining',hid:'${h.id}'};render()">+ Entreno</button>${canReports?`<button class="btn" onclick="V={name:'report',hid:'${h.id}'};render()">📄 Informe</button>`:''}</div>`;
     if(!tr.length){html+=`<div class="em"><p>Sin entrenamientos todavía.</p></div>`;}
     else tr.forEach(t=>{
       const w=wf(t.wtype);
       html+=`<div class="tc"><div class="tc-top"><div>
         <span class="tc-ti">${w.i} ${esc(w.l)}</span><span class="tc-dt"> · ${fD(t.date)}</span><span class="br">${t.rating}/10</span>
         <div class="tc-su">${t.dur} min</div></div>
-        ${admin?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.trainings=D.trainings.filter(x=>x.id!=='${t.id}');save();render()}">✕</button>`:""}</div>
+        ${canPerm('deleteItems')?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.trainings=D.trainings.filter(x=>x.id!=='${t.id}');save();render()}">✕</button>`:""}</div>
         ${t.state?`<div class="tc-de"><b>Estado:</b> ${esc(t.state)}</div>`:""}
         ${t.feel?`<div class="tc-de"><b>Sensaciones:</b> ${esc(t.feel)}</div>`:""}
         ${t.notes?`<div class="tc-de"><b>Obs:</b> ${esc(t.notes)}</div>`:""}
@@ -1285,7 +1318,7 @@ function rHorse(id){
   }
 
   if(tab==="salud"){
-    html+=`<div style="margin-bottom:.8rem"><button class="btn bts btbl" onclick="V={name:'newHealth',hid:'${h.id}'};render()">+ Añadir registro</button></div>`;
+    html+=`<div style="margin-bottom:.8rem">${canHealth?`<button class="btn bts btbl" onclick="V={name:'newHealth',hid:'${h.id}'};render()">+ Añadir registro</button>`:''}</div>`;
     if(!he.length){html+=`<div class="em"><p>Sin registros sanitarios.</p></div>`;}
     else he.forEach(r=>{
       const ht=hf(r.type);let ap="";
@@ -1294,13 +1327,13 @@ function rHorse(id){
         <div class="xinf"><div class="xl">${esc(r.label||ht.l)}</div><div class="xm">${fD(r.date)}${r.notes?" · "+esc(r.notes):""}</div>
         ${r.amount?`<div class="xm" style="margin-top:.15rem">💰 ${Number(r.amount).toFixed(2)}€ <span class="sb s-${r.payStatus||'pendiente'}" style="margin-left:.3rem">${cap(r.payStatus||'pendiente')}</span>${r.payee?" · "+esc(r.payee):""}</div>`:""}
         ${ap?`<div class="xn">${ap}</div>`:""}</div>
-        <div class="ca"><button class="ib" onclick="V={name:'newHealth',hid:'${h.id}',eid:'${r.id}'};render()">✏️</button><button class="db" onclick="if(confirm('¿Eliminar?')){D.health=D.health.filter(x=>x.id!=='${r.id}');save();V.tab='salud';render()}">✕</button></div>
+        <div class="ca"><button class="ib" onclick="V={name:'newHealth',hid:'${h.id}',eid:'${r.id}'};render()">✏️</button>${canPerm('deleteItems')?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.health=D.health.filter(x=>x.id!=='${r.id}');save();V.tab='salud';render()}">✕</button>`:""}</div>
       </div>`;
     });
   }
 
   if(tab==="gastos"){
-    html+=`<div class="sg sg2"><div class="st"><div class="v">${totEx.toFixed(0)}€</div><div class="l">Total</div></div><div class="st red"><div class="v">${pendEx.toFixed(0)}€</div><div class="l">Pendiente</div></div></div>
+    html+=`${admin?`<div class="sg sg2"><div class="st"><div class="v">${totEx.toFixed(0)}€</div><div class="l">Total</div></div><div class="st red"><div class="v">${pendEx.toFixed(0)}€</div><div class="l">Pendiente</div></div></div>`:""}
     <div style="margin-bottom:.8rem"><button class="btn bts btbl" onclick="V={name:'newExpense',hid:'${h.id}'};render()">+ Añadir gasto</button></div>`;
     if(!ex.length){html+=`<div class="em"><p>Sin gastos todavía.</p></div>`;}
     else ex.forEach(e=>{
@@ -1311,7 +1344,7 @@ function rHorse(id){
           <div class="pd">${isIn?"←":"→"} ${esc(e.payer||"?")} → ${esc(e.payee||"?")}</div>
           <div style="margin-top:.18rem"><span class="sb s-${e.status}">${cap(e.status)}</span></div>
         </div>
-        <div class="ca"><button class="ib" onclick="V={name:'newExpense',hid:'${h.id}',eid:'${e.id}'};render()">✏️</button>${admin?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.expenses=D.expenses.filter(x=>x.id!=='${e.id}');save();V.tab='gastos';render()}">✕</button>`:""}</div>
+        <div class="ca"><button class="ib" onclick="V={name:'newExpense',hid:'${h.id}',eid:'${e.id}'};render()">✏️</button>${canPerm('deleteItems')?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.expenses=D.expenses.filter(x=>x.id!=='${e.id}');save();V.tab='gastos';render()}">✕</button>`:""}</div>
       </div>`;
     });
   }
@@ -1461,6 +1494,7 @@ function rHorse(id){
 }
 
 function rNT(hid){
+  const blocked=requirePermissionView('trainings','No tienes permiso para añadir entrenamientos. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const h=D.horses.find(x=>x.id===hid);if(!h)return`<div class="view"><p>No encontrado.</p></div>`;
   let wH="";WK.forEach((w,i)=>{wH+=`<div class="oo ${i===0?"active":""}" onclick="so(this,'og-wt','t-wt','${w.id}')"><span class="ic">${w.i}</span>${w.l}</div>`;});
   let rH="";for(let i=1;i<=10;i++){rH+=`<div class="ro ${i===7?"active":""}" onclick="sr(this,'rg-t','t-rt','${i}')">${i}</div>`;}
@@ -1480,7 +1514,7 @@ function rNT(hid){
 }
 
 function rNH(hid,eid){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('health','No tienes permiso para añadir o editar salud, herrajes y vacunaciones. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const h=D.horses.find(x=>x.id===hid);const r=eid?D.health.find(x=>x.id===eid):null;const ed=!!r;
   let tH="";HK.forEach((ht,i)=>{const a=r?r.type===ht.id:i===0;tH+=`<div class="oo ${a?"active":""}" onclick="so(this,'og-ht','h-type','${ht.id}')"><span class="ic">${ht.i}</span>${ht.l}</div>`;});
   return`<div class="view">
@@ -1508,12 +1542,13 @@ function rNH(hid,eid){
     </div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-health-btn">${ed?"Guardar cambios":"Añadir registro"}</button>
-      ${ed?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.health=D.health.filter(x=>x.id!=='${r.id}');save();V={name:'horse',hid:'${hid}',tab:'salud'};render()}">Eliminar</button>`:""}
+      ${ed&&canPerm('deleteItems')?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.health=D.health.filter(x=>x.id!=='${r.id}');save();V={name:'horse',hid:'${hid}',tab:'salud'};render()}">Eliminar</button>`:""}
     </div>
   </div>`;
 }
 
 function rNE(hid,eid){
+  const blocked=requirePermissionView('expenses','No tienes permiso para añadir o editar gastos. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const admin=isStableAdmin();
   const h=D.horses.find(x=>x.id===hid);const e=eid?D.expenses.find(x=>x.id===eid):null;const ed=!!e;
   let cH="";EK.forEach((c,i)=>{const a=e?e.cat===c.id:i===0;cH+=`<div class="oo ${a?"active":""}" onclick="so(this,'og-ec','e-cat','${c.id}');updDir('${c.d}')"><span class="ic">${c.i}</span>${c.l}</div>`;});
@@ -1561,7 +1596,7 @@ function updDir(dir){
 
 function defRng(){const e=td();const d=new Date();d.setDate(d.getDate()-30);return{s:d.toISOString().slice(0,10),e}}
 function rRep(hid){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('reports','No tienes permiso para generar informes. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const h=D.horses.find(x=>x.id===hid);if(!h)return`<div class="view"><p>No encontrado.</p></div>`;
   const rng=V.rng||defRng();
   const cnt=D.trainings.filter(t=>t.hid===hid&&t.date>=rng.s&&t.date<=rng.e).length;
@@ -1620,7 +1655,7 @@ function expPDF(){
 /* Part 5: cuadra, alerts, answer session, stats */
 
 function rCuadra(){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('stable','No tienes permiso para gestionar la cuadra. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const tab=V.tab||"tareas";
   const due=cDue();
   const cEx=D.cexpenses.sort((a,b)=>a.date<b.date?1:-1);
@@ -1811,7 +1846,7 @@ function rAns(aid){
 
 /* ============ STATS ============ */
 function rStats(){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('stats','No tienes permiso para ver estadísticas. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const fH=V.sfh||"";const fO=(V.sfo||"");const fS=V.sfs||"";const fE=V.sfe||"";
   const tab=V.stab||"financiero";
   const horses=D.horses.filter(h=>!fH||h.id===fH);
@@ -2121,7 +2156,7 @@ function tcard(t){
     </div>
     <div style="display:flex;gap:.25rem">
       <button class="ib" style="width:27px;height:27px;font-size:.72rem" onclick="V={name:'editTask',tid:'${t.id}',dd:'${t.date}'};render()">✏️</button>
-      ${isStableAdmin()?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.tasks=D.tasks.filter(x=>x.id!=='${t.id}');D.salerts=D.salerts.filter(s=>s.tid!=='${t.id}');save();render()}">✕</button>`:""}
+      ${canPerm('deleteItems')?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.tasks=D.tasks.filter(x=>x.id!=='${t.id}');D.salerts=D.salerts.filter(s=>s.tid!=='${t.id}');save();render()}">✕</button>`:""}
     </div>
   </div>`;
 }
@@ -2141,6 +2176,7 @@ function cycleTask(id){
 }
 
 function rNTask(task){
+  const blocked=requirePermissionView('tasks','No tienes permiso para crear o modificar tareas. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const admin=isStableAdmin();
   const ed=!!task;const ds=V.dd||td();
   let hO="<option value=''>Caballo...</option>";
@@ -2169,13 +2205,13 @@ function rNTask(task){
     <div class="f"><label>Notas</label><input id="task-n" value="${esc(task?task.notes:"")}" placeholder="Detalles opcionales..."></div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-task-btn">${ed?"Guardar":"Añadir tarea"}</button>
-      ${ed&&admin?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.tasks=D.tasks.filter(x=>x.id!=='${task.id}');D.salerts=D.salerts.filter(s=>s.tid!=='${task.id}');save();V={name:'day',dd:'${task.date}'};render()}">Eliminar tarea</button>`:""}
+      ${ed&&canPerm('deleteItems')?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.tasks=D.tasks.filter(x=>x.id!=='${task.id}');D.salerts=D.salerts.filter(s=>s.tid!=='${task.id}');save();V={name:'day',dd:'${task.date}'};render()}">Eliminar tarea</button>`:""}
     </div>
   </div>`;
 }
 
 function rTeam(){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('team','No tienes permiso para gestionar el equipo. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const tt=tfD(td());
   return`<div class="view">
     <div class="vh"><div><span class="ey">Equipo</span><h1>Mi equipo</h1></div>
@@ -2188,15 +2224,30 @@ function rTeam(){
       return`<div class="mc" style="cursor:default">
         <div class="av" onclick="V={name:'memberDay',mid:'${m.id}',dd:'${td()}'};render()" style="cursor:pointer">${m.photo?`<img src="${m.photo}" alt="">`:(m.emoji||"👤")}</div>
         <div style="flex:1;min-width:0;cursor:pointer" onclick="V={name:'memberDay',mid:'${m.id}',dd:'${td()}'};render()"><div style="font-weight:700;font-size:.93rem">${esc(m.name)}</div><div style="font-size:.76rem;color:var(--gr)">${esc(m.role||"")}</div>${linked?`<span class="ap ok">🔗 Usuario vinculado</span>`:`<span class="ap">Sin usuario</span>`}</div>
-        <div style="text-align:right;flex-shrink:0"><div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;font-weight:700;color:var(--az)">${dn}/${mt.length}</div><div style="font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gr);margin-bottom:.25rem">Hoy</div><button class="btn btsm btg" onclick="createMemberInvite('${m.id}')">Invitar</button></div>
+        <div style="text-align:right;flex-shrink:0"><div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;font-weight:700;color:var(--az)">${dn}/${mt.length}</div><div style="font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gr);margin-bottom:.25rem">Hoy</div><div style="display:flex;gap:.25rem;justify-content:flex-end"><button class="btn btsm btg" onclick="createMemberInvite('${m.id}')">Invitar</button><button class="btn btsm" onclick="V={name:'editMember',mid:'${m.id}'};render()">Editar</button></div></div>
       </div>`;
     }).join("")}
   </div>`;
 }
 
 function rMF(m){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('team','No tienes permiso para editar integrantes. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const ed=!!m;
+  const perms={...defaultTeamPermissions(),...(m&&m.permissions?m.permissions:{})};
+  const permOpts=[
+    ['horses','Añadir/editar caballos','Puede crear caballos y editar datos básicos'],
+    ['trainings','Entrenamientos','Puede añadir entrenamientos y rellenar fichas'],
+    ['tasks','Tareas','Puede crear y modificar sus tareas'],
+    ['expenses','Gastos','Puede añadir y editar gastos, sin eliminarlos'],
+    ['health','Salud / Herrajes / Vacunas','Puede añadir y editar registros sanitarios'],
+    ['reports','Informes','Puede generar informes de caballos'],
+    ['stats','Estadísticas','Puede ver estadísticas generales'],
+    ['team','Equipo','Puede ver/gestionar equipo y plantillas'],
+    ['stable','Cuadra','Puede ver/gestionar tareas y gastos de cuadra'],
+    ['sale','Venta','Puede ver precios de venta y liquidaciones'],
+    ['deleteItems','Eliminar registros','Puede eliminar gastos, salud, entrenos, tareas o caballos']
+  ];
+  const permHtml=permOpts.map(([k,l,d])=>`<label style="display:flex;align-items:flex-start;gap:.55rem;text-transform:none;letter-spacing:0;font-size:.82rem;color:var(--ti);font-weight:700;margin-bottom:.55rem"><input type="checkbox" class="perm-cb" data-perm="${k}" ${perms[k]?'checked':''} style="width:auto;margin-top:.15rem"><span>${l}<br><small style="font-weight:400;color:var(--gr)">${d}</small></span></label>`).join('');
   let eH=`<div class="pch">`;EM.forEach(e=>{eH+=`<div class="pc ${m&&m.emoji===e?"active":""}" onclick="sEmoji(this,'${e}')" style="font-size:1.2rem;padding:.3rem .5rem">${e}</div>`;});eH+=`</div>`;
   return`<div class="view">
     <div class="vh"><button class="ib" onclick="V={name:'team'};render()">←</button><h1>${ed?"Editar":"Nuevo"} miembro</h1></div>
@@ -2209,6 +2260,10 @@ function rMF(m){
     <div class="f"><label>Rol</label><input id="m-role" value="${esc(m?m.role:"")}" placeholder="Mozo de cuadra"></div>
     <div class="f"><label>Contacto</label><input id="m-phone" value="${esc(m?m.phone:"")}" placeholder="600 000 000"></div>
     <div class="f"><label>Email de acceso (opcional)</label><input id="m-email" value="${esc(m?m.email:"")}" placeholder="persona@email.com"></div>
+    <div class="card" style="padding:.85rem;margin-bottom:.85rem">
+      <div style="font-size:.7rem;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.65rem">Permisos del integrante</div>
+      ${permHtml}
+    </div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-member-btn">${ed?"Guardar cambios":"Añadir al equipo"}</button>
       ${ed?`<button type="button" class="btn btr btbl" onclick="if(!confirm('¿Eliminar?'))return;D.team=D.team.filter(x=>x.id!=='${m.id}');D.tasks=D.tasks.map(t=>t.pid==='${m.id}'?{...t,pid:null}:t);save();V={name:'team'};render();toast('Eliminado')">Eliminar miembro</button>`:""}
@@ -2240,7 +2295,7 @@ function rMD(mid,ds){
 }
 
 function rTR(){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('team','No tienes permiso para generar informes de equipo. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const rng=V.rng||defRng();
   let rtH="";[{id:"diario",l:"Diario",i:"📅"},{id:"semanal",l:"Semanal",i:"📆"},{id:"finde",l:"Fin de semana",i:"🌅"}].forEach((r,i)=>{rtH+=`<div class="oo ${i===0?"active":""}" onclick="so(this,'og-rt','rep-type','${r.id}')"><span class="ic">${r.i}</span>${r.l}</div>`;});
   return`<div class="view">
@@ -2284,7 +2339,7 @@ async function genTR(){
 }
 
 function rTpls(){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('team','No tienes permiso para usar plantillas de equipo. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const ds=V.dd||td();
   return`<div class="view">
     <div class="vh"><button class="ib" onclick="V={name:'day',dd:'${ds}'};render()">←</button><h1>Plantillas</h1></div>
@@ -2304,7 +2359,7 @@ function applyTpl(id,ds){
   save();V={name:"day",dd:ds};render();toast(`"${tpl.name}" aplicada`);
 }
 function rETpl(tid){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const blocked=requirePermissionView('team','No tienes permiso para editar plantillas de equipo. El administrador puede activarlo en tu perfil de equipo.'); if(blocked)return blocked;
   const tpl=tid?D.templates.find(t=>t.id===tid):null;
   if(!V._tt)V._tt=tpl?[...tpl.tasks]:[];
   let hO="<option value=''>Caballo...</option>";D.horses.forEach(h=>{hO+=`<option value="${h.id}">${esc(h.name)}</option>`;});
@@ -2476,7 +2531,8 @@ function attach(){
   if(smb){smb.onclick=()=>{
     const name=gv('m-name').trim();if(!name){toast('Nombre obligatorio');return;}
     const pf2=document.getElementById('photo-f');const ed=V.name==='editMember';const id=ed?V.mid:uid();const ex=ed?D.team.find(m=>m.id===id):null;
-    const member={id,name,role:gv('m-role').trim(),phone:gv('m-phone').trim(),email:gv('m-email').trim(),emoji:gv('m-emoji')||'👤',photo:pf2&&pf2.dataset.value?pf2.dataset.value:(ex?ex.photo:null),uid:ex?ex.uid:null,userId:ex?ex.userId:null,authUid:ex?ex.authUid:null,linkedAt:ex?ex.linkedAt:null};
+    const permissions={...defaultTeamPermissions()};document.querySelectorAll('.perm-cb').forEach(cb=>{permissions[cb.dataset.perm]=cb.checked;});
+    const member={id,name,role:gv('m-role').trim(),phone:gv('m-phone').trim(),email:gv('m-email').trim(),emoji:gv('m-emoji')||'👤',photo:pf2&&pf2.dataset.value?pf2.dataset.value:(ex?ex.photo:null),permissions,uid:ex?ex.uid:null,userId:ex?ex.userId:null,authUid:ex?ex.authUid:null,linkedAt:ex?ex.linkedAt:null,linkedName:ex?ex.linkedName:null,linkedEmail:ex?ex.linkedEmail:null};
     if(ed){D.team=D.team.map(m=>m.id===id?member:m);}else{D.team.push(member);}
     save();V={name:'team'};render();toast(ed?'Guardado':'Miembro añadido');
   };}

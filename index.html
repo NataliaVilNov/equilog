@@ -1052,23 +1052,40 @@ function load(){
 }
 
 let _saveTimeout=null;
+function cleanForFirestore(value){
+  if(value===undefined)return null;
+  if(value===null)return null;
+  if(Array.isArray(value))return value.map(cleanForFirestore);
+  if(typeof value==='object'){
+    const out={};
+    Object.keys(value).forEach(k=>{
+      const v=value[k];
+      out[k]=(v===undefined)?null:cleanForFirestore(v);
+    });
+    return out;
+  }
+  return value;
+}
+
 function save(){
   // Debounce saves to Firestore (250ms)
   if(_saveTimeout)clearTimeout(_saveTimeout);
   _saveTimeout=setTimeout(async()=>{
     const fb=getFB();const sid=window._ACTIVE_STABLE_ID;
+    const cleanD=cleanForFirestore(D);
+    D=cleanD;
     if(!fb||!sid){
       // Fallback to localStorage if Firebase not ready
-      try{localStorage.setItem(SK,JSON.stringify(D));}catch(e){}
+      try{localStorage.setItem(SK,JSON.stringify(cleanD));}catch(e){}
       return;
     }
     try{
       const {doc,setDoc}=fb;
-      await setDoc(doc(fb.db,'stables',sid,'data','main'),D);
+      await setDoc(doc(fb.db,'stables',sid,'data','main'),cleanD);
     }catch(e){
       toast('Error al guardar: '+e.message);
       // Fallback
-      try{localStorage.setItem(SK,JSON.stringify(D));}catch(e2){}
+      try{localStorage.setItem(SK,JSON.stringify(cleanD));}catch(e2){}
     }
   },250);
 }
@@ -2532,7 +2549,7 @@ function attach(){
     const name=gv('m-name').trim();if(!name){toast('Nombre obligatorio');return;}
     const pf2=document.getElementById('photo-f');const ed=V.name==='editMember';const id=ed?V.mid:uid();const ex=ed?D.team.find(m=>m.id===id):null;
     const permissions={...defaultTeamPermissions()};document.querySelectorAll('.perm-cb').forEach(cb=>{permissions[cb.dataset.perm]=cb.checked;});
-    const member={id,name,role:gv('m-role').trim(),phone:gv('m-phone').trim(),email:gv('m-email').trim(),emoji:gv('m-emoji')||'👤',photo:pf2&&pf2.dataset.value?pf2.dataset.value:(ex?ex.photo:null),permissions,uid:ex?ex.uid:null,userId:ex?ex.userId:null,authUid:ex?ex.authUid:null,linkedAt:ex?ex.linkedAt:null,linkedName:ex?ex.linkedName:null,linkedEmail:ex?ex.linkedEmail:null};
+    const member={id,name,role:gv('m-role').trim(),phone:gv('m-phone').trim(),email:gv('m-email').trim(),emoji:gv('m-emoji')||'👤',photo:pf2&&pf2.dataset.value?pf2.dataset.value:(ex?(ex.photo||null):null),permissions,uid:ex?(ex.uid||null):null,userId:ex?(ex.userId||null):null,authUid:ex?(ex.authUid||null):null,linkedAt:ex?(ex.linkedAt||null):null,linkedName:ex?(ex.linkedName||null):null,linkedEmail:ex?(ex.linkedEmail||null):null};
     if(ed){D.team=D.team.map(m=>m.id===id?member:m);}else{D.team.push(member);}
     save();V={name:'team'};render();toast(ed?'Guardado':'Miembro añadido');
   };}

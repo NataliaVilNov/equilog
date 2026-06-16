@@ -633,7 +633,9 @@ async function joinByCode(){
     if(!codeSnap.exists()){
       toast('Codigo no valido');reset();return;
     }
-    const stableId=codeSnap.data().stableId;
+    const codeData=codeSnap.data()||{};
+    const stableId=codeData.stableId;
+    const linkedTeamMemberId=codeData.teamMemberId||null;
     const stableSnap=await fb.getDoc(fb.doc(fb.db,'stables',stableId));
     if(!stableSnap.exists()){
       toast('La cuadra ya no existe');reset();return;
@@ -646,10 +648,34 @@ async function joinByCode(){
     const memberName=(window._FBPROFILE||{}).name||user.displayName||user.email||'';
     await fb.updateDoc(fb.doc(fb.db,'stables',stableId),{
       memberIds:fb.arrayUnion(user.uid),
-      ['members.'+user.uid]:{name:memberName,email:user.email||'',role:'miembro',joined:new Date().toISOString()}
+      ['members.'+user.uid]:{name:memberName,email:user.email||'',role:'miembro',teamMemberId:linkedTeamMemberId||null,joined:new Date().toISOString()}
     });
+
+    // Si el código de invitación estaba vinculado a una persona del equipo,
+    // conectamos ese perfil de equipo con el usuario autenticado que acaba de entrar.
+    if(linkedTeamMemberId){
+      try{
+        const mainRef=fb.doc(fb.db,'stables',stableId,'data','main');
+        const mainSnap=await fb.getDoc(mainRef);
+        if(mainSnap.exists()){
+          const mainData=mainSnap.data()||{};
+          const team=(mainData.team||[]).map(m=>m.id===linkedTeamMemberId?{
+            ...m,
+            uid:user.uid,
+            userId:user.uid,
+            authUid:user.uid,
+            email:user.email||m.email||'',
+            linkedAt:new Date().toISOString()
+          }:m);
+          await fb.setDoc(mainRef,{...mainData,team},{merge:false});
+        }
+      }catch(linkErr){
+        console.warn('No se pudo vincular el miembro de equipo, pero el usuario sí entró:',linkErr);
+      }
+    }
+
     if(input)input.value='';
-    toast('Te has unido a '+stableData.name+'!');
+    toast(linkedTeamMemberId?'Te has unido y quedas vinculado a tu perfil de equipo':'Te has unido a '+stableData.name+'!');
     await window._fbSwitchStable(stableId);
   }catch(e){
     console.error('joinByCode:',e);
@@ -697,6 +723,39 @@ async function copyInviteCode(){
     toast('Código copiado: '+stable.inviteCode);
   }catch(e){
     toast('Código: '+stable.inviteCode);
+  }
+}
+
+async function createMemberInvite(memberId){
+  const fb=getFB();
+  const user=window._FBUSER;
+  const stable=window._ACTIVE_STABLE;
+  if(!fb||!user||!stable){toast('No hay cuadra activa');return;}
+  if(!canManageStable(stable,user)){toast('Solo el administrador puede crear invitaciones vinculadas');return;}
+  const member=D.team.find(m=>m.id===memberId);
+  if(!member){toast('Miembro de equipo no encontrado');return;}
+  if(member.uid||member.userId||member.authUid){
+    if(!confirm(`${member.name} ya parece vinculado a un usuario. ¿Crear otro código igualmente?`))return;
+  }
+  const code=Math.random().toString(36).slice(2,8).toUpperCase();
+  try{
+    await fb.setDoc(fb.doc(fb.db,'inviteCodes',code),{
+      stableId:stable.id,
+      name:stable.name||'',
+      teamMemberId:member.id,
+      teamMemberName:member.name||'',
+      createdBy:user.uid,
+      created:new Date().toISOString()
+    });
+    try{
+      await navigator.clipboard.writeText(code);
+      toast('Código copiado para '+member.name+': '+code);
+    }catch(e){
+      toast('Código para '+member.name+': '+code);
+    }
+  }catch(e){
+    console.error('createMemberInvite:',e);
+    toast('Error creando invitación: '+e.message);
   }
 }
 
@@ -1934,11 +1993,12 @@ function rTeam(){
     ${!D.team.length?`<div class="em"><div class="big">👥</div><p>Sin miembros.<br>Pulsa <b>+</b>.</p></div>`:
     D.team.map(m=>{
       const mt=tt.filter(t=>t.pid===m.id);const dn=mt.filter(t=>t.status==="done").length;
-      return`<button class="mc" onclick="V={name:'memberDay',mid:'${m.id}',dd:'${td()}'};render()">
-        <div class="av">${m.photo?`<img src="${m.photo}" alt="">`:(m.emoji||"👤")}</div>
-        <div style="flex:1;min-width:0"><div style="font-weight:700;font-size:.93rem">${esc(m.name)}</div><div style="font-size:.76rem;color:var(--gr)">${esc(m.role||"")}</div></div>
-        <div style="text-align:right"><div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;font-weight:700;color:var(--az)">${dn}/${mt.length}</div><div style="font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gr)">Hoy</div></div>
-      </button>`;
+      const linked=!!(m.uid||m.userId||m.authUid);
+      return`<div class="mc" style="cursor:default">
+        <div class="av" onclick="V={name:'memberDay',mid:'${m.id}',dd:'${td()}'};render()" style="cursor:pointer">${m.photo?`<img src="${m.photo}" alt="">`:(m.emoji||"👤")}</div>
+        <div style="flex:1;min-width:0;cursor:pointer" onclick="V={name:'memberDay',mid:'${m.id}',dd:'${td()}'};render()"><div style="font-weight:700;font-size:.93rem">${esc(m.name)}</div><div style="font-size:.76rem;color:var(--gr)">${esc(m.role||"")}</div>${linked?`<span class="ap ok">🔗 Usuario vinculado</span>`:`<span class="ap">Sin usuario</span>`}</div>
+        <div style="text-align:right;flex-shrink:0"><div style="font-family:'Cormorant Garamond',serif;font-size:1.1rem;font-weight:700;color:var(--az)">${dn}/${mt.length}</div><div style="font-size:.58rem;letter-spacing:.08em;text-transform:uppercase;color:var(--gr);margin-bottom:.25rem">Hoy</div><button class="btn btsm btg" onclick="createMemberInvite('${m.id}')">Invitar</button></div>
+      </div>`;
     }).join("")}
   </div>`;
 }
@@ -1956,6 +2016,7 @@ function rMF(m){
     <div class="f"><label>Nombre *</label><input id="m-name" value="${esc(m?m.name:"")}" placeholder="Laura García"></div>
     <div class="f"><label>Rol</label><input id="m-role" value="${esc(m?m.role:"")}" placeholder="Mozo de cuadra"></div>
     <div class="f"><label>Contacto</label><input id="m-phone" value="${esc(m?m.phone:"")}" placeholder="600 000 000"></div>
+    <div class="f"><label>Email de acceso (opcional)</label><input id="m-email" value="${esc(m?m.email:"")}" placeholder="persona@email.com"></div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-member-btn">${ed?"Guardar cambios":"Añadir al equipo"}</button>
       ${ed?`<button type="button" class="btn btr btbl" onclick="if(!confirm('¿Eliminar?'))return;D.team=D.team.filter(x=>x.id!=='${m.id}');D.tasks=D.tasks.map(t=>t.pid==='${m.id}'?{...t,pid:null}:t);save();V={name:'team'};render();toast('Eliminado')">Eliminar miembro</button>`:""}
@@ -2220,7 +2281,7 @@ function attach(){
   if(smb){smb.onclick=()=>{
     const name=gv('m-name').trim();if(!name){toast('Nombre obligatorio');return;}
     const pf2=document.getElementById('photo-f');const ed=V.name==='editMember';const id=ed?V.mid:uid();const ex=ed?D.team.find(m=>m.id===id):null;
-    const member={id,name,role:gv('m-role').trim(),phone:gv('m-phone').trim(),emoji:gv('m-emoji')||'👤',photo:pf2&&pf2.dataset.value?pf2.dataset.value:(ex?ex.photo:null)};
+    const member={id,name,role:gv('m-role').trim(),phone:gv('m-phone').trim(),email:gv('m-email').trim(),emoji:gv('m-emoji')||'👤',photo:pf2&&pf2.dataset.value?pf2.dataset.value:(ex?ex.photo:null),uid:ex?ex.uid:null,userId:ex?ex.userId:null,authUid:ex?ex.authUid:null,linkedAt:ex?ex.linkedAt:null};
     if(ed){D.team=D.team.map(m=>m.id===id?member:m);}else{D.team.push(member);}
     save();V={name:'team'};render();toast(ed?'Guardado':'Miembro añadido');
   };}

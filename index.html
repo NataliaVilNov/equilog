@@ -610,65 +610,53 @@ async function doCreateStable(){
     await setDoc(doc(fb.db,'stables',stableRef.id,'data','main'),{
       horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[]
     });
-    // Guardar lookup público del código de invitación
-    await setDoc(doc(fb.db,'inviteCodes',invCode),{stableId:stableRef.id,name});
+    // Guardar en coleccion publica para busqueda por codigo sin query
+    await setDoc(doc(fb.db,'inviteCodes',invCode),{stableId:stableRef.id,name,created:serverTimestamp()});
     document.getElementById('create-stable-modal').style.display='none';
     await window._fbSwitchStable(stableRef.id);
   }catch(e){err.textContent='Error: '+e.message;err.style.display='block';}
 }
 
 async function joinByCode(){
-  const fb=getFB();const user=window._FBUSER;if(!fb||!user){toast('Debes iniciar sesion primero');return;}
+  const fb=getFB();
+  const user=window._FBUSER;
   const input=document.getElementById('invite-code-input');
-  const code=(input.value||'').trim().toUpperCase();
-  if(!code){toast('Introduce un codigo');return;}
   const btn=document.querySelector('[onclick="joinByCode()"]');
+  if(!fb||!user){toast('Inicia sesion primero');return;}
+  const code=(input?input.value:'').trim().toUpperCase();
+  if(!code){toast('Introduce un codigo de invitacion');return;}
   if(btn){btn.textContent='Buscando...';btn.disabled=true;}
-  const {doc,getDoc,updateDoc,arrayUnion}=fb;
+  const reset=()=>{if(btn){btn.textContent='Unirse';btn.disabled=false;}};
   try{
-    // Buscar el codigo en la coleccion inviteCodes (lectura directa, sin query)
-    const codeRef=doc(fb.db,'inviteCodes',code);
-    const codeSnap=await getDoc(codeRef);
+    // Leer directamente por ID de documento (no query) — evita problemas de permisos
+    const codeSnap=await fb.getDoc(fb.doc(fb.db,'inviteCodes',code));
     if(!codeSnap.exists()){
-      toast('Codigo no valido - comprueba que esta bien escrito');
-      if(btn){btn.textContent='Unirse';btn.disabled=false;}
-      return;
+      toast('Codigo no valido');reset();return;
     }
-    const {stableId}=codeSnap.data();
-    const stableRef=doc(fb.db,'stables',stableId);
-    const stableSnap=await getDoc(stableRef);
+    const stableId=codeSnap.data().stableId;
+    const stableSnap=await fb.getDoc(fb.doc(fb.db,'stables',stableId));
     if(!stableSnap.exists()){
-      toast('La cuadra ya no existe');
-      if(btn){btn.textContent='Unirse';btn.disabled=false;}
-      return;
+      toast('La cuadra ya no existe');reset();return;
     }
     const stableData=stableSnap.data();
-    if(stableData.memberIds&&stableData.memberIds.includes(user.uid)){
-      toast('Ya eres miembro de esta cuadra');
-      if(btn){btn.textContent='Unirse';btn.disabled=false;}
-      await window._fbSwitchStable(stableId);
-      return;
+    if((stableData.memberIds||[]).includes(user.uid)){
+      toast('Ya eres miembro de esta cuadra');reset();
+      await window._fbSwitchStable(stableId);return;
     }
-    const profile=window._FBPROFILE||{};
-    const memberName=profile.name||user.displayName||user.email||'';
-    await updateDoc(stableRef,{
-      memberIds:arrayUnion(user.uid),
-      ['members.'+user.uid]:{
-        name:memberName,
-        email:user.email||'',
-        role:'miembro',
-        joined:new Date().toISOString()
-      }
+    const memberName=(window._FBPROFILE||{}).name||user.displayName||user.email||'';
+    await fb.updateDoc(fb.doc(fb.db,'stables',stableId),{
+      memberIds:fb.arrayUnion(user.uid),
+      ['members.'+user.uid]:{name:memberName,email:user.email||'',role:'miembro',joined:new Date().toISOString()}
     });
-    toast('Te has unido a '+stableData.name+'!');
     if(input)input.value='';
+    toast('Te has unido a '+stableData.name+'!');
     await window._fbSwitchStable(stableId);
   }catch(e){
-    console.error('joinByCode error:',e);
-    toast('Error al unirse: '+e.message);
-    if(btn){btn.textContent='Unirse';btn.disabled=false;}
+    console.error('joinByCode:',e);
+    toast('Error: '+e.message);reset();
   }
 }
+
 
 function openStablePanel(){
   const panel=document.getElementById('stable-panel');

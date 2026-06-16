@@ -1321,7 +1321,7 @@ function render(){
     nm='list'; V={name:'list'};
   }
   document.getElementById("nb-horses").classList.toggle("active",["list","addHorse","editHorse","horse","newTraining","newHealth","newExpense","report"].includes(nm));
-  document.getElementById("nb-day").classList.toggle("active",["day","newTask","editTask"].includes(nm));
+  document.getElementById("nb-day").classList.toggle("active",["day","newTask","editTask","smartOrder"].includes(nm));
   document.getElementById("nb-team").classList.toggle("active",["team","addMember","editMember","memberDay","teamReport","templates","editTemplate"].includes(nm));
   document.getElementById("nb-cuadra").classList.toggle("active",["cuadra","newCT","newCE"].includes(nm));
   document.getElementById("nb-alerts").classList.toggle("active",["alerts","answerS"].includes(nm));
@@ -1331,7 +1331,7 @@ function render(){
       list:rList, addHorse:()=>rHF(null), editHorse:()=>rHF(D.horses.find(h=>h.id===V.hid)),
       horse:()=>rHorse(V.hid), newTraining:()=>rNT(V.hid), newHealth:()=>rNH(V.hid,V.eid),
       newExpense:()=>rNE(V.hid,V.eid), report:()=>rRep(V.hid),
-      day:()=>rDay(V.dd||td()), newTask:()=>rNTask(null), editTask:()=>rNTask(D.tasks.find(t=>t.id===V.tid)),
+      day:()=>rDay(V.dd||td()), smartOrder:()=>rSmartOrder(), newTask:()=>rNTask(null), editTask:()=>rNTask(D.tasks.find(t=>t.id===V.tid)),
       team:rTeam, addMember:()=>rMF(null), editMember:()=>rMF(D.team.find(m=>m.id===V.mid)),
       memberDay:()=>rMD(V.mid,V.dd||td()), teamReport:rTR,
       templates:rTpls, editTemplate:()=>rETpl(V.tplid),
@@ -2397,6 +2397,151 @@ function sp(el,iid,val){el.parentElement.querySelectorAll('.pc').forEach(p=>p.cl
 function sEmoji(el,val){el.parentElement.querySelectorAll('.pc').forEach(p=>p.classList.remove('active'));el.classList.add('active');const inp=document.getElementById('m-emoji');if(inp)inp.value=val;const pp=document.getElementById('pp');if(pp&&!document.getElementById('photo-f')?.dataset?.value)pp.textContent=val;}
 function voice(tid,btn){const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){toast('Dictado no disponible');return;}if(btn.classList.contains('ls')){btn._r&&btn._r.stop();return;}const r=new SR();r.lang='es-ES';r.continuous=false;r.interimResults=false;const t=document.getElementById(tid);r.onresult=e=>{const tx=e.results[0][0].transcript;if(t)t.value=t.value?t.value+' '+tx:tx;};r.onend=()=>btn.classList.remove('ls');r.onerror=()=>btn.classList.remove('ls');btn._r=r;btn.classList.add('ls');r.start();}
 
+
+
+/* ============ ORDEN INTELIGENTE DE CUADRA ============ */
+function normTxt(s){return (s||'').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9ñ\s]/g,' ').replace(/\s+/g,' ').trim();}
+function soDateFromText(txt,def){
+  const t=normTxt(txt); let d=def||td();
+  if(t.includes('pasado manana'))return addD(td(),2);
+  if(t.includes('manana'))return addD(td(),1);
+  if(t.includes('ayer'))return addD(td(),-1);
+  if(t.includes('hoy'))return td();
+  const days={lunes:1,martes:2,miercoles:3,jueves:4,viernes:5,sabado:6,domingo:0};
+  for(const k in days){if(t.includes(k)){const now=new Date();const cur=now.getDay();let diff=(days[k]-cur+7)%7;if(diff===0)diff=7;return addD(td(),diff);}}
+  return d;
+}
+function soDuration(txt){
+  const t=normTxt(txt); let m=t.match(/(\d{1,3})\s*(min|minutos|m)\b/); if(m)return Number(m[1]);
+  m=t.match(/(\d{1,2})\s*(h|hora|horas)\b/); if(m)return Number(m[1])*60;
+  if(t.includes('media hora'))return 30;
+  if(t.includes('un cuarto'))return 15;
+  if(t.includes('suave')||t.includes('corto'))return 30;
+  return null;
+}
+function soAmount(txt){
+  const raw=(txt||'').toString();
+  let m=raw.match(/(\d+(?:[\.,]\d{1,2})?)\s*(€|eur|euros)/i);
+  if(m)return Number(m[1].replace(',','.'));
+  const t=normTxt(raw);
+  m=t.match(/(?:coste|costo|costo|vale|valio|precio|factura|cobro|cobro la veterinaria|cobro el veterinario)\s*(de\s*)?(\d+(?:[\.,]\d{1,2})?)/i);
+  if(m)return Number(m[2].replace(',','.'));
+  m=t.match(/(\d+(?:[\.,]\d{1,2})?)\s*(eur|euros)/i);
+  return m?Number(m[1].replace(',','.')):null;
+}
+function soPerson(txt){
+  const t=normTxt(txt); let best=null;
+  (D.team||[]).forEach(m=>{const n=normTxt(m.name); if(n&&t.includes(n))best=m;});
+  return best;
+}
+function soFindHorseSegments(text){
+  const nt=normTxt(text); const found=[];
+  (D.horses||[]).forEach(h=>{
+    const n=normTxt(h.name); if(!n)return;
+    let i=nt.indexOf(n);
+    while(i>=0){found.push({i,h}); i=nt.indexOf(n,i+n.length);}
+  });
+  found.sort((a,b)=>a.i-b.i);
+  const seen=[]; const out=[];
+  found.forEach((f,idx)=>{
+    if(seen.some(x=>Math.abs(x.i-f.i)<2&&x.h.id===f.h.id))return; seen.push(f);
+    const end=idx<found.length-1?found[idx+1].i:nt.length;
+    out.push({horse:f.h, text:nt.slice(f.i,end)});
+  });
+  return out;
+}
+function soActivities(seg){
+  const t=normTxt(seg); const a=[];
+  const add=(id,label,notes)=>{if(!a.some(x=>x.activity===id&&x.label===label))a.push({activity:id,label:label||af(id).l,notes:notes||''});};
+  if(t.includes('paddock')||t.includes('padock'))add('paddock','Paddock');
+  if(t.includes('caminador'))add('caminador','Caminador');
+  if(t.includes('paseo de la mano')||t.includes('pasear de la mano')||t.includes('mano'))add('paseo_mano','Paseo de la mano');
+  if(t.includes('longe')||t.includes('cuerda'))add('longe','Longe');
+  if(t.includes('salto')||t.includes('saltar'))add('salto','Salto');
+  if(t.includes('campo'))add('campo','Campo');
+  if(t.includes('doma'))add('doma','Doma');
+  if(t.includes('bano')||t.includes('ducha'))add('bano','Baño');
+  if(t.includes('montar')||t.includes('monte')||t.includes('monta')||t.includes('montarlo')||t.includes('montarla')){
+    if(t.includes('suave')||t.includes('tranquilo')||t.includes('flojo'))add('trabajo_suave','Montar suave','Trabajo suave');
+    else add('monta','Monta');
+  }
+  return a;
+}
+function soHealth(seg){
+  const t=normTxt(seg); const out=[];
+  const add=(type,label)=>{if(!out.some(x=>x.type===type&&x.label===label))out.push({type,label});};
+  if(t.includes('infiltr'))add('otro','Infiltración');
+  if(t.includes('vacun'))add('vacuna','Vacunación');
+  if(t.includes('desparas'))add('despar','Desparasitación');
+  if(t.includes('herraj')||t.includes('herrador'))add('herraje','Herraje');
+  if(t.includes('veterin')||t.includes('revision vet'))add('otro','Revisión veterinaria');
+  if(t.includes('cojer')||t.includes('lesion')||t.includes('menudillo')||t.includes('tendon'))add('otro','Observación veterinaria');
+  return out;
+}
+function smartAnalyzeOrder(){
+  const text=gv('so-text').trim(); if(!text){toast('Escribe o dicta una orden');return;}
+  const base=gv('so-date')||td(); const segs=soFindHorseSegments(text); const props=[];
+  if(!segs.length){V.smartDraft=[];document.getElementById('so-review').innerHTML=`<div class="em"><p>No he reconocido ningún caballo. Usa nombres tal y como aparecen en la app.</p></div>`;return;}
+  segs.forEach(sg=>{
+    const h=sg.horse; const seg=sg.text; const date=soDateFromText(seg,base); const dur=soDuration(seg); const person=soPerson(seg); const amount=soAmount(seg); const acts=soActivities(seg); const health=soHealth(seg);
+    acts.forEach(a=>props.push({id:uid(),kind:'task',hid:h.id,horse:h.name,date,activity:a.activity,dur:dur||30,pid:person?person.id:(isStableAdmin()?null:myTeamMemberId()),notes:[a.notes, seg.includes('suave')?'suave':''].filter(Boolean).join(' · '),allowed:canPerm('tasks')}));
+    health.forEach(x=>props.push({id:uid(),kind:'health',hid:h.id,horse:h.name,date:(normTxt(seg).includes('ayer')?addD(td(),-1):soDateFromText(seg,date)),type:x.type,label:x.label,notes:seg,amount:amount||0,payStatus:'pendiente',payee:(seg.includes('veterin')?'Veterinaria':''),allowed:canPerm('health')}));
+    if(amount){
+      const cat=(seg.includes('herrador')||seg.includes('herraje'))?'herrador':'vet';
+      let concept=health.length?health[0].label:'Gasto detectado en orden inteligente';
+      props.push({id:uid(),kind:'expense',hid:h.id,horse:h.name,date:(normTxt(seg).includes('ayer')?addD(td(),-1):soDateFromText(seg,date)),cat,concept,amount,status:'pendiente',payer:'Cuadra',payee:seg.includes('veterin')?'Veterinaria':'',notes:seg,allowed:canPerm('expenses')});
+    }
+  });
+  V.smartDraft=props;
+  renderSmartReview();
+}
+function renderSmartReview(){
+  const out=document.getElementById('so-review'); if(!out)return;
+  const p=V.smartDraft||[];
+  if(!p.length){out.innerHTML=`<div class="em"><p>No he encontrado tareas, salud o gastos claros. Prueba con frases más concretas.</p></div>`;return;}
+  let html=`<div class="rpb"><h3>He entendido esto</h3>`;
+  p.forEach((x,i)=>{
+    const icon=x.kind==='task'?'📋':x.kind==='health'?'🩺':'💰';
+    const title=x.kind==='task'?`${af(x.activity).l} · ${x.dur||30} min`:x.kind==='health'?`${x.label}`:`${x.concept} · ${Number(x.amount||0).toFixed(2)}€`;
+    const extra=x.kind==='task'?(x.pid?` · ${esc((D.team.find(m=>m.id===x.pid)||{}).name||'')}`:''):(x.kind==='expense'?` · ${esc(x.payee||'Proveedor no indicado')}`:'');
+    html+=`<label style="display:flex;gap:.55rem;align-items:flex-start;border-bottom:1px solid var(--li);padding:.55rem 0;text-transform:none;letter-spacing:0;font-size:.82rem;color:var(--ti);font-weight:600">
+      <input type="checkbox" class="so-check" data-i="${i}" ${x.allowed?'checked':'disabled'} style="width:auto;margin-top:.2rem">
+      <span style="flex:1"><b>${icon} ${esc(x.horse)}</b><br><span style="color:var(--gr);font-weight:500">${fD(x.date)} · ${esc(title)}${extra}</span>${!x.allowed?`<br><span style="color:var(--ro)">Sin permiso para crear este tipo de registro</span>`:''}</span>
+    </label>`;
+  });
+  html+=`</div><div class="rpa"><button class="btn btg" onclick="V.smartDraft=[];renderSmartReview()">Limpiar</button><button class="btn bts" onclick="confirmSmartOrder()">Confirmar y crear</button></div>`;
+  out.innerHTML=html;
+}
+function confirmSmartOrder(){
+  const p=V.smartDraft||[]; if(!p.length){toast('No hay nada que crear');return;}
+  const checks=Array.from(document.querySelectorAll('.so-check')); let created=0;
+  checks.forEach(ch=>{
+    if(!ch.checked||ch.disabled)return; const x=p[Number(ch.dataset.i)]; if(!x||!x.allowed)return;
+    if(x.kind==='task'){
+      D.tasks.push({id:uid(),hid:x.hid,activity:x.activity,date:x.date,time:null,dur:Number(x.dur)||30,pid:x.pid||null,notes:x.notes||'',status:'pending'}); created++;
+    }else if(x.kind==='health'){
+      const hid=uid(); D.health.push({id:hid,hid:x.hid,type:x.type||'otro',label:x.label||'Registro sanitario',date:x.date,nxt:null,notes:x.notes||'',amount:Number(x.amount)||0,payStatus:x.payStatus||'pendiente',payee:x.payee||''}); created++;
+    }else if(x.kind==='expense'){
+      D.expenses.push({id:uid(),hid:x.hid,concept:x.concept||'Gasto',amount:Number(x.amount)||0,date:x.date,cat:x.cat||'vet',payer:x.payer||'Cuadra',payee:x.payee||'',status:x.status||'pendiente',notes:x.notes||''}); created++;
+    }
+  });
+  save(); toast(`Creados ${created} registro${created===1?'':'s'}`); V={name:'day',dd:gv('so-date')||td()}; render();
+}
+function rSmartOrder(){
+  const canAny=canPerm('tasks')||canPerm('health')||canPerm('expenses');
+  if(!canAny)return requirePermissionView('tasks','No tienes permisos para crear órdenes inteligentes.');
+  const ds=V.dd||td();
+  const example='Mañana Fandango paddock y caminador. A Nerón montarlo suave 30 minutos. A Luna paseo de la mano 20 minutos porque ayer la veterinaria la infiltró del menudillo, coste 200€.';
+  return`<div class="view">
+    <div class="vh"><button class="ib" onclick="V={name:'day',dd:'${ds}'};render()">←</button><h1>Orden inteligente</h1></div>
+    <div class="card" style="background:var(--vl)"><div style="font-size:.86rem;color:var(--vd);font-weight:700;margin-bottom:.25rem">Escribe o dicta como si mandaras un WhatsApp</div><div style="font-size:.76rem;color:var(--gr)">La app propondrá tareas, salud y gastos. Revisa antes de crear.</div></div>
+    <div class="f"><label>Fecha por defecto</label><input type="date" id="so-date" value="${ds}"></div>
+    <div class="f"><label>Orden</label><div class="vw"><textarea id="so-text" style="min-height:160px" placeholder="${esc(example)}"></textarea><button type="button" class="vb" onclick="voice('so-text',this)">🎤</button></div></div>
+    <button class="btn bts btbl" onclick="smartAnalyzeOrder()">Analizar orden</button>
+    <div id="so-review" style="margin-top:.9rem"></div>
+  </div>`;
+}
+
 /* Part 4: day, task, team, member, team report, templates */
 
 function rDay(ds){
@@ -2409,10 +2554,11 @@ function rDay(ds){
       <button class="ib" onclick="V={name:'day',dd:'${next}'};render()">›</button>
     </div>
     <div class="dp"><div class="pll"><span>${p.done}/${p.total} tareas</span><span>${p.pct}%</span></div><div class="bw"><div class="bf" style="width:${p.pct}%"></div></div></div>
-    <div class="r2" style="margin-bottom:.9rem">
+    <div class="r2" style="margin-bottom:.55rem">
+      ${canPerm('tasks')||canPerm('health')||canPerm('expenses')?`<button class="btn bts btsm" onclick="V={name:'smartOrder',dd:'${ds}'};render()">⚡ Orden inteligente</button>`:""}
       <button class="btn btg btsm" onclick="V={name:'templates',dd:'${ds}'};render()">📋 Plantilla</button>
-      <button class="btn btg btsm" onclick="V={name:'teamReport'};render()">📊 Informe equipo</button>
-    </div>`;
+    </div>
+    ${canPerm('team')?`<div style="margin-bottom:.9rem"><button class="btn btg btsm btbl" onclick="V={name:'teamReport'};render()">📊 Informe equipo</button></div>`:""}`;
   const un=tasks.filter(t=>!t.pid);
   if(!tasks.length){html+=`<div class="em"><div class="big">📋</div><p>Sin tareas. Pulsa <b>+</b>.</p></div>`;}
   else{

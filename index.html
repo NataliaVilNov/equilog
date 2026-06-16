@@ -264,6 +264,27 @@ onAuthStateChanged(auth, async (user) => {
   </div>
 </div>
 
+
+<!-- JOIN TEAM SELECTOR MODAL -->
+<div id="join-team-modal" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(44,41,37,.58);backdrop-filter:blur(3px);overflow-y:auto">
+  <div style="max-width:520px;margin:0 auto;padding:1.5rem 1rem 4rem">
+    <div style="background:var(--fo);border-radius:18px;padding:1.2rem;border:1px solid var(--li);margin-top:2rem">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:.85rem">
+        <div>
+          <div style="font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--v);font-weight:800">Invitación a cuadra</div>
+          <h2 id="join-team-title" style="font-size:1.25rem;margin-top:.12rem">¿Qué integrante del equipo eres?</h2>
+          <p id="join-team-sub" style="font-size:.82rem;color:var(--gr);margin-top:.25rem;line-height:1.45">Selecciona tu mote o perfil para vincular tu usuario.</p>
+        </div>
+        <button onclick="closeJoinTeamModal()" style="background:none;border:none;font-size:1.35rem;color:var(--gr);cursor:pointer">✕</button>
+      </div>
+      <div id="join-team-list"></div>
+      <div style="margin-top:.8rem;border-top:1px solid var(--li);padding-top:.8rem">
+        <button class="btn btg btbl" onclick="confirmJoinAs(null)">No estoy en la lista / unirme sin vincular</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- MAIN APP HEADER -->
 <header id="main-header" style="display:none"><div class="bar">
   <button class="logo" onclick="openStablePanel()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:.4rem;text-align:left">
@@ -617,77 +638,160 @@ async function doCreateStable(){
   }catch(e){err.textContent='Error: '+e.message;err.style.display='block';}
 }
 
+let _pendingJoin=null;
+
 async function joinByCode(){
   const fb=getFB();
   const user=window._FBUSER;
   const input=document.getElementById('invite-code-input');
   const btn=document.querySelector('[onclick="joinByCode()"]');
-  if(!fb||!user){toast('Inicia sesion primero');return;}
+  if(!fb||!user){toast('Inicia sesión primero');return;}
   const code=(input?input.value:'').trim().toUpperCase();
-  if(!code){toast('Introduce un codigo de invitacion');return;}
+  if(!code){toast('Introduce un código de invitación');return;}
   if(btn){btn.textContent='Buscando...';btn.disabled=true;}
   const reset=()=>{if(btn){btn.textContent='Unirse';btn.disabled=false;}};
   try{
-    // Leer directamente por ID de documento (no query) — evita problemas de permisos
     const codeSnap=await fb.getDoc(fb.doc(fb.db,'inviteCodes',code));
-    if(!codeSnap.exists()){
-      toast('Codigo no valido');reset();return;
-    }
+    if(!codeSnap.exists()){toast('Código no válido');reset();return;}
     const codeData=codeSnap.data()||{};
     const stableId=codeData.stableId;
-    const linkedTeamMemberId=codeData.teamMemberId||null;
     const stableSnap=await fb.getDoc(fb.doc(fb.db,'stables',stableId));
-    if(!stableSnap.exists()){
-      toast('La cuadra ya no existe');reset();return;
-    }
-    const stableData=stableSnap.data();
+    if(!stableSnap.exists()){toast('La cuadra ya no existe');reset();return;}
+    const stableData=stableSnap.data()||{};
     if((stableData.memberIds||[]).includes(user.uid)){
       toast('Ya eres miembro de esta cuadra');reset();
       await window._fbSwitchStable(stableId);return;
     }
-    const memberName=(window._FBPROFILE||{}).name||user.displayName||user.email||'';
-    await fb.updateDoc(fb.doc(fb.db,'stables',stableId),{
-      memberIds:fb.arrayUnion(user.uid),
-      ['members.'+user.uid]:{name:memberName,email:user.email||'',role:'miembro',teamMemberId:linkedTeamMemberId||null,joined:new Date().toISOString()}
-    });
-
-    // Si el código de invitación estaba vinculado a una persona del equipo,
-    // conectamos ese perfil de equipo con el usuario autenticado que acaba de entrar.
-    if(linkedTeamMemberId){
-      try{
-        const mainRef=fb.doc(fb.db,'stables',stableId,'data','main');
-        const mainSnap=await fb.getDoc(mainRef);
-        if(mainSnap.exists()){
-          const mainData=mainSnap.data()||{};
-          const team=(mainData.team||[]).map(m=>m.id===linkedTeamMemberId?{
-            ...m,
-            uid:user.uid,
-            userId:user.uid,
-            authUid:user.uid,
-            email:user.email||m.email||'',
-            linkedAt:new Date().toISOString()
-          }:m);
-          await fb.setDoc(mainRef,{...mainData,team},{merge:false});
-        }
-      }catch(linkErr){
-        console.warn('No se pudo vincular el miembro de equipo, pero el usuario sí entró:',linkErr);
-      }
-    }
-
-    if(input)input.value='';
-    toast(linkedTeamMemberId?'Te has unido y quedas vinculado a tu perfil de equipo':'Te has unido a '+stableData.name+'!');
-    await window._fbSwitchStable(stableId);
+    const mainSnap=await fb.getDoc(fb.doc(fb.db,'stables',stableId,'data','main'));
+    const mainData=mainSnap.exists()?(mainSnap.data()||{}):{};
+    const team=(mainData.team||[]);
+    _pendingJoin={code,codeData,stableId,stableData,team};
+    reset();
+    showJoinTeamModal(_pendingJoin);
   }catch(e){
     console.error('joinByCode:',e);
     toast('Error: '+e.message);reset();
   }
 }
 
+function showJoinTeamModal(ctx){
+  const modal=document.getElementById('join-team-modal');
+  const title=document.getElementById('join-team-title');
+  const sub=document.getElementById('join-team-sub');
+  const list=document.getElementById('join-team-list');
+  if(!modal||!list)return;
+  const team=(ctx.team||[]);
+  if(title)title.textContent='¿Qué integrante del equipo eres?';
+  if(sub)sub.textContent='Vas a unirte a '+(ctx.stableData.name||'esta cuadra')+'. Elige tu mote o perfil para que tus tareas queden vinculadas a tu usuario.';
+  if(!team.length){
+    list.innerHTML=`<div class="em" style="padding:1rem .4rem"><p>Esta cuadra todavía no tiene equipo creado. Puedes unirte sin vincular perfil.</p></div>`;
+  }else{
+    list.innerHTML=team.map(m=>{
+      const linked=!!(m.uid||m.userId||m.authUid);
+      return `<button class="mc" ${linked?'disabled':''} onclick="confirmJoinAs('${m.id}')" style="width:100%;${linked?'opacity:.5;cursor:not-allowed':''}">
+        <div class="av">${m.photo?`<img src="${m.photo}" alt="">`:(m.emoji||'👤')}</div>
+        <div style="flex:1;text-align:left;min-width:0">
+          <div style="font-weight:700;font-size:.94rem;color:var(--ti)">${esc(m.name||'Sin nombre')}</div>
+          <div style="font-size:.75rem;color:var(--gr)">${esc(m.role||'Integrante del equipo')}</div>
+          ${linked?`<span class="ap ov">Ya vinculado</span>`:`<span class="ap ok">Seleccionar este perfil</span>`}
+        </div>
+        <span style="color:var(--v);font-size:1.15rem">→</span>
+      </button>`;
+    }).join('');
+  }
+  modal.style.display='block';
+}
+function closeJoinTeamModal(){
+  const modal=document.getElementById('join-team-modal');
+  if(modal)modal.style.display='none';
+  _pendingJoin=null;
+}
 
+async function confirmJoinAs(teamMemberId){
+  const fb=getFB();
+  const user=window._FBUSER;
+  const ctx=_pendingJoin;
+  if(!fb||!user||!ctx){toast('No hay invitación pendiente');return;}
+  const memberName=(window._FBPROFILE||{}).name||user.displayName||user.email||'';
+  const selected=teamMemberId?(ctx.team||[]).find(m=>m.id===teamMemberId):null;
+  try{
+    await fb.updateDoc(fb.doc(fb.db,'stables',ctx.stableId),{
+      memberIds:fb.arrayUnion(user.uid),
+      ['members.'+user.uid]:{
+        name:memberName,
+        email:user.email||'',
+        role:'miembro',
+        teamMemberId:teamMemberId||null,
+        teamName:selected?(selected.name||''):null,
+        joined:new Date().toISOString()
+      }
+    });
+    if(teamMemberId){
+      const mainRef=fb.doc(fb.db,'stables',ctx.stableId,'data','main');
+      const mainSnap=await fb.getDoc(mainRef);
+      const mainData=mainSnap.exists()?(mainSnap.data()||{}):{};
+      const team=(mainData.team||[]).map(m=>m.id===teamMemberId?{
+        ...m,
+        uid:user.uid,
+        userId:user.uid,
+        authUid:user.uid,
+        email:user.email||m.email||'',
+        linkedName:memberName,
+        linkedAt:new Date().toISOString()
+      }:m);
+      await fb.setDoc(mainRef,{...mainData,team},{merge:false});
+    }
+    const input=document.getElementById('invite-code-input');
+    if(input)input.value='';
+    closeJoinTeamModal();
+    toast(teamMemberId?'Te has unido como '+(selected?selected.name:'integrante'):'Te has unido a la cuadra');
+    await window._fbSwitchStable(ctx.stableId);
+  }catch(e){
+    console.error('confirmJoinAs:',e);
+    toast('Error al unirte: '+e.message);
+  }
+}
+
+
+function currentStableMember(){
+  const stable=window._ACTIVE_STABLE;
+  const user=window._FBUSER;
+  return stable&&user&&stable.members?stable.members[user.uid]:null;
+}
 function canManageStable(stable,user){
   if(!stable||!user)return false;
   const member=stable.members&&stable.members[user.uid];
   return stable.ownerId===user.uid || (member&&member.role==='admin');
+}
+function isStableAdmin(){
+  return canManageStable(window._ACTIVE_STABLE, window._FBUSER);
+}
+function myTeamMemberId(){
+  const user=window._FBUSER;
+  if(!user)return null;
+  const member=currentStableMember();
+  if(member&&member.teamMemberId)return member.teamMemberId;
+  const tm=(D.team||[]).find(m=>m.uid===user.uid||m.userId===user.uid||m.authUid===user.uid);
+  return tm?tm.id:null;
+}
+function requireAdminView(){
+  if(isStableAdmin())return false;
+  return `<div class="view"><div class="vh"><button class="ib" onclick="V={name:'list'};render()">←</button><h1>Acceso limitado</h1></div><div class="em"><div class="big">🔒</div><p>Tu usuario está vinculado como integrante del equipo. Puedes ver los caballos y tus tareas asignadas, pero la gestión de cuadra queda reservada al administrador.</p></div></div>`;
+}
+function applyNavPermissions(){
+  const admin=isStableAdmin();
+  ['nb-team','nb-cuadra','nb-stats'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=admin?'flex':'none';});
+  const alerts=document.getElementById('nb-alerts');if(alerts)alerts.style.display='flex';
+}
+function visibleTasksForUser(tasks){
+  if(isStableAdmin())return tasks;
+  const mid=myTeamMemberId();
+  return (tasks||[]).filter(t=>mid&&t.pid===mid);
+}
+function visibleAlertsForUser(alerts){
+  if(isStableAdmin())return alerts;
+  const mid=myTeamMemberId();
+  return (alerts||[]).filter(a=>mid&&a.pid===mid);
 }
 
 function openStablePanel(){
@@ -908,10 +1012,14 @@ function cDue(){
 }
 
 function render(){
+  applyNavPermissions();
   const app=document.getElementById("app");
   const fab=document.getElementById("fab");
   fab.style.display="none";fab.onclick=null;
-  const nm=V.name;
+  let nm=V.name;
+  if(!isStableAdmin() && ['team','addMember','editMember','teamReport','templates','editTemplate','cuadra','newCT','newCE','stats','addHorse','editHorse','newHealth','newExpense','report'].includes(nm)){
+    nm='list'; V={name:'list'};
+  }
   document.getElementById("nb-horses").classList.toggle("active",["list","addHorse","editHorse","horse","newTraining","newHealth","newExpense","report"].includes(nm));
   document.getElementById("nb-day").classList.toggle("active",["day","newTask","editTask"].includes(nm));
   document.getElementById("nb-team").classList.toggle("active",["team","addMember","editMember","memberDay","teamReport","templates","editTemplate"].includes(nm));
@@ -935,19 +1043,19 @@ function render(){
     app.innerHTML=`<div class="em"><p style="color:var(--ro)">Error: ${esc(err.message)}</p></div>`;
     console.error(err);
   }
-  if(nm==="list"){fab.style.display="flex";fab.onclick=()=>{V={name:"addHorse"};render()}}
-  if(nm==="day"){fab.style.display="flex";fab.onclick=()=>{V={name:"newTask",dd:V.dd||td()};render()}}
-  if(nm==="team"){fab.style.display="flex";fab.onclick=()=>{V={name:"addMember"};render()}}
-  if(nm==="cuadra"&&V.tab==="tareas"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCT"};render()}}
-  if(nm==="cuadra"&&V.tab==="gastos"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCE"};render()}}
-  if(nm==="templates"){fab.style.display="flex";fab.onclick=()=>{V={name:"editTemplate",tplid:null};render()}}
+  if(isStableAdmin()&&nm==="list"){fab.style.display="flex";fab.onclick=()=>{V={name:"addHorse"};render()}}
+  if(isStableAdmin()&&nm==="day"){fab.style.display="flex";fab.onclick=()=>{V={name:"newTask",dd:V.dd||td()};render()}}
+  if(isStableAdmin()&&nm==="team"){fab.style.display="flex";fab.onclick=()=>{V={name:"addMember"};render()}}
+  if(isStableAdmin()&&nm==="cuadra"&&V.tab==="tareas"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCT"};render()}}
+  if(isStableAdmin()&&nm==="cuadra"&&V.tab==="gastos"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCE"};render()}}
+  if(isStableAdmin()&&nm==="templates"){fab.style.display="flex";fab.onclick=()=>{V={name:"editTemplate",tplid:null};render()}}
   attach();
 }
 
 function rList(){
   const q=(V.search||"").toLowerCase();
   const hs=D.horses.filter(h=>h.name.toLowerCase().includes(q));
-  const sa=sanA();const ss=sesA();const ov=sa.filter(a=>a.ov).length;
+  const sa=isStableAdmin()?sanA():[];const ss=visibleAlertsForUser(sesA());const ov=sa.filter(a=>a.ov).length;
   let h=`<div class="view"><div class="vh"><div><span class="ey">EquiLog</span><h1>Caballos</h1></div></div>`;
   if(sa.length||ss.length){
     const io=ov>0||ss.length>0;
@@ -982,6 +1090,7 @@ function rList(){
 }
 
 function rHF(horse){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const ed=!!horse;
   return`<div class="view">
     <div class="vh"><button class="ib" onclick="${ed?`V={name:'horse',hid:'${horse.id}',tab:'entrenos'};render()`:"V={name:'list'};render()"}">←</button><h1>${ed?"Editar caballo":"Nuevo caballo"}</h1></div>
@@ -1057,7 +1166,9 @@ function delHorse(id){
 
 function rHorse(id){
   const h=D.horses.find(x=>x.id===id);if(!h)return`<div class="view"><p>No encontrado.</p></div>`;
-  const tab=V.tab||"entrenos";
+  const admin=isStableAdmin();
+  let tab=V.tab||"entrenos";
+  if(!admin && tab!=="entrenos")tab="entrenos";
   const tr=D.trainings.filter(t=>t.hid===id).sort((a,b)=>a.date<b.date?1:-1);
   const he=D.health.filter(r=>r.hid===id).sort((a,b)=>a.date<b.date?1:-1);
   const ex=D.expenses.filter(e=>e.hid===id).sort((a,b)=>a.date<b.date?1:-1);
@@ -1068,7 +1179,7 @@ function rHorse(id){
 
   let html=`<div class="view">
     <div class="vh"><button class="ib" onclick="V={name:'list'};render()">←</button><h1>${esc(h.name)}</h1>
-      <div class="vhr"><button class="ib" onclick="V={name:'editHorse',hid:'${h.id}'};render()">✏️</button><button class="ib" onclick="V={name:'report',hid:'${h.id}'};render()">📄</button></div>
+      <div class="vhr">${admin?`<button class="ib" onclick="V={name:'editHorse',hid:'${h.id}'};render()">✏️</button><button class="ib" onclick="V={name:'report',hid:'${h.id}'};render()">📄</button>`:''}</div>
     </div>
     <div class="hh"><div class="pl">${h.photo?`<img src="${h.photo}" alt="">`:"🐴"}</div>
       <div style="min-width:0">
@@ -1085,14 +1196,14 @@ function rHorse(id){
     </div>
     <div class="tabs">
       <button class="tab ${tab==="entrenos"?"active":""}" onclick="V.tab='entrenos';render()">Entrenos</button>
-      <button class="tab ${tab==="salud"?"active":""}" onclick="V.tab='salud';render()">Salud</button>
+      ${admin?`<button class="tab ${tab==="salud"?"active":""}" onclick="V.tab='salud';render()">Salud</button>
       <button class="tab ${tab==="gastos"?"active":""}" onclick="V.tab='gastos';render()">Gastos</button>
-      <button class="tab ${tab==="venta"?"active":""}" onclick="V.tab='venta';render()">Venta</button>
+      <button class="tab ${tab==="venta"?"active":""}" onclick="V.tab='venta';render()">Venta</button>`:''}
     </div>`;
 
   if(tab==="entrenos"){
     html+=`<div class="sg sg3"><div class="st"><div class="v">${tr.length}</div><div class="l">Sesiones</div></div><div class="st"><div class="v">${avgR}</div><div class="l">Val. media</div></div><div class="st"><div class="v">${totMin}</div><div class="l">Min.</div></div></div>
-    <div class="r2" style="margin-bottom:1rem"><button class="btn bts" onclick="V={name:'newTraining',hid:'${h.id}'};render()">+ Entreno</button><button class="btn" onclick="V={name:'report',hid:'${h.id}'};render()">📄 Informe</button></div>`;
+    ${admin?`<div class="r2" style="margin-bottom:1rem"><button class="btn bts" onclick="V={name:'newTraining',hid:'${h.id}'};render()">+ Entreno</button><button class="btn" onclick="V={name:'report',hid:'${h.id}'};render()">📄 Informe</button></div>`:''}`;
     if(!tr.length){html+=`<div class="em"><p>Sin entrenamientos todavía.</p></div>`;}
     else tr.forEach(t=>{
       const w=wf(t.wtype);
@@ -1303,6 +1414,7 @@ function rNT(hid){
 }
 
 function rNH(hid,eid){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const h=D.horses.find(x=>x.id===hid);const r=eid?D.health.find(x=>x.id===eid):null;const ed=!!r;
   let tH="";HK.forEach((ht,i)=>{const a=r?r.type===ht.id:i===0;tH+=`<div class="oo ${a?"active":""}" onclick="so(this,'og-ht','h-type','${ht.id}')"><span class="ic">${ht.i}</span>${ht.l}</div>`;});
   return`<div class="view">
@@ -1336,6 +1448,7 @@ function rNH(hid,eid){
 }
 
 function rNE(hid,eid){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const h=D.horses.find(x=>x.id===hid);const e=eid?D.expenses.find(x=>x.id===eid):null;const ed=!!e;
   let cH="";EK.forEach((c,i)=>{const a=e?e.cat===c.id:i===0;cH+=`<div class="oo ${a?"active":""}" onclick="so(this,'og-ec','e-cat','${c.id}');updDir('${c.d}')"><span class="ic">${c.i}</span>${c.l}</div>`;});
   let sH="";[{id:"pendiente",l:"Pendiente"},{id:"pagado",l:"Pagado"},{id:"parcial",l:"Parcial"}].forEach((s,i)=>{const a=e?e.status===s.id:i===0;sH+=`<div class="oo ${a?"active":""}" onclick="so(this,'og-es','e-status','${s.id}')">${s.l}</div>`;});
@@ -1382,6 +1495,7 @@ function updDir(dir){
 
 function defRng(){const e=td();const d=new Date();d.setDate(d.getDate()-30);return{s:d.toISOString().slice(0,10),e}}
 function rRep(hid){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const h=D.horses.find(x=>x.id===hid);if(!h)return`<div class="view"><p>No encontrado.</p></div>`;
   const rng=V.rng||defRng();
   const cnt=D.trainings.filter(t=>t.hid===hid&&t.date>=rng.s&&t.date<=rng.e).length;
@@ -1440,6 +1554,7 @@ function expPDF(){
 /* Part 5: cuadra, alerts, answer session, stats */
 
 function rCuadra(){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const tab=V.tab||"tareas";
   const due=cDue();
   const cEx=D.cexpenses.sort((a,b)=>a.date<b.date?1:-1);
@@ -1571,7 +1686,7 @@ function rNCE(eid){
 
 /* ============ ALERTAS ============ */
 function rAlerts(){
-  const sa=sanA();const ss=sesA();
+  const sa=isStableAdmin()?sanA():[];const ss=visibleAlertsForUser(sesA());
   const ov=sa.filter(a=>a.ov);const soon=sa.filter(a=>!a.ov);
   let html=`<div class="view"><div class="vh"><div><span class="ey">EquiLog</span><h1>Alertas</h1></div></div>`;
   if(!sa.length&&!ss.length){
@@ -1630,6 +1745,7 @@ function rAns(aid){
 
 /* ============ STATS ============ */
 function rStats(){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const fH=V.sfh||"";const fO=(V.sfo||"");const fS=V.sfs||"";const fE=V.sfe||"";
   const tab=V.stab||"financiero";
   const horses=D.horses.filter(h=>!fH||h.id===fH);
@@ -1898,7 +2014,7 @@ function voice(tid,btn){const SR=window.SpeechRecognition||window.webkitSpeechRe
 /* Part 4: day, task, team, member, team report, templates */
 
 function rDay(ds){
-  const tasks=tfD(ds).sort((a,b)=>(a.time||"99:99")>(b.time||"99:99")?1:-1);
+  const tasks=visibleTasksForUser(tfD(ds)).sort((a,b)=>(a.time||"99:99")>(b.time||"99:99")?1:-1);
   const p=prog(ds);const isT=ds===td();const prev=addD(ds,-1);const next=addD(ds,1);
   let html=`<div class="view">
     <div class="vh">
@@ -1959,6 +2075,7 @@ function cycleTask(id){
 }
 
 function rNTask(task){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const ed=!!task;const ds=V.dd||td();
   let hO="<option value=''>Caballo...</option>";
   D.horses.forEach(h=>{hO+=`<option value="${h.id}" ${task&&task.hid===h.id?"selected":""}>${esc(h.name)}</option>`;});
@@ -1985,6 +2102,7 @@ function rNTask(task){
 }
 
 function rTeam(){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const tt=tfD(td());
   return`<div class="view">
     <div class="vh"><div><span class="ey">Equipo</span><h1>Mi equipo</h1></div>
@@ -2004,6 +2122,7 @@ function rTeam(){
 }
 
 function rMF(m){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const ed=!!m;
   let eH=`<div class="pch">`;EM.forEach(e=>{eH+=`<div class="pc ${m&&m.emoji===e?"active":""}" onclick="sEmoji(this,'${e}')" style="font-size:1.2rem;padding:.3rem .5rem">${e}</div>`;});eH+=`</div>`;
   return`<div class="view">
@@ -2048,6 +2167,7 @@ function rMD(mid,ds){
 }
 
 function rTR(){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const rng=V.rng||defRng();
   let rtH="";[{id:"diario",l:"Diario",i:"📅"},{id:"semanal",l:"Semanal",i:"📆"},{id:"finde",l:"Fin de semana",i:"🌅"}].forEach((r,i)=>{rtH+=`<div class="oo ${i===0?"active":""}" onclick="so(this,'og-rt','rep-type','${r.id}')"><span class="ic">${r.i}</span>${r.l}</div>`;});
   return`<div class="view">
@@ -2091,6 +2211,7 @@ async function genTR(){
 }
 
 function rTpls(){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const ds=V.dd||td();
   return`<div class="view">
     <div class="vh"><button class="ib" onclick="V={name:'day',dd:'${ds}'};render()">←</button><h1>Plantillas</h1></div>
@@ -2110,6 +2231,7 @@ function applyTpl(id,ds){
   save();V={name:"day",dd:ds};render();toast(`"${tpl.name}" aplicada`);
 }
 function rETpl(tid){
+  const blocked=requireAdminView(); if(blocked)return blocked;
   const tpl=tid?D.templates.find(t=>t.id===tid):null;
   if(!V._tt)V._tt=tpl?[...tpl.tasks]:[];
   let hO="<option value=''>Caballo...</option>";D.horses.forEach(h=>{hO+=`<option value="${h.id}">${esc(h.name)}</option>`;});

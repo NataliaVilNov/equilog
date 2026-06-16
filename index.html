@@ -610,39 +610,48 @@ async function doCreateStable(){
     await setDoc(doc(fb.db,'stables',stableRef.id,'data','main'),{
       horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[]
     });
+    // Guardar lookup público del código de invitación
+    await setDoc(doc(fb.db,'inviteCodes',invCode),{stableId:stableRef.id,name});
     document.getElementById('create-stable-modal').style.display='none';
     await window._fbSwitchStable(stableRef.id);
   }catch(e){err.textContent='Error: '+e.message;err.style.display='block';}
 }
 
 async function joinByCode(){
-  const fb=getFB();const user=window._FBUSER;if(!fb||!user)return;
+  const fb=getFB();const user=window._FBUSER;if(!fb||!user){toast('Debes iniciar sesion primero');return;}
   const input=document.getElementById('invite-code-input');
   const code=(input.value||'').trim().toUpperCase();
-  if(!code){toast('Introduce un código');return;}
+  if(!code){toast('Introduce un codigo');return;}
   const btn=document.querySelector('[onclick="joinByCode()"]');
   if(btn){btn.textContent='Buscando...';btn.disabled=true;}
-  const {collection,query,where,getDocs,doc,updateDoc,arrayUnion}=fb;
+  const {doc,getDoc,updateDoc,arrayUnion}=fb;
   try{
-    const q=query(collection(fb.db,'stables'),where('inviteCode','==',code));
-    const snap=await getDocs(q);
-    if(snap.empty){
-      toast('Código no válido — comprueba que está bien escrito');
+    // Buscar el codigo en la coleccion inviteCodes (lectura directa, sin query)
+    const codeRef=doc(fb.db,'inviteCodes',code);
+    const codeSnap=await getDoc(codeRef);
+    if(!codeSnap.exists()){
+      toast('Codigo no valido - comprueba que esta bien escrito');
       if(btn){btn.textContent='Unirse';btn.disabled=false;}
       return;
     }
-    const stableDoc=snap.docs[0];
-    const stableData=stableDoc.data();
-    // Check if already a member
+    const {stableId}=codeSnap.data();
+    const stableRef=doc(fb.db,'stables',stableId);
+    const stableSnap=await getDoc(stableRef);
+    if(!stableSnap.exists()){
+      toast('La cuadra ya no existe');
+      if(btn){btn.textContent='Unirse';btn.disabled=false;}
+      return;
+    }
+    const stableData=stableSnap.data();
     if(stableData.memberIds&&stableData.memberIds.includes(user.uid)){
       toast('Ya eres miembro de esta cuadra');
       if(btn){btn.textContent='Unirse';btn.disabled=false;}
-      await window._fbSwitchStable(stableDoc.id);
+      await window._fbSwitchStable(stableId);
       return;
     }
     const profile=window._FBPROFILE||{};
     const memberName=profile.name||user.displayName||user.email||'';
-    await updateDoc(doc(fb.db,'stables',stableDoc.id),{
+    await updateDoc(stableRef,{
       memberIds:arrayUnion(user.uid),
       ['members.'+user.uid]:{
         name:memberName,
@@ -651,9 +660,9 @@ async function joinByCode(){
         joined:new Date().toISOString()
       }
     });
-    toast('✓ ¡Te has unido a '+stableData.name+'!');
+    toast('Te has unido a '+stableData.name+'!');
     if(input)input.value='';
-    await window._fbSwitchStable(stableDoc.id);
+    await window._fbSwitchStable(stableId);
   }catch(e){
     console.error('joinByCode error:',e);
     toast('Error al unirse: '+e.message);

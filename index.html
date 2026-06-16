@@ -1048,7 +1048,7 @@ function render(){
   const fab=document.getElementById("fab");
   fab.style.display="none";fab.onclick=null;
   let nm=V.name;
-  if(!isStableAdmin() && ['team','addMember','editMember','teamReport','templates','editTemplate','cuadra','newCT','newCE','stats','addHorse','editHorse','newHealth','newExpense','report'].includes(nm)){
+  if(!isStableAdmin() && ['team','addMember','editMember','teamReport','templates','editTemplate','cuadra','newCT','newCE','stats','newHealth','report'].includes(nm)){
     nm='list'; V={name:'list'};
   }
   document.getElementById("nb-horses").classList.toggle("active",["list","addHorse","editHorse","horse","newTraining","newHealth","newExpense","report"].includes(nm));
@@ -1074,8 +1074,8 @@ function render(){
     app.innerHTML=`<div class="em"><p style="color:var(--ro)">Error: ${esc(err.message)}</p></div>`;
     console.error(err);
   }
-  if(isStableAdmin()&&nm==="list"){fab.style.display="flex";fab.onclick=()=>{V={name:"addHorse"};render()}}
-  if(isStableAdmin()&&nm==="day"){fab.style.display="flex";fab.onclick=()=>{V={name:"newTask",dd:V.dd||td()};render()}}
+  if(nm==="list"){fab.style.display="flex";fab.onclick=()=>{V={name:"addHorse"};render()}}
+  if(nm==="day"){fab.style.display="flex";fab.onclick=()=>{V={name:"newTask",dd:V.dd||td()};render()}}
   if(isStableAdmin()&&nm==="team"){fab.style.display="flex";fab.onclick=()=>{V={name:"addMember"};render()}}
   if(isStableAdmin()&&nm==="cuadra"&&V.tab==="tareas"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCT"};render()}}
   if(isStableAdmin()&&nm==="cuadra"&&V.tab==="gastos"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCE"};render()}}
@@ -1121,7 +1121,7 @@ function rList(){
 }
 
 function rHF(horse){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const admin=isStableAdmin();
   const ed=!!horse;
   return`<div class="view">
     <div class="vh"><button class="ib" onclick="${ed?`V={name:'horse',hid:'${horse.id}',tab:'entrenos'};render()`:"V={name:'list'};render()"}">←</button><h1>${ed?"Editar caballo":"Nuevo caballo"}</h1></div>
@@ -1179,7 +1179,7 @@ function rHF(horse){
     <div class="f"><label>Notas</label><textarea id="h-notes">${esc(horse?horse.notes:"")}</textarea></div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-horse-btn">${ed?"Guardar cambios":"Añadir caballo"}</button>
-      ${ed?`<button type="button" class="btn btr btbl" onclick="delHorse('${horse.id}')">Eliminar caballo</button>`:""}
+      ${ed&&admin?`<button type="button" class="btn btr btbl" onclick="delHorse('${horse.id}')">Eliminar caballo</button>`:""}
     </div>
   </div>`;
 }
@@ -1199,7 +1199,7 @@ function rHorse(id){
   const h=D.horses.find(x=>x.id===id);if(!h)return`<div class="view"><p>No encontrado.</p></div>`;
   const admin=isStableAdmin();
   let tab=V.tab||"entrenos";
-  if(!admin && tab!=="entrenos")tab="entrenos";
+  if(!admin && ["salud","venta"].includes(tab))tab="entrenos";
   const tr=D.trainings.filter(t=>t.hid===id).sort((a,b)=>a.date<b.date?1:-1);
   const he=D.health.filter(r=>r.hid===id).sort((a,b)=>a.date<b.date?1:-1);
   const ex=D.expenses.filter(e=>e.hid===id).sort((a,b)=>a.date<b.date?1:-1);
@@ -1210,7 +1210,7 @@ function rHorse(id){
 
   let html=`<div class="view">
     <div class="vh"><button class="ib" onclick="V={name:'list'};render()">←</button><h1>${esc(h.name)}</h1>
-      <div class="vhr">${admin?`<button class="ib" onclick="V={name:'editHorse',hid:'${h.id}'};render()">✏️</button><button class="ib" onclick="V={name:'report',hid:'${h.id}'};render()">📄</button>`:''}</div>
+      <div class="vhr"><button class="ib" onclick="V={name:'editHorse',hid:'${h.id}'};render()">✏️</button>${admin?`<button class="ib" onclick="V={name:'report',hid:'${h.id}'};render()">📄</button>`:''}</div>
     </div>
     <div class="hh"><div class="pl">${h.photo?`<img src="${h.photo}" alt="">`:"🐴"}</div>
       <div style="min-width:0">
@@ -1227,21 +1227,21 @@ function rHorse(id){
     </div>
     <div class="tabs">
       <button class="tab ${tab==="entrenos"?"active":""}" onclick="V.tab='entrenos';render()">Entrenos</button>
-      ${admin?`<button class="tab ${tab==="salud"?"active":""}" onclick="V.tab='salud';render()">Salud</button>
+      ${admin?`<button class="tab ${tab==="salud"?"active":""}" onclick="V.tab='salud';render()">Salud</button>`:''}
       <button class="tab ${tab==="gastos"?"active":""}" onclick="V.tab='gastos';render()">Gastos</button>
-      <button class="tab ${tab==="venta"?"active":""}" onclick="V.tab='venta';render()">Venta</button>`:''}
+      ${admin?`<button class="tab ${tab==="venta"?"active":""}" onclick="V.tab='venta';render()">Venta</button>`:''}
     </div>`;
 
   if(tab==="entrenos"){
     html+=`<div class="sg sg3"><div class="st"><div class="v">${tr.length}</div><div class="l">Sesiones</div></div><div class="st"><div class="v">${avgR}</div><div class="l">Val. media</div></div><div class="st"><div class="v">${totMin}</div><div class="l">Min.</div></div></div>
-    ${admin?`<div class="r2" style="margin-bottom:1rem"><button class="btn bts" onclick="V={name:'newTraining',hid:'${h.id}'};render()">+ Entreno</button><button class="btn" onclick="V={name:'report',hid:'${h.id}'};render()">📄 Informe</button></div>`:''}`;
+    <div class="r2" style="margin-bottom:1rem"><button class="btn bts" onclick="V={name:'newTraining',hid:'${h.id}'};render()">+ Entreno</button>${admin?`<button class="btn" onclick="V={name:'report',hid:'${h.id}'};render()">📄 Informe</button>`:''}</div>`;
     if(!tr.length){html+=`<div class="em"><p>Sin entrenamientos todavía.</p></div>`;}
     else tr.forEach(t=>{
       const w=wf(t.wtype);
       html+=`<div class="tc"><div class="tc-top"><div>
         <span class="tc-ti">${w.i} ${esc(w.l)}</span><span class="tc-dt"> · ${fD(t.date)}</span><span class="br">${t.rating}/10</span>
         <div class="tc-su">${t.dur} min</div></div>
-        <button class="db" onclick="if(confirm('¿Eliminar?')){D.trainings=D.trainings.filter(x=>x.id!=='${t.id}');save();render()}">✕</button></div>
+        ${admin?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.trainings=D.trainings.filter(x=>x.id!=='${t.id}');save();render()}">✕</button>`:""}</div>
         ${t.state?`<div class="tc-de"><b>Estado:</b> ${esc(t.state)}</div>`:""}
         ${t.feel?`<div class="tc-de"><b>Sensaciones:</b> ${esc(t.feel)}</div>`:""}
         ${t.notes?`<div class="tc-de"><b>Obs:</b> ${esc(t.notes)}</div>`:""}
@@ -1276,7 +1276,7 @@ function rHorse(id){
           <div class="pd">${isIn?"←":"→"} ${esc(e.payer||"?")} → ${esc(e.payee||"?")}</div>
           <div style="margin-top:.18rem"><span class="sb s-${e.status}">${cap(e.status)}</span></div>
         </div>
-        <div class="ca"><button class="ib" onclick="V={name:'newExpense',hid:'${h.id}',eid:'${e.id}'};render()">✏️</button><button class="db" onclick="if(confirm('¿Eliminar?')){D.expenses=D.expenses.filter(x=>x.id!=='${e.id}');save();V.tab='gastos';render()}">✕</button></div>
+        <div class="ca"><button class="ib" onclick="V={name:'newExpense',hid:'${h.id}',eid:'${e.id}'};render()">✏️</button>${admin?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.expenses=D.expenses.filter(x=>x.id!=='${e.id}');save();V.tab='gastos';render()}">✕</button>`:""}</div>
       </div>`;
     });
   }
@@ -1479,7 +1479,7 @@ function rNH(hid,eid){
 }
 
 function rNE(hid,eid){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const admin=isStableAdmin();
   const h=D.horses.find(x=>x.id===hid);const e=eid?D.expenses.find(x=>x.id===eid):null;const ed=!!e;
   let cH="";EK.forEach((c,i)=>{const a=e?e.cat===c.id:i===0;cH+=`<div class="oo ${a?"active":""}" onclick="so(this,'og-ec','e-cat','${c.id}');updDir('${c.d}')"><span class="ic">${c.i}</span>${c.l}</div>`;});
   let sH="";[{id:"pendiente",l:"Pendiente"},{id:"pagado",l:"Pagado"},{id:"parcial",l:"Parcial"}].forEach((s,i)=>{const a=e?e.status===s.id:i===0;sH+=`<div class="oo ${a?"active":""}" onclick="so(this,'og-es','e-status','${s.id}')">${s.l}</div>`;});
@@ -1512,7 +1512,7 @@ function rNE(hid,eid){
     <div class="f"><label>Notas</label><textarea id="e-notes">${esc(e?e.notes:"")}</textarea></div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-expense-btn">${ed?"Guardar cambios":"Añadir gasto"}</button>
-      ${ed?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.expenses=D.expenses.filter(x=>x.id!=='${e.id}');save();V={name:'horse',hid:'${hid}',tab:'gastos'};render()}">Eliminar</button>`:""}
+      ${ed&&admin?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.expenses=D.expenses.filter(x=>x.id!=='${e.id}');save();V={name:'horse',hid:'${hid}',tab:'gastos'};render()}">Eliminar</button>`:""}
     </div>
   </div>`;
 }
@@ -2086,7 +2086,7 @@ function tcard(t){
     </div>
     <div style="display:flex;gap:.25rem">
       <button class="ib" style="width:27px;height:27px;font-size:.72rem" onclick="V={name:'editTask',tid:'${t.id}',dd:'${t.date}'};render()">✏️</button>
-      <button class="db" onclick="if(confirm('¿Eliminar?')){D.tasks=D.tasks.filter(x=>x.id!=='${t.id}');D.salerts=D.salerts.filter(s=>s.tid!=='${t.id}');save();render()}">✕</button>
+      ${isStableAdmin()?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.tasks=D.tasks.filter(x=>x.id!=='${t.id}');D.salerts=D.salerts.filter(s=>s.tid!=='${t.id}');save();render()}">✕</button>`:""}
     </div>
   </div>`;
 }
@@ -2106,14 +2106,21 @@ function cycleTask(id){
 }
 
 function rNTask(task){
-  const blocked=requireAdminView(); if(blocked)return blocked;
+  const admin=isStableAdmin();
   const ed=!!task;const ds=V.dd||td();
   let hO="<option value=''>Caballo...</option>";
   D.horses.forEach(h=>{hO+=`<option value="${h.id}" ${task&&task.hid===h.id?"selected":""}>${esc(h.name)}</option>`;});
   let aH="";AK.forEach(a=>{const ac=task?task.activity===a.id:a.id==="monta";aH+=`<div class="oo ${ac?"active":""}" onclick="so(this,'og-act','task-act','${a.id}')"><span class="ic">${a.i}</span>${a.l}</div>`;});
-  let pH=`<div class="pch"><div class="pc ${!task||!task.pid?"active":""}" onclick="sp(this,'task-p','')">Sin asignar</div>`;
-  D.team.forEach(m=>{pH+=`<div class="pc ${task&&task.pid===m.id?"active":""}" onclick="sp(this,'task-p','${m.id}')">${m.emoji||"👤"} ${esc(m.name)}</div>`;});
-  pH+=`</div>`;
+  let pH="";
+  if(admin){
+    pH=`<div class="pch"><div class="pc ${!task||!task.pid?"active":""}" onclick="sp(this,'task-p','')">Sin asignar</div>`;
+    D.team.forEach(m=>{pH+=`<div class="pc ${task&&task.pid===m.id?"active":""}" onclick="sp(this,'task-p','${m.id}')">${m.emoji||"👤"} ${esc(m.name)}</div>`;});
+    pH+=`</div>`;
+  }else{
+    const mid=myTeamMemberId();
+    const me=D.team.find(m=>m.id===mid);
+    pH=`<div class="card" style="padding:.65rem;margin-bottom:0"><div style="font-size:.82rem;color:var(--gr)">Asignada a: <b>${me?esc(me.name):'mi usuario'}</b></div></div>`;
+  }
   return`<div class="view">
     <div class="vh"><button class="ib" onclick="V={name:'day',dd:'${ds}'};render()">←</button><h1>${ed?"Editar":"Nueva"} tarea</h1></div>
     <div class="f"><label>Caballo *</label><select id="task-h">${hO}</select></div>
@@ -2123,11 +2130,11 @@ function rNTask(task){
       <div class="f"><label>Hora</label><input type="time" id="task-t" value="${task?task.time||"":""}"></div>
     </div>
     <div class="f"><label>Duración estimada</label><div class="slrow"><input type="range" id="task-dur" min="5" max="180" step="5" value="${task?task.dur:30}" oninput="document.getElementById('task-dv').textContent=this.value+' min'"><span class="slv" id="task-dv">${task?task.dur:30} min</span></div></div>
-    <div class="f"><label>Persona responsable</label>${pH}<input type="hidden" id="task-p" value="${task?task.pid||"":""}"></div>
+    <div class="f"><label>Persona responsable</label>${pH}<input type="hidden" id="task-p" value="${admin?(task?task.pid||"":""):(task?task.pid||myTeamMemberId()||"":myTeamMemberId()||"")}"></div>
     <div class="f"><label>Notas</label><input id="task-n" value="${esc(task?task.notes:"")}" placeholder="Detalles opcionales..."></div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-task-btn">${ed?"Guardar":"Añadir tarea"}</button>
-      ${ed?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.tasks=D.tasks.filter(x=>x.id!=='${task.id}');D.salerts=D.salerts.filter(s=>s.tid!=='${task.id}');save();V={name:'day',dd:'${task.date}'};render()}">Eliminar tarea</button>`:""}
+      ${ed&&admin?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.tasks=D.tasks.filter(x=>x.id!=='${task.id}');D.salerts=D.salerts.filter(s=>s.tid!=='${task.id}');save();V={name:'day',dd:'${task.date}'};render()}">Eliminar tarea</button>`:""}
     </div>
   </div>`;
 }
@@ -2394,7 +2401,7 @@ function attach(){
   };}
   const stb=document.getElementById('save-training-btn');
   if(stb){stb.onclick=()=>{
-    const t={id:uid(),hid:V.hid,date:gv('t-date')||td(),dur:Number(gv('t-dur'))||45,wtype:gv('t-wt')||'doma',state:gv('t-state').trim(),feel:gv('t-feel').trim(),notes:gv('t-notes').trim(),rating:Number(gv('t-rt'))||7};
+    const t={id:uid(),createdBy:(window._FBUSER&&window._FBUSER.uid)||null,hid:V.hid,date:gv('t-date')||td(),dur:Number(gv('t-dur'))||45,wtype:gv('t-wt')||'doma',state:gv('t-state').trim(),feel:gv('t-feel').trim(),notes:gv('t-notes').trim(),rating:Number(gv('t-rt'))||7};
     D.trainings.push(t);save();V={name:'horse',hid:V.hid,tab:'entrenos'};render();toast('Entrenamiento guardado');
   };}
   const shh=document.getElementById('save-health-btn');
@@ -2426,7 +2433,7 @@ function attach(){
   if(stkb){stkb.onclick=()=>{
     const hid=gv('task-h');if(!hid){toast('Selecciona un caballo');return;}
     const ed=V.name==='editTask';const id=ed?V.tid:uid();
-    const task={id,hid,activity:gv('task-act')||'monta',date:gv('task-d')||V.dd||td(),time:gv('task-t')||null,dur:Number(gv('task-dur'))||30,pid:gv('task-p')||null,notes:gv('task-n').trim(),status:ed?(D.tasks.find(t=>t.id===id)?.status||'pending'):'pending'};
+    const task={id,createdBy:(window._FBUSER&&window._FBUSER.uid)||null,hid,activity:gv('task-act')||'monta',date:gv('task-d')||V.dd||td(),time:gv('task-t')||null,dur:Number(gv('task-dur'))||30,pid:gv('task-p')||null,notes:gv('task-n').trim(),status:ed?(D.tasks.find(t=>t.id===id)?.status||'pending'):'pending'};
     if(ed){D.tasks=D.tasks.map(t=>t.id===id?task:t);}else{D.tasks.push(task);}
     save();V={name:'day',dd:task.date};render();toast(ed?'Actualizada':'Tarea añadida');
   };}
@@ -2470,7 +2477,7 @@ function attach(){
     const concept=gv('e-concept').trim();if(!concept){toast('Concepto obligatorio');return;}
     const ed=!!V.eid;const id=ed?V.eid:uid();
     const ePayerSel=document.getElementById('e-payer-sel');const ePayer=ePayerSel?(ePayerSel.value||gv('e-payer').trim()):(gv('e-payer').trim());
-    const exp={id,hid:V.hid,concept,amount:Number(gv('e-amount'))||0,date:gv('e-date')||td(),cat:gv('e-cat')||'servicio',payer:ePayer,payee:gv('e-payee').trim(),status:gv('e-status')||'pendiente',notes:gv('e-notes').trim()};
+    const exp={id,createdBy:(window._FBUSER&&window._FBUSER.uid)||null,hid:V.hid,concept,amount:Number(gv('e-amount'))||0,date:gv('e-date')||td(),cat:gv('e-cat')||'servicio',payer:ePayer,payee:gv('e-payee').trim(),status:gv('e-status')||'pendiente',notes:gv('e-notes').trim()};
     if(ed){D.expenses=D.expenses.map(e=>e.id===id?exp:e);}else{D.expenses.push(exp);}
     save();V={name:'horse',hid:V.hid,tab:'gastos'};render();toast(ed?'Actualizado':'Gasto añadido');
   };}

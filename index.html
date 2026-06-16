@@ -655,18 +655,49 @@ async function joinByCode(){
     if(!codeSnap.exists()){toast('Código no válido');reset();return;}
     const codeData=codeSnap.data()||{};
     const stableId=codeData.stableId;
-    const stableSnap=await fb.getDoc(fb.doc(fb.db,'stables',stableId));
+    if(!stableId){toast('Código sin cuadra asociada');reset();return;}
+
+    const stableRef=fb.doc(fb.db,'stables',stableId);
+    const stableSnap=await fb.getDoc(stableRef);
     if(!stableSnap.exists()){toast('La cuadra ya no existe');reset();return;}
     const stableData=stableSnap.data()||{};
-    if((stableData.memberIds||[]).includes(user.uid)){
-      toast('Ya eres miembro de esta cuadra');reset();
-      await window._fbSwitchStable(stableId);return;
+    const memberName=(window._FBPROFILE||{}).name||user.displayName||user.email||'';
+
+    // Primero unimos al usuario a la cuadra. NO intentamos leer data/main antes,
+    // porque las reglas solo permiten leer /data/main a miembros de la cuadra.
+    if(!((stableData.memberIds||[]).includes(user.uid))){
+      await fb.updateDoc(stableRef,{
+        memberIds:fb.arrayUnion(user.uid),
+        ['members.'+user.uid]:{
+          name:memberName,
+          email:user.email||'',
+          role:'miembro',
+          teamMemberId:codeData.teamMemberId||null,
+          teamName:codeData.teamMemberName||null,
+          joined:new Date().toISOString()
+        }
+      });
     }
-    const mainSnap=await fb.getDoc(fb.doc(fb.db,'stables',stableId,'data','main'));
+
+    // Ahora ya somos miembros, por lo que podemos leer y escribir data/main.
+    const mainRef=fb.doc(fb.db,'stables',stableId,'data','main');
+    const mainSnap=await fb.getDoc(mainRef);
     const mainData=mainSnap.exists()?(mainSnap.data()||{}):{};
     const team=(mainData.team||[]);
-    _pendingJoin={code,codeData,stableId,stableData,team};
+
+    if(input)input.value='';
     reset();
+
+    // Si el código era directo a una persona concreta, vinculamos automáticamente.
+    if(codeData.teamMemberId){
+      await linkUserToTeamMember(stableId, codeData.teamMemberId, codeData.teamMemberName||'', memberName);
+      toast('Te has unido como '+(codeData.teamMemberName||'integrante'));
+      await window._fbSwitchStable(stableId);
+      return;
+    }
+
+    // Si es un código general, dejamos elegir el mote/perfil.
+    _pendingJoin={code,codeData,stableId,stableData,team,alreadyJoined:true};
     showJoinTeamModal(_pendingJoin);
   }catch(e){
     console.error('joinByCode:',e);
@@ -682,9 +713,9 @@ function showJoinTeamModal(ctx){
   if(!modal||!list)return;
   const team=(ctx.team||[]);
   if(title)title.textContent='¿Qué integrante del equipo eres?';
-  if(sub)sub.textContent='Vas a unirte a '+(ctx.stableData.name||'esta cuadra')+'. Elige tu mote o perfil para que tus tareas queden vinculadas a tu usuario.';
+  if(sub)sub.textContent='Ya tienes acceso a '+(ctx.stableData.name||'esta cuadra')+'. Elige tu mote o perfil para que tus tareas queden vinculadas a tu usuario.';
   if(!team.length){
-    list.innerHTML=`<div class="em" style="padding:1rem .4rem"><p>Esta cuadra todavía no tiene equipo creado. Puedes unirte sin vincular perfil.</p></div>`;
+    list.innerHTML=`<div class="em" style="padding:1rem .4rem"><p>Esta cuadra todavía no tiene equipo creado. Puedes entrar sin vincular perfil.</p></div>`;
   }else{
     list.innerHTML=team.map(m=>{
       const linked=!!(m.uid||m.userId||m.authUid);
@@ -693,18 +724,43 @@ function showJoinTeamModal(ctx){
         <div style="flex:1;text-align:left;min-width:0">
           <div style="font-weight:700;font-size:.94rem;color:var(--ti)">${esc(m.name||'Sin nombre')}</div>
           <div style="font-size:.75rem;color:var(--gr)">${esc(m.role||'Integrante del equipo')}</div>
-          ${linked?`<span class="ap ov">Ya vinculado</span>`:`<span class="ap ok">Seleccionar este perfil</span>`}
+          ${linked?`<span class="ap ov">Ya vinculado</span>`:`<span class="ap ok">Soy este integrante</span>`}
         </div>
         <span style="color:var(--v);font-size:1.15rem">→</span>
       </button>`;
     }).join('');
   }
+  list.innerHTML += `<button class="btn btg btbl" style="margin-top:.75rem" onclick="confirmJoinAs(null)">Entrar sin vincular perfil</button>`;
   modal.style.display='block';
 }
 function closeJoinTeamModal(){
   const modal=document.getElementById('join-team-modal');
   if(modal)modal.style.display='none';
   _pendingJoin=null;
+}
+
+async function linkUserToTeamMember(stableId, teamMemberId, fallbackTeamName, memberName){
+  const fb=getFB();
+  const user=window._FBUSER;
+  if(!fb||!user||!stableId||!teamMemberId)return;
+  const mainRef=fb.doc(fb.db,'stables',stableId,'data','main');
+  const mainSnap=await fb.getDoc(mainRef);
+  const mainData=mainSnap.exists()?(mainSnap.data()||{}):{};
+  const team=(mainData.team||[]).map(m=>m.id===teamMemberId?{
+    ...m,
+    uid:user.uid,
+    userId:user.uid,
+    authUid:user.uid,
+    email:user.email||m.email||'',
+    linkedName:memberName,
+    linkedAt:new Date().toISOString()
+  }:m);
+  await fb.setDoc(mainRef,{...mainData,team},{merge:false});
+  const selected=(mainData.team||[]).find(m=>m.id===teamMemberId);
+  await fb.updateDoc(fb.doc(fb.db,'stables',stableId),{
+    ['members.'+user.uid+'.teamMemberId']:teamMemberId,
+    ['members.'+user.uid+'.teamName']:(selected&&selected.name)||fallbackTeamName||''
+  });
 }
 
 async function confirmJoinAs(teamMemberId){
@@ -715,40 +771,15 @@ async function confirmJoinAs(teamMemberId){
   const memberName=(window._FBPROFILE||{}).name||user.displayName||user.email||'';
   const selected=teamMemberId?(ctx.team||[]).find(m=>m.id===teamMemberId):null;
   try{
-    await fb.updateDoc(fb.doc(fb.db,'stables',ctx.stableId),{
-      memberIds:fb.arrayUnion(user.uid),
-      ['members.'+user.uid]:{
-        name:memberName,
-        email:user.email||'',
-        role:'miembro',
-        teamMemberId:teamMemberId||null,
-        teamName:selected?(selected.name||''):null,
-        joined:new Date().toISOString()
-      }
-    });
     if(teamMemberId){
-      const mainRef=fb.doc(fb.db,'stables',ctx.stableId,'data','main');
-      const mainSnap=await fb.getDoc(mainRef);
-      const mainData=mainSnap.exists()?(mainSnap.data()||{}):{};
-      const team=(mainData.team||[]).map(m=>m.id===teamMemberId?{
-        ...m,
-        uid:user.uid,
-        userId:user.uid,
-        authUid:user.uid,
-        email:user.email||m.email||'',
-        linkedName:memberName,
-        linkedAt:new Date().toISOString()
-      }:m);
-      await fb.setDoc(mainRef,{...mainData,team},{merge:false});
+      await linkUserToTeamMember(ctx.stableId, teamMemberId, selected?(selected.name||''):'', memberName);
     }
-    const input=document.getElementById('invite-code-input');
-    if(input)input.value='';
     closeJoinTeamModal();
     toast(teamMemberId?'Te has unido como '+(selected?selected.name:'integrante'):'Te has unido a la cuadra');
     await window._fbSwitchStable(ctx.stableId);
   }catch(e){
     console.error('confirmJoinAs:',e);
-    toast('Error al unirte: '+e.message);
+    toast('Error al vincularte: '+e.message);
   }
 }
 

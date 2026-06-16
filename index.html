@@ -163,7 +163,7 @@ input[type=file]{display:none}.em{text-align:center;color:var(--gr);padding:2rem
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, arrayUnion, arrayRemove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, arrayUnion, arrayRemove, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCf1ljX8ow5y2R9L1WhEH4_ifpqbl09d5U",
@@ -179,7 +179,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 
 // Expose globals for the rest of the app (non-module scripts)
-window._FB = { auth, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, arrayUnion, arrayRemove };
+window._FB = { auth, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, arrayUnion, arrayRemove, deleteField };
 
 // Auth state listener — arranges the app
 onAuthStateChanged(auth, async (user) => {
@@ -658,6 +658,12 @@ async function joinByCode(){
 }
 
 
+function canManageStable(stable,user){
+  if(!stable||!user)return false;
+  const member=stable.members&&stable.members[user.uid];
+  return stable.ownerId===user.uid || (member&&member.role==='admin');
+}
+
 function openStablePanel(){
   const panel=document.getElementById('stable-panel');
   const list=document.getElementById('stable-panel-list');
@@ -666,6 +672,7 @@ function openStablePanel(){
   const user=window._FBUSER;
   if(!stable||!user)return;
   const members=Object.entries(stable.members||{});
+  const canManage=canManageStable(stable,user);
   list.innerHTML=`
     <div style="background:var(--vl);border-radius:12px;padding:.85rem;margin-bottom:.75rem">
       <div style="font-weight:700;font-size:.95rem;color:var(--vd)">${esc(stable.name)}</div>
@@ -673,7 +680,11 @@ function openStablePanel(){
       <div style="font-size:.72rem;color:var(--v);font-weight:700;margin-top:.35rem">${members.length} miembro${members.length!==1?'s':''}</div>
       ${members.map(([uid,m])=>`<div style="font-size:.78rem;color:#5C544A;margin-top:.25rem">${uid===user.uid?'<b>':''}${esc(m.name||m.email||'')}${uid===user.uid?' (tú)':''} — ${m.role||'miembro'}${uid===user.uid?'</b>':''}</div>`).join('')}
     </div>
-    <button class="btn btbl btg" onclick="closeStablePanel();window._fbShowStableSelector()" style="margin-bottom:.4rem;width:100%">← Cambiar de cuadra</button>`;
+    <button class="btn btbl btg" onclick="closeStablePanel();window._fbShowStableSelector()" style="margin-bottom:.4rem;width:100%">← Cambiar de cuadra</button>
+    ${canManage?`<button class="btn btr btbl" onclick="deleteStable()" style="margin-bottom:.4rem;width:100%">🗑️ Eliminar cuadra</button>`:`<button class="btn btr btbl" onclick="leaveStable()" style="margin-bottom:.4rem;width:100%">🚪 Abandonar cuadra</button>`}
+    <p style="font-size:.7rem;color:var(--gr);line-height:1.45;margin-top:.35rem">
+      ${canManage?'Eliminar borra la cuadra actual y sus datos principales.':'Abandonar te quitará el acceso a esta cuadra, pero no borrará sus datos.'}
+    </p>`;
   panel.style.display='flex';
 }
 function closeStablePanel(){ document.getElementById('stable-panel').style.display='none'; }
@@ -686,6 +697,77 @@ async function copyInviteCode(){
     toast('Código copiado: '+stable.inviteCode);
   }catch(e){
     toast('Código: '+stable.inviteCode);
+  }
+}
+
+async function goAfterStableExit(){
+  const fb=getFB();const user=window._FBUSER;
+  if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
+  window._ACTIVE_STABLE_ID=null;
+  window._ACTIVE_STABLE=null;
+  D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[]};
+  if(fb&&user){
+    try{await fb.setDoc(fb.doc(fb.db,'users',user.uid),{lastStable:null},{merge:true});}catch(e){}
+  }
+  closeStablePanel();
+  await window._fbShowStableSelector();
+}
+
+async function deleteStable(){
+  const fb=getFB();const user=window._FBUSER;const stable=window._ACTIVE_STABLE;
+  if(!fb||!user||!stable)return;
+  if(!canManageStable(stable,user)){toast('No tienes permiso para eliminar esta cuadra');return;}
+  const msg=`¿Eliminar definitivamente la cuadra "${stable.name}"?
+
+Se borrará la cuadra activa y sus datos principales. Esta acción no se puede deshacer.`;
+  if(!confirm(msg))return;
+  try{
+    showScreen('loading');
+    // Firestore no borra subcolecciones automáticamente. Aquí borramos el documento principal de datos usado por la app.
+    // IMPORTANTE: borramos primero data/main y la cuadra. El código de invitación se intenta borrar después y no debe bloquear.
+    await fb.deleteDoc(fb.doc(fb.db,'stables',stable.id,'data','main'));
+    await fb.deleteDoc(fb.doc(fb.db,'stables',stable.id));
+
+    // El código de invitación puede quedar bloqueado por reglas si no eres owner puro o si ya no existe la cuadra.
+    // No debe impedir la eliminación de la cuadra.
+    if(stable.inviteCode){
+      try{
+        await fb.deleteDoc(fb.doc(fb.db,'inviteCodes',stable.inviteCode));
+      }catch(invErr){
+        console.warn('No se pudo borrar inviteCode, pero la cuadra sí se eliminó:',invErr);
+      }
+    }
+
+    toast('Cuadra eliminada');
+    await goAfterStableExit();
+  }catch(e){
+    console.error('deleteStable:',e);
+    toast('Error al eliminar: '+e.message);
+    showScreen('app');
+  }
+}
+
+async function leaveStable(){
+  const fb=getFB();const user=window._FBUSER;const stable=window._ACTIVE_STABLE;
+  if(!fb||!user||!stable)return;
+  if(stable.ownerId===user.uid){toast('El propietario no puede abandonar: debe eliminar la cuadra');return;}
+  const members=stable.memberIds||[];
+  if(members.length<=1){toast('Eres el único miembro. Elimina la cuadra.');return;}
+  if(!confirm(`¿Abandonar la cuadra "${stable.name}"?
+
+Perderás el acceso a sus caballos, tareas y datos.`))return;
+  try{
+    showScreen('loading');
+    await fb.updateDoc(fb.doc(fb.db,'stables',stable.id),{
+      memberIds:fb.arrayRemove(user.uid),
+      ['members.'+user.uid]:fb.deleteField()
+    });
+    toast('Has abandonado la cuadra');
+    await goAfterStableExit();
+  }catch(e){
+    console.error('leaveStable:',e);
+    toast('Error al abandonar: '+e.message);
+    showScreen('app');
   }
 }
 

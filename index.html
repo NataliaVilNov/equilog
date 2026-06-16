@@ -505,7 +505,7 @@ function openUserPanel(){
 }
 function closeUserPanel(){ document.getElementById('user-panel').style.display='none'; }
 
-function resizeProfileImageFile(file, maxSize=360, quality=0.72){
+function resizeProfileImageFile(file, maxSize=160, quality=0.58){
   return new Promise((resolve,reject)=>{
     if(!file)return resolve('');
     if(!file.type || !file.type.startsWith('image/'))return reject(new Error('El archivo no es una imagen'));
@@ -524,9 +524,17 @@ function resizeProfileImageFile(file, maxSize=360, quality=0.72){
         const ctx=canvas.getContext('2d');
         ctx.drawImage(img,0,0,w,h);
         let out=canvas.toDataURL('image/jpeg',quality);
-        // Firestore tiene límite por documento. Si aún pesa mucho, lo bajamos más.
-        if(out.length>220000) out=canvas.toDataURL('image/jpeg',0.55);
-        if(out.length>300000) return reject(new Error('La foto sigue siendo demasiado pesada. Prueba con otra imagen más pequeña.'));
+        // Para evitar bloqueos de Firestore, la foto de perfil se guarda como miniatura muy ligera.
+        if(out.length>70000) out=canvas.toDataURL('image/jpeg',0.42);
+        if(out.length>70000){
+          const canvas2=document.createElement('canvas');
+          const scale2=Math.min(1, 96/Math.max(w,h));
+          canvas2.width=Math.max(1, Math.round(w*scale2));
+          canvas2.height=Math.max(1, Math.round(h*scale2));
+          canvas2.getContext('2d').drawImage(img,0,0,canvas2.width,canvas2.height);
+          out=canvas2.toDataURL('image/jpeg',0.38);
+        }
+        if(out.length>95000) return reject(new Error('La foto sigue siendo demasiado pesada. Prueba con otra imagen más pequeña.'));
         resolve(out);
       };
       img.src=reader.result;
@@ -541,7 +549,7 @@ async function previewUserProfilePhoto(event){
   if(!f)return;
   try{
     toast('Preparando foto...');
-    const dataUrl=await resizeProfileImageFile(f,360,0.72);
+    const dataUrl=await resizeProfileImageFile(f,160,0.58);
     input.dataset.value=dataUrl;
     const prev=document.getElementById('profile-photo-preview');
     if(prev)prev.innerHTML=`<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
@@ -580,14 +588,27 @@ async function saveUserProfile(){
   });
   try{
     await fb.updateProfile(user,{displayName:name});
-    await fb.setDoc(fb.doc(fb.db,'users',user.uid),payload,{merge:true});
+    try{
+      await fb.setDoc(fb.doc(fb.db,'users',user.uid),payload,{merge:true});
+    }catch(photoErr){
+      // Si Firestore rechaza el guardado por tamaño de la foto, guardamos el perfil sin bloquear al usuario.
+      if(photo){
+        const fallback={...payload, photo:''};
+        await fb.setDoc(fb.doc(fb.db,'users',user.uid),fallback,{merge:true});
+        payload.photo='';
+        photo='';
+        toast('Perfil guardado sin foto. La imagen pesaba demasiado.');
+      }else{
+        throw photoErr;
+      }
+    }
     window._FBPROFILE={...current,...payload};
 
-    // Sincroniza el nombre/foto del usuario vinculado dentro del equipo, sin tocar el mote del integrante.
+    // Sincroniza el nombre/contacto del usuario vinculado dentro del equipo, sin tocar el mote del integrante.
+    // No copiamos la foto al documento de la cuadra para evitar que data/main crezca demasiado.
     const linked=D.team&&D.team.find(m=>m.uid===user.uid||m.userId===user.uid||m.authUid===user.uid);
     if(linked){
       linked.userName=name;
-      linked.userPhoto=photo;
       linked.userPhone=phone;
       save();
     }
@@ -597,20 +618,20 @@ async function saveUserProfile(){
       const sid=window._ACTIVE_STABLE_ID;
       if(sid){
         await fb.updateDoc(fb.doc(fb.db,'stables',sid),{
-          ['members.'+user.uid+'.name']:name,
-          ['members.'+user.uid+'.photo']:photo||null
+          ['members.'+user.uid+'.name']:name
         });
         if(window._ACTIVE_STABLE&&window._ACTIVE_STABLE.members&&window._ACTIVE_STABLE.members[user.uid]){
           window._ACTIVE_STABLE.members[user.uid].name=name;
-          window._ACTIVE_STABLE.members[user.uid].photo=photo||null;
         }
       }
     }catch(_e){}
 
     const header=document.getElementById('header-user-name');
     if(header)header.textContent=name.split(' ')[0];
+    closeUserPanel();
+    V={name:'list'};
+    render();
     toast('Perfil actualizado');
-    openUserPanel();
   }catch(e){
     toast('Error al guardar perfil: '+e.message);
   }
@@ -1417,7 +1438,10 @@ function rHF(horse){
           <input id="h-horsetelex" value="${esc(horse?horse.horsetelex:"")}" placeholder="https://www.horsetelex.com/horses/..." style="flex:1" oninput="document.getElementById('ht-import-btn').style.display=this.value.includes('horsetelex')?'inline-flex':'none'">
           ${horse&&horse.horsetelex?`<a href="${esc(horse.horsetelex)}" target="_blank" rel="noopener" class="btn btsm" style="flex-shrink:0;white-space:nowrap">Ver →</a>`:`<a href="https://www.horsetelex.com" target="_blank" rel="noopener" class="btn btg btsm" style="flex-shrink:0;white-space:nowrap">Buscar</a>`}
         </div>
-        <button type="button" id="ht-import-btn" class="btn btsm" style="margin-top:.5rem;display:${horse&&horse.horsetelex?"inline-flex":"none"}" onclick="importHorsetelex()">🔄 Importar pedigree automáticamente</button>
+        <div style="display:flex;gap:.45rem;flex-wrap:wrap;margin-top:.5rem">
+          <button type="button" id="ht-import-btn" class="btn btsm" style="display:${horse&&horse.horsetelex?"inline-flex":"none"}" onclick="importHorsetelex()">🔄 Importar pedigree</button>
+          <button type="button" id="ht-paste-btn" class="btn btg btsm" onclick="manualHorsetelexPaste()">🧬 Pegar texto/HTML</button>
+        </div>
         <div id="ht-status" style="font-size:.75rem;color:var(--gr);margin-top:.3rem;display:none"></div>
       </div>
     </div>
@@ -2204,90 +2228,166 @@ function rStats(){
 /* ============ IMPORTAR PEDIGREE DESDE HORSETELEX ============ */
 async function importHorsetelex(){
   const url=gv('h-horsetelex').trim();
-  if(!url||!url.includes('horsetelex')){toast('Pega primero el enlace de Horsetelex');return;}
+  if(!url||!url.toLowerCase().includes('horsetelex')){toast('Pega primero el enlace de Horsetelex');return;}
   const statusEl=document.getElementById('ht-status');
   const btn=document.getElementById('ht-import-btn');
-  statusEl.style.display='block';statusEl.textContent='🔄 Leyendo pedigree...';
-  btn.disabled=true;
+  if(statusEl){statusEl.style.display='block';statusEl.textContent='🔄 Conectando con Horsetelex...';statusEl.style.color='var(--gr)';}
+  if(btn)btn.disabled=true;
   try{
-    // Usar proxy CORS para evitar bloqueo del navegador
-    const proxyUrl='https://corsproxy.io/?'+encodeURIComponent(url);
-    const res=await fetch(proxyUrl);
-    if(!res.ok)throw new Error('No se pudo acceder a la página');
-    const html=await res.text();
-    const parser=new DOMParser();
-    const doc=parser.parseFromString(html,'text/html');
-
-    // Horsetelex muestra el pedigree en una tabla con clase "pedigree" o similar
-    // Intentamos múltiples selectores por si cambian el HTML
-    const ped=extractHorsetelex(doc);
-
-    if(!ped.sire&&!ped.dam){
-      statusEl.textContent='⚠️ No se pudo extraer el pedigree. Comprueba que el enlace lleva a la ficha de un caballo concreto.';
-      statusEl.style.color='var(--am)';
+    const html=await fetchHorsetelexHtml(url, statusEl);
+    const ped=extractHorsetelexFromHtml(html);
+    const ok=applyPedigree(ped);
+    if(ok){
+      if(statusEl){statusEl.innerHTML='✅ Pedigree importado. Revisa los campos y pulsa <b>Guardar caballo</b>.';statusEl.style.color='var(--v)';}
+      toast('Pedigree importado');
     }else{
-      if(ped.sire)document.getElementById('h-sire').value=ped.sire;
-      if(ped.dam)document.getElementById('h-dam').value=ped.dam;
-      if(ped.gsire)document.getElementById('h-gsire').value=ped.gsire;
-      if(ped.gdam)document.getElementById('h-gdam').value=ped.gdam;
-      if(ped.mgsire)document.getElementById('h-mgsire').value=ped.mgsire;
-      if(ped.mgdam)document.getElementById('h-mgdam').value=ped.mgdam;
-      if(ped.horseName&&!gv('h-name'))document.getElementById('h-name').value=ped.horseName;
-      statusEl.textContent='✅ Pedigree importado correctamente';
-      statusEl.style.color='var(--v)';
+      if(statusEl){statusEl.innerHTML='⚠️ He leído la página, pero no he podido identificar padre/madre. Usa “Pegar texto/HTML” y pega el bloque de pedigree de Horsetelex.';statusEl.style.color='var(--am)';}
     }
   }catch(e){
-    // Si el proxy falla, dar instrucciones alternativas
-    statusEl.innerHTML='❌ No se pudo conectar con Horsetelex.<br><span style="font-size:.7rem">Horsetelex puede bloquear el acceso automático. Puedes rellenar el pedigree manualmente consultando el enlace.</span>';
-    statusEl.style.color='var(--ro)';
+    if(statusEl){
+      statusEl.innerHTML='❌ No se pudo leer automáticamente el enlace.<br><span style="font-size:.7rem">Horsetelex puede bloquear la lectura desde una web estática de GitHub. Pulsa “Pegar texto/HTML” y pega el pedigree copiado de Horsetelex.</span>';
+      statusEl.style.color='var(--ro)';
+    }
     console.error('Horsetelex import error:',e);
   }
-  btn.disabled=false;
+  if(btn)btn.disabled=false;
 }
 
-function extractHorsetelex(doc){
-  const result={sire:'',dam:'',gsire:'',gdam:'',mgsire:'',mgdam:'',horseName:''};
-
-  // Nombre del caballo (título de la página)
-  const title=doc.querySelector('h1,h2,.horse-name,.title');
-  if(title)result.horseName=title.textContent.trim().split('\n')[0].trim();
-
-  // Horsetelex estructura el pedigree en celdas de tabla
-  // La estructura típica es: caballo | padre | abuelo pat | bisabuelo
-  //                                  | madre | abuelo mat
-  // Buscamos todas las celdas y las mapeamos por posición
-
-  // Intentar con tabla de pedigree
-  const tables=doc.querySelectorAll('table');
-  let pedTable=null;
-  tables.forEach(t=>{
-    const text=t.textContent.toLowerCase();
-    if(text.includes('sire')||text.includes('dam')||text.includes('padre')||text.includes('madre')||t.className.toLowerCase().includes('pedigree')||t.className.toLowerCase().includes('ped')){
-      pedTable=t;
-    }
-  });
-
-  if(pedTable){
-    const cells=Array.from(pedTable.querySelectorAll('td,th')).map(c=>c.textContent.trim()).filter(t=>t&&t.length>1&&!t.match(/^\d+$/));
-    // Filtrar celdas que parecen nombres de caballos (sin números ni palabras clave de interfaz)
-    const horseNames=cells.filter(c=>c.length>2&&c.length<60&&!c.toLowerCase().match(/sire|dam|padre|madre|abuelo|grandsire|granddam|pedigree|year|born|sex|color|breed|country/));
-    if(horseNames.length>=2){result.sire=horseNames[0]||'';result.dam=horseNames[1]||'';}
-    if(horseNames.length>=4){result.gsire=horseNames[2]||'';result.gdam=horseNames[3]||'';}
-    if(horseNames.length>=6){result.mgsire=horseNames[4]||'';result.mgdam=horseNames[5]||'';}
+async function fetchHorsetelexHtml(url,statusEl){
+  const clean=url.replace(/^http:\/\//,'https://');
+  const proxied=[
+    'https://api.allorigins.win/raw?url='+encodeURIComponent(clean),
+    'https://corsproxy.io/?'+encodeURIComponent(clean),
+    'https://api.codetabs.com/v1/proxy?quest='+encodeURIComponent(clean)
+  ];
+  let lastErr=null;
+  for(let i=0;i<proxied.length;i++){
+    try{
+      if(statusEl)statusEl.textContent='🔄 Leyendo Horsetelex... intento '+(i+1)+'/'+proxied.length;
+      const r=await fetch(proxied[i],{cache:'no-store'});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const tx=await r.text();
+      if(!tx||tx.length<400)throw new Error('Respuesta vacía');
+      return tx;
+    }catch(e){lastErr=e;}
   }
+  throw lastErr||new Error('No se pudo conectar');
+}
 
-  // Si no funcionó la tabla, intentar con selectores más específicos
-  if(!result.sire){
-    const links=Array.from(doc.querySelectorAll('a[href*="/horses/"]')).map(a=>a.textContent.trim()).filter(t=>t&&t.length>2&&t.length<60);
-    if(links.length>=1)result.sire=links[0];
-    if(links.length>=2)result.dam=links[1];
-    if(links.length>=3)result.gsire=links[2];
-    if(links.length>=4)result.gdam=links[3];
-    if(links.length>=5)result.mgsire=links[4];
-    if(links.length>=6)result.mgdam=links[5];
+function manualHorsetelexPaste(){
+  const statusEl=document.getElementById('ht-status');
+  const pasted=prompt('Pega aquí el texto o HTML del pedigree de Horsetelex. Puedes seleccionar la zona del pedigree en la web, copiar y pegar aquí.');
+  if(!pasted)return;
+  const ped=extractHorsetelexFromHtml(pasted);
+  const ok=applyPedigree(ped);
+  if(ok){
+    if(statusEl){statusEl.style.display='block';statusEl.innerHTML='✅ Pedigree pegado e importado. Revisa y pulsa <b>Guardar caballo</b>.';statusEl.style.color='var(--v)';}
+    toast('Pedigree importado');
+  }else{
+    if(statusEl){statusEl.style.display='block';statusEl.textContent='⚠️ No he podido reconocer el pedigree en el texto pegado.';statusEl.style.color='var(--am)';}
+  }
+}
+
+function applyPedigree(ped){
+  if(!ped)ped={};
+  let changed=false;
+  const set=(id,val)=>{val=cleanHorseName(val||'');if(val){const el=document.getElementById(id);if(el){el.value=val;changed=true;}}};
+  set('h-sire',ped.sire);
+  set('h-dam',ped.dam);
+  set('h-gsire',ped.gsire);
+  set('h-gdam',ped.gdam);
+  set('h-mgsire',ped.mgsire);
+  set('h-mgdam',ped.mgdam);
+  if(ped.horseName&&!gv('h-name'))set('h-name',ped.horseName);
+  if(ped.breed&&!gv('h-breed'))set('h-breed',ped.breed);
+  if(ped.dob&&!gv('h-dob')){const el=document.getElementById('h-dob');if(el){el.value=ped.dob;changed=true;}}
+  return changed && (!!ped.sire || !!ped.dam || !!ped.gsire || !!ped.mgsire);
+}
+
+function extractHorsetelexFromHtml(html){
+  const result={sire:'',dam:'',gsire:'',gdam:'',mgsire:'',mgdam:'',horseName:'',breed:'',dob:''};
+  const parser=new DOMParser();
+  const doc=parser.parseFromString(String(html||''),'text/html');
+
+  // Nombre del caballo.
+  const titleCandidates=[
+    doc.querySelector('h1'),doc.querySelector('h2'),doc.querySelector('.horse-name'),doc.querySelector('.title'),doc.querySelector('title')
+  ].filter(Boolean).map(x=>x.textContent||'').map(cleanHorseName).filter(Boolean);
+  result.horseName=titleCandidates[0]||'';
+
+  // 1) Intentar detectar datos etiquetados: Sire/Dam/Father/Mother/Padre/Madre.
+  const bodyText=normalizePedText(doc.body?doc.body.innerText:html);
+  const labelMap=[
+    ['sire',/(?:^|\n)\s*(?:sire|father|padre)\s*[:\-]?\s*([^\n]+)/i],
+    ['dam',/(?:^|\n)\s*(?:dam|mother|madre)\s*[:\-]?\s*([^\n]+)/i],
+    ['gsire',/(?:^|\n)\s*(?:sire of sire|father of sire|abuelo paterno|grandsire)\s*[:\-]?\s*([^\n]+)/i],
+    ['mgsire',/(?:^|\n)\s*(?:sire of dam|father of dam|abuelo materno|damsire)\s*[:\-]?\s*([^\n]+)/i]
+  ];
+  labelMap.forEach(([k,re])=>{const m=bodyText.match(re);if(m&&!result[k])result[k]=cleanHorseName(m[1]);});
+
+  // 2) Intentar extraer nombres desde enlaces/celdas de tablas de pedigree.
+  const nodes=[];
+  const pedigreeSelectors='table[class*=ped], table[id*=ped], .pedigree, [class*=pedigree], [id*=pedigree]';
+  const pedRoots=Array.from(doc.querySelectorAll(pedigreeSelectors));
+  const roots=pedRoots.length?pedRoots:[doc.body||doc];
+  roots.forEach(root=>{
+    Array.from(root.querySelectorAll('a[href*="/horses/"], a[href*="horse"], td, th, div, span')).forEach(el=>{
+      const txt=cleanHorseName(el.textContent||'');
+      if(isLikelyHorseName(txt))nodes.push(txt);
+    });
+  });
+  const names=uniqueHorseNames(nodes).filter(n=>!sameHorse(n,result.horseName));
+
+  // Horsetelex suele listar primero el caballo y después ascendientes por columnas/filas.
+  // Probamos varios patrones de orden habituales y elegimos el que tenga padre/madre razonables.
+  const patterns=[];
+  if(names.length>=6){
+    patterns.push({sire:names[0],dam:names[1],gsire:names[2],gdam:names[3],mgsire:names[4],mgdam:names[5]});
+    patterns.push({sire:names[0],gsire:names[1],gdam:names[2],dam:names[3],mgsire:names[4],mgdam:names[5]});
+    patterns.push({sire:names[1],dam:names[2],gsire:names[3],gdam:names[4],mgsire:names[5],mgdam:names[6]||''});
+  }else if(names.length>=2){
+    patterns.push({sire:names[0],dam:names[1],gsire:names[2]||'',gdam:names[3]||'',mgsire:names[4]||'',mgdam:names[5]||''});
+  }
+  const best=patterns.find(p=>p.sire&&p.dam)||patterns[0]||{};
+  ['sire','dam','gsire','gdam','mgsire','mgdam'].forEach(k=>{if(!result[k]&&best[k])result[k]=best[k];});
+
+  // 3) Intentar detectar fecha de nacimiento simple.
+  const dobMatch=bodyText.match(/(?:born|nacido|nacimiento|date of birth)\s*[:\-]?\s*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/i);
+  if(dobMatch){
+    const dd=dobMatch[1].padStart(2,'0'), mm=dobMatch[2].padStart(2,'0'), yy=dobMatch[3];
+    result.dob=`${yy}-${mm}-${dd}`;
   }
 
   return result;
+}
+
+function normalizePedText(txt){
+  return String(txt||'').replace(/\r/g,'\n').replace(/[\t ]+/g,' ').replace(/\n{2,}/g,'\n').trim();
+}
+function cleanHorseName(s){
+  return String(s||'')
+    .replace(/\s+/g,' ')
+    .replace(/^[\s:;\-–—|]+|[\s:;\-–—|]+$/g,'')
+    .replace(/\b(HorseTelex|horsetelex|pedigree|offspring|progeny|details|information)\b/ig,'')
+    .replace(/\([^)]*\b(stallion|mare|gelding|hengst|merrie|ruin|sire|dam)\b[^)]*\)/ig,'')
+    .trim();
+}
+function isLikelyHorseName(s){
+  if(!s||s.length<2||s.length>70)return false;
+  if(/^\d+$/.test(s))return false;
+  if(/@|http|www\.|cookie|login|search|menu|privacy|contact|advert|owner|breeder|born|sex|color|height|studbook|offspring|pedigree|details|information|show more/i.test(s))return false;
+  if((s.match(/\d/g)||[]).length>5)return false;
+  return /[A-Za-zÀ-ÿ]/.test(s);
+}
+function uniqueHorseNames(arr){
+  const out=[];const seen=new Set();
+  arr.forEach(x=>{const c=cleanHorseName(x);const k=c.toLowerCase();if(c&&isLikelyHorseName(c)&&!seen.has(k)){seen.add(k);out.push(c);}});
+  return out;
+}
+function sameHorse(a,b){
+  if(!a||!b)return false;
+  const ca=cleanHorseName(a).toLowerCase(), cb=cleanHorseName(b).toLowerCase();
+  return ca===cb || ca.includes(cb) || cb.includes(ca);
 }
 
 

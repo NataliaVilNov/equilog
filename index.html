@@ -164,6 +164,7 @@ input[type=file]{display:none}.em{text-align:center;color:var(--gr);padding:2rem
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, arrayUnion, arrayRemove, deleteField } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCf1ljX8ow5y2R9L1WhEH4_ifpqbl09d5U",
@@ -177,9 +178,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 // Expose globals for the rest of the app (non-module scripts)
-window._FB = { auth, db, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, arrayUnion, arrayRemove, deleteField };
+window._FB = { auth, db, storage, storageRef, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile, doc, getDoc, setDoc, collection, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, query, where, arrayUnion, arrayRemove, deleteField };
 
 // Auth state listener — arranges the app
 onAuthStateChanged(auth, async (user) => {
@@ -337,9 +339,9 @@ onAuthStateChanged(auth, async (user) => {
 <script>
 /* EquiLog v4 - Part 2: data, utils, render, list, horse form */
 
-const WK=[{id:"doma",l:"Doma",i:"🐎"},{id:"salto",l:"Salto",i:"🏇"},{id:"campo",l:"Campo",i:"🌳"},{id:"longe",l:"Longe",i:"🔄"},{id:"paseo",l:"Paseo",i:"🚶"}];
+const WK=[{id:"doma",l:"Doma",i:"🐎"},{id:"salto",l:"Salto",i:"🏇"},{id:"campo",l:"Campo",i:"🌳"},{id:"longe",l:"Cuerda",i:"🔄"},{id:"paseo",l:"Paseo",i:"🚶"}];
 const HK=[{id:"herraje",l:"Herraje",i:"🔨"},{id:"vacuna",l:"Vacuna",i:"💉"},{id:"despar",l:"Despar.",i:"🧪"},{id:"otro",l:"Otro",i:"📋"}];
-const AK=[{id:"monta",l:"Monta",i:"🐎",r:true},{id:"longe",l:"Longe",i:"🔄",r:true},{id:"trabajo_suave",l:"T.Suave",i:"🌿",r:true},{id:"paddock",l:"Paddock",i:"🟩",r:false},{id:"caminador",l:"Caminador",i:"🔁",r:false},{id:"paseo_mano",l:"Paseo mano",i:"🚶",r:false},{id:"bano",l:"Baño",i:"🚿",r:false},{id:"vet",l:"Veterinario",i:"🩺",r:false},{id:"herrador",l:"Herrador",i:"🔨",r:false},{id:"otro",l:"Otro",i:"📌",r:false}];
+const AK=[{id:"monta",l:"Monta",i:"🐎",r:true},{id:"longe",l:"Longe",i:"🔄",r:true},{id:"trabajo_suave",l:"T.Suave",i:"🌿",r:true},{id:"paddock",l:"Paddock",i:"🟩",r:false},{id:"caminador",l:"Caminador",i:"🔁",r:false},{id:"paseo_mano",l:"Paseo de la mano",i:"🚶",r:false},{id:"bano",l:"Baño",i:"🚿",r:false},{id:"vet",l:"Veterinario",i:"🩺",r:false},{id:"herrador",l:"Herrador",i:"🔨",r:false},{id:"otro",l:"Otro",i:"📌",r:false}];
 const EK=[{id:"vet",l:"Veterinario",i:"🩺",d:"out"},{id:"herrador",l:"Herrador",i:"🔨",d:"out"},{id:"pienso",l:"Pienso",i:"🌾",d:"out"},{id:"nomina",l:"Nómina",i:"💼",d:"out"},{id:"otro_g",l:"Otro gasto",i:"💸",d:"out"},{id:"otro_i",l:"Otro ingreso",i:"💰",d:"in"}];
 const FK=[{id:"diaria",l:"Diaria",i:"📅"},{id:"semanal",l:"Semanal",i:"📆"},{id:"mensual",l:"Mensual",i:"🗓️"},{id:"puntual",l:"Puntual",i:"📌"}];
 const EM=["👩","👨","👩‍🦱","👨‍🦱","👩‍🦰","👩‍🦳","👨‍🦳","🧑","👩‍💼","👨‍💼"];
@@ -715,7 +717,7 @@ window._fbSwitchStable = async function(stableId){
       if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
       window._ACTIVE_STABLE_ID=null;
       window._ACTIVE_STABLE=null;
-      D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
+      D={horses:[],trainings:[],health:[],healthDocs:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
       toast('La cuadra ya no existe o fue eliminada');
       await window._fbShowStableSelector();
       return;
@@ -729,7 +731,7 @@ window._fbSwitchStable = async function(stableId){
       if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
       window._ACTIVE_STABLE_ID=null;
       window._ACTIVE_STABLE=null;
-      D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
+      D={horses:[],trainings:[],health:[],healthDocs:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
       toast('Ya no perteneces a esa cuadra');
       await window._fbShowStableSelector();
       return;
@@ -756,7 +758,7 @@ window._fbSwitchStable = async function(stableId){
     if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
     window._ACTIVE_STABLE_ID=null;
     window._ACTIVE_STABLE=null;
-    D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
+    D={horses:[],trainings:[],health:[],healthDocs:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
     toast('No se pudo abrir esa cuadra. Puedes crear una nueva o unirte con otro código.');
     await window._fbShowStableSelector();
   }
@@ -770,9 +772,9 @@ async function _fbLoadData(){
     if(snap.exists()){
       const d=snap.data();
       D=d;
-      ['horses','trainings','health','expenses','team','tasks','ctasks','cexpenses','salerts','templates','absences'].forEach(k=>{if(!D[k])D[k]=[];});
+      ['horses','trainings','health','healthDocs','expenses','team','tasks','ctasks','cexpenses','salerts','templates','absences'].forEach(k=>{if(!D[k])D[k]=[];});
     } else {
-      D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
+      D={horses:[],trainings:[],health:[],healthDocs:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
     }
   }catch(e){ console.error('Load error',e); }
 }
@@ -786,7 +788,7 @@ function _fbSetupListener(stableId){
     if(snap.exists()&&snap.metadata.hasPendingWrites===false){
       const d=snap.data();
       D=d;
-      ['horses','trainings','health','expenses','team','tasks','ctasks','cexpenses','salerts','templates','absences'].forEach(k=>{if(!D[k])D[k]=[];});
+      ['horses','trainings','health','healthDocs','expenses','team','tasks','ctasks','cexpenses','salerts','templates','absences'].forEach(k=>{if(!D[k])D[k]=[];});
       render();
     }
   });
@@ -1108,7 +1110,7 @@ async function goAfterStableExit(){
   if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
   window._ACTIVE_STABLE_ID=null;
   window._ACTIVE_STABLE=null;
-  D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
+  D={horses:[],trainings:[],health:[],healthDocs:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
   if(fb&&user){
     try{await fb.setDoc(fb.doc(fb.db,'users',user.uid),{lastStable:null},{merge:true});}catch(e){}
   }
@@ -1237,7 +1239,7 @@ function toast(m){const t=document.getElementById("toast");t.textContent=m;t.cla
 
 function load(){
   // Returns current in-memory D (Firebase loads async separately)
-  return {horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
+  return {horses:[],trainings:[],health:[],healthDocs:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
 }
 
 let _saveTimeout=null;
@@ -1301,6 +1303,142 @@ function cDue(){
     if(t.freq==="mensual")return !t.ld||dU(t.ld)<=-28;
     return false;
   });
+}
+
+function healthDocCategoryLabel(cat){
+  const map={precompra:'Informe precompra',veterinario:'Informe veterinario',xrays:'X-rays / Radiografías',analitica:'Analítica / Pruebas',foto:'Fotos lesión',otro:'Otro'};
+  return map[cat]||'Documento';
+}
+function healthDocIcon(d){
+  const name=(d.name||'').toLowerCase(); const type=(d.type||'').toLowerCase(); const cat=(d.category||'').toLowerCase();
+  if(cat==='xrays'||name.includes('xray')||name.includes('rx')||name.includes('radiograf'))return '🩻';
+  if(type.includes('pdf')||name.endsWith('.pdf'))return '📄';
+  if(type.includes('image')||/\.(jpg|jpeg|png|webp|heic)$/i.test(name))return '🖼️';
+  if(name.endsWith('.zip'))return '🗂️';
+  return '📎';
+}
+function fileSizeLabel(n){
+  n=Number(n)||0; if(n<1024)return n+' B'; if(n<1024*1024)return (n/1024).toFixed(1)+' KB'; return (n/1024/1024).toFixed(1)+' MB';
+}
+function safeStorageName(name){
+  return (name||'documento').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9._-]+/g,'_').slice(0,120);
+}
+function healthDocCard(d){
+  const canDel=canPerm('deleteItems')||canPerm('health');
+  const sourceLabel=d.source==='link'?'Enlace externo':'Archivo subido';
+  const meta=[healthDocCategoryLabel(d.category), d.date?fD(d.date):'', sourceLabel, d.size?fileSizeLabel(d.size):''].filter(Boolean).join(' · ');
+  return `<div class="xc" style="align-items:center">
+    <div class="xi otro">${healthDocIcon(d)}</div>
+    <div class="xinf">
+      <div class="xl">${esc(d.title||d.name||'Documento')}</div>
+      <div class="xm">${esc(meta)}</div>
+      ${d.notes?`<div class="xm" style="margin-top:.12rem">${esc(d.notes)}</div>`:''}
+    </div>
+    <div class="ca" style="gap:.25rem">
+      ${d.url?`<a class="btn btsm btaz" href="${esc(d.url)}" target="_blank" rel="noopener">Ver</a>`:''}
+      ${canDel?`<button class="db" onclick="deleteHealthDoc('${d.id}')">✕</button>`:''}
+    </div>
+  </div>`;
+}
+function setHealthDocStatus(hid,msg,isError){
+  const el=document.getElementById('hd-status-'+hid);
+  if(el){
+    el.style.display='block';
+    el.style.color=isError?'var(--ro)':'var(--v)';
+    el.textContent=msg;
+  }
+}
+function uploadFileWithProgress(ref,file,metadata,hid,label){
+  const fb=getFB();
+  return new Promise((resolve,reject)=>{
+    const task=fb.uploadBytesResumable(ref,file,metadata);
+    task.on('state_changed',snap=>{
+      const pct=Math.round((snap.bytesTransferred/snap.totalBytes)*100);
+      setHealthDocStatus(hid,`Subiendo ${label}: ${pct}%`,false);
+    },reject,async()=>{
+      try{ resolve(await fb.getDownloadURL(task.snapshot.ref)); }
+      catch(e){ reject(e); }
+    });
+  });
+}
+function normalizeExternalUrl(url){
+  url=(url||'').trim();
+  if(!url)return '';
+  if(!/^https?:\/\//i.test(url)) url='https://'+url;
+  return url;
+}
+function addHealthDocLink(hid){
+  const url=normalizeExternalUrl(gv('hdl-url-'+hid));
+  if(!url){toast('Pega un enlace');return;}
+  const title=(gv('hdl-title-'+hid).trim()) || 'Documento enlazado';
+  const cat=gv('hdl-cat-'+hid)||'otro';
+  const date=gv('hdl-date-'+hid)||td();
+  const notes=gv('hdl-notes-'+hid).trim();
+  const h=D.horses.find(x=>x.id===hid);
+  const d={id:uid(),hid,horseName:h?h.name:'',category:cat,date,notes,title,name:title,url,source:'link',createdBy:(window._FBUSER?window._FBUSER.uid:null),createdAt:new Date().toISOString()};
+  if(!D.healthDocs)D.healthDocs=[];
+  D.healthDocs.push(d);
+  save();
+  toast('Enlace añadido');
+  V={name:'horse',hid,tab:'salud'};render();
+}
+
+async function uploadHealthDocs(ev,hid){
+  const files=Array.from(ev.target.files||[]); if(!files.length)return;
+  const fb=getFB(); const user=window._FBUSER; const sid=window._ACTIVE_STABLE_ID;
+  if(!fb||!fb.storage||!fb.uploadBytesResumable||!sid||!user){toast('Storage no disponible');setHealthDocStatus(hid,'Storage no disponible o no inicializado.',true);return;}
+  const cat=gv('hd-cat-'+hid)||'otro';
+  const date=gv('hd-date-'+hid)||td();
+  const notes=gv('hd-notes-'+hid).trim();
+  const h=D.horses.find(x=>x.id===hid);
+  const maxMb=25;
+  const tooBig=files.find(f=>(f.size||0)>maxMb*1024*1024);
+  if(tooBig){
+    const msg=`El archivo ${tooBig.name} pesa más de ${maxMb} MB. Sube una versión comprimida o un ZIP más pequeño.`;
+    toast(msg);setHealthDocStatus(hid,msg,true);return;
+  }
+  setHealthDocStatus(hid,'Preparando subida...',false);
+  toast('Subiendo '+files.length+' documento(s)...');
+  try{
+    const added=[];
+    for(let i=0;i<files.length;i++){
+      const file=files[i];
+      const id=uid();
+      const path=`stables/${sid}/horses/${hid}/health_docs/${Date.now()}_${id}_${safeStorageName(file.name)}`;
+      const ref=fb.storageRef(fb.storage,path);
+      const metadata={contentType:file.type||'application/octet-stream',customMetadata:{stableId:sid,horseId:hid,uploadedBy:user.uid,originalName:file.name}};
+      const url=await uploadFileWithProgress(ref,file,metadata,hid,`${i+1}/${files.length}`);
+      added.push({id,hid,horseName:h?h.name:'',category:cat,date,notes,name:file.name,title:file.name,type:file.type||'',size:file.size||0,path,url,createdBy:user.uid,createdAt:new Date().toISOString()});
+    }
+    D.healthDocs.push(...added);
+    save();
+    const fileInput=document.getElementById('hd-file-'+hid); if(fileInput)fileInput.value='';
+    const notesInput=document.getElementById('hd-notes-'+hid); if(notesInput)notesInput.value='';
+    V={name:'horse',hid,tab:'salud'}; render();
+    setTimeout(()=>setHealthDocStatus(hid,`Subida completada: ${added.length} documento(s). Aparecen abajo en Documentos sanitarios.`,false),50);
+    toast('Documento(s) subido(s)');
+  }catch(e){
+    console.error('uploadHealthDocs',e);
+    const code=e.code||'';
+    let msg=e.message||String(e);
+    if(code.includes('storage/unauthorized')) msg='Permisos insuficientes en Firebase Storage. Revisa las reglas de Storage.';
+    if(code.includes('storage/canceled')) msg='Subida cancelada.';
+    if(code.includes('storage/retry-limit-exceeded')) msg='La subida ha tardado demasiado. Prueba con un archivo más pequeño o mejor conexión.';
+    setHealthDocStatus(hid,'Error al subir documento: '+msg,true);
+    toast('Error al subir documento');
+  }
+}
+async function deleteHealthDoc(id){
+  const d=(D.healthDocs||[]).find(x=>x.id===id); if(!d)return;
+  if(!confirm('¿Eliminar este documento sanitario?'))return;
+  const fb=getFB();
+  try{
+    if(fb&&fb.storage&&d.path){
+      try{await fb.deleteObject(fb.storageRef(fb.storage,d.path));}catch(e){console.warn('No se pudo borrar de Storage',e);}
+    }
+    D.healthDocs=D.healthDocs.filter(x=>x.id!==id);
+    save();render();toast('Documento eliminado');
+  }catch(e){toast('Error al eliminar: '+(e.message||e));}
 }
 
 function render(){
@@ -1462,6 +1600,7 @@ function delHorse(id){
   D.horses=D.horses.filter(h=>h.id!==id);
   D.trainings=D.trainings.filter(t=>t.hid!==id);
   D.health=D.health.filter(r=>r.hid!==id);
+  D.healthDocs=(D.healthDocs||[]).filter(r=>r.hid!==id);
   D.expenses=D.expenses.filter(e=>e.hid!==id);
   D.tasks=D.tasks.filter(t=>t.hid!==id);
   save();V={name:"list"};render();toast("Caballo eliminado");
@@ -1528,7 +1667,45 @@ function rHorse(id){
   }
 
   if(tab==="salud"){
-    html+=`<div style="margin-bottom:.8rem">${canHealth?`<button class="btn bts btbl" onclick="V={name:'newHealth',hid:'${h.id}'};render()">+ Añadir registro</button>`:''}</div>`;
+    const hdocs=(D.healthDocs||[]).filter(d=>d.hid===id).sort((a,b)=>(a.date||a.createdAt||'')<(b.date||b.createdAt||'')?1:-1);
+    html+=`<div class="card" style="padding:.85rem;margin-bottom:.9rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:.65rem">
+        <div>
+          <div style="font-size:.72rem;font-weight:800;color:var(--vd);text-transform:uppercase;letter-spacing:.08em">📁 Documentos sanitarios</div>
+          <div style="font-size:.72rem;color:var(--gr);margin-top:.12rem">Informes precompra, veterinario, radiografías, analíticas, fotos o PDFs.</div>
+        </div>
+      </div>
+      ${canHealth?`<div style="display:grid;gap:.75rem;margin-bottom:.8rem">
+        <div style="border:1px solid var(--li);border-radius:11px;padding:.75rem;background:#fff">
+          <div style="font-size:.7rem;font-weight:800;color:var(--vd);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.55rem">🔗 Añadir enlace a documento</div>
+          <div class="r2">
+            <div><label>Tipo documento</label><select id="hdl-cat-${h.id}"><option value="precompra">Informe precompra</option><option value="veterinario">Informe veterinario</option><option value="xrays">X-rays / Radiografías</option><option value="analitica">Analítica / Pruebas</option><option value="foto">Fotos lesión</option><option value="otro">Otro</option></select></div>
+            <div><label>Fecha</label><input type="date" id="hdl-date-${h.id}" value="${td()}"></div>
+          </div>
+          <div class="f" style="margin-top:.55rem"><label>Título</label><input id="hdl-title-${h.id}" placeholder="Ej: Informe precompra, X-rays menudillo..."></div>
+          <div class="f"><label>Enlace</label><input id="hdl-url-${h.id}" placeholder="Pega enlace de Google Drive, iCloud, Dropbox, OneDrive..."></div>
+          <div class="f"><label>Notas</label><input id="hdl-notes-${h.id}" placeholder="Ej: placas precompra, informe veterinario, revisión..."></div>
+          <button type="button" class="btn bts btbl" onclick="addHealthDocLink('${h.id}')">+ Guardar enlace</button>
+          <div style="font-size:.68rem;color:var(--gr);margin-top:.45rem">Para iPhone: comparte el archivo desde Archivos/iCloud/Drive, copia el enlace y pégalo aquí. No usa Firebase Storage.</div>
+        </div>
+        <details style="border:1px solid var(--li);border-radius:11px;padding:.75rem;background:#fff">
+          <summary style="font-size:.7rem;font-weight:800;color:var(--vd);text-transform:uppercase;letter-spacing:.08em;cursor:pointer">📤 Subir archivo a Firebase Storage opcional</summary>
+          <div style="display:grid;gap:.55rem;margin-top:.7rem">
+            <div class="r2">
+              <div><label>Tipo documento</label><select id="hd-cat-${h.id}"><option value="precompra">Informe precompra</option><option value="veterinario">Informe veterinario</option><option value="xrays">X-rays / Radiografías</option><option value="analitica">Analítica / Pruebas</option><option value="foto">Fotos lesión</option><option value="otro">Otro</option></select></div>
+              <div><label>Fecha</label><input type="date" id="hd-date-${h.id}" value="${td()}"></div>
+            </div>
+            <div><label>Notas</label><input id="hd-notes-${h.id}" placeholder="Ej: placas precompra, informe menudillo, revisión veterinaria..."></div>
+            <label class="btn btg btbl" style="margin:0">+ Subir documentos<input type="file" id="hd-file-${h.id}" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.zip,.dcm,image/*,application/pdf" onchange="uploadHealthDocs(event,'${h.id}')" style="display:none"></label>
+            <div style="font-size:.68rem;color:var(--gr)">Esta opción usa Firebase Storage y puede generar coste. Si quieres evitarlo, usa el enlace externo de arriba.</div>
+            <div id="hd-status-${h.id}" style="display:none;font-size:.72rem;font-weight:700;margin-top:.15rem;color:var(--v)"></div>
+          </div>
+        </details>
+      </div>`:''}
+      <div id="hd-list-${h.id}">${hdocs.length?hdocs.map(d=>healthDocCard(d)).join(''):`<div class="em" style="padding:1.1rem .4rem"><p>Sin documentos sanitarios todavía.</p></div>`}</div>
+    </div>`;
+
+    html+=`<div style="margin-bottom:.8rem">${canHealth?`<button class="btn bts btbl" onclick="V={name:'newHealth',hid:'${h.id}'};render()">+ Añadir registro sanitario</button>`:''}</div>`;
     if(!he.length){html+=`<div class="em"><p>Sin registros sanitarios.</p></div>`;}
     else he.forEach(r=>{
       const ht=hf(r.type);let ap="";
@@ -2571,8 +2748,8 @@ function soActivities(seg){
   const add=(id,label,notes)=>{if(!a.some(x=>x.activity===id&&x.label===label))a.push({activity:id,label:label||af(id).l,notes:notes||''});};
   if(t.includes('paddock')||t.includes('padock'))add('paddock','Paddock');
   if(t.includes('caminador'))add('caminador','Caminador');
-  if(t.includes('paseo de la mano')||t.includes('pasear de la mano')||t.includes('mano'))add('paseo_mano','Paseo de la mano');
-  if(t.includes('longe')||t.includes('cuerda'))add('longe','Longe');
+  if(t.includes('paseo de la mano')||t.includes('pasear de la mano')||t.includes('paseo mano')||t.includes('de la mano')||t.includes('mano'))add('paseo_mano','Paseo de la mano');
+  if(t.includes('longe')||t.includes('cuerda')||t.includes('dar cuerda'))add('longe','Cuerda');
   if(t.includes('salto')||t.includes('saltar')||t.includes('saltado')||t.includes('salta'))add('salto','Salto');
   if(t.includes('campo'))add('campo','Campo');
   if(t.includes('doma'))add('doma','Doma');

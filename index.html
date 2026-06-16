@@ -454,6 +454,14 @@ window._fbLoadUserProfile = async function(user){
   }catch(e){ window._FBPROFILE={name:user.displayName||'', email:user.email, stables:[]}; }
 }
 
+function profilePhoto(profile,user){
+  return (profile&&profile.photo) || (profile&&profile.avatar) || (user&&user.photoURL) || '';
+}
+function profileInitial(profile,user){
+  const n=(profile&&profile.name)|| (user&&user.displayName) || (user&&user.email) || '?';
+  return String(n).trim().charAt(0).toUpperCase() || '?';
+}
+
 function openUserPanel(){
   const panel=document.getElementById('user-panel');
   const content=document.getElementById('user-panel-content');
@@ -461,17 +469,32 @@ function openUserPanel(){
   const profile=window._FBPROFILE||{};
   if(!panel||!content||!user)return;
   const stable=window._ACTIVE_STABLE;
-  // Roles display
   const myRole=stable&&stable.members&&stable.members[user.uid]?stable.members[user.uid].role:'miembro';
+  const photo=profilePhoto(profile,user);
   content.innerHTML=`
     <div style="display:flex;align-items:center;gap:.85rem;margin-bottom:1.2rem">
-      <div style="width:52px;height:52px;border-radius:50%;background:var(--vl);display:flex;align-items:center;justify-content:center;font-size:1.5rem;font-weight:700;color:var(--vd)">${(profile.name||user.displayName||'?')[0].toUpperCase()}</div>
-      <div>
+      <div id="profile-photo-preview" style="width:62px;height:62px;border-radius:50%;background:var(--vl);display:flex;align-items:center;justify-content:center;font-size:1.55rem;font-weight:700;color:var(--vd);overflow:hidden;border:2px solid var(--li)">${photo?`<img src="${photo}" style="width:100%;height:100%;object-fit:cover">`:profileInitial(profile,user)}</div>
+      <div style="min-width:0;flex:1">
         <div style="font-weight:700;font-size:1rem">${esc(profile.name||user.displayName||'')}</div>
-        <div style="font-size:.75rem;color:var(--gr)">${esc(user.email)}</div>
+        <div style="font-size:.75rem;color:var(--gr);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(user.email)}</div>
         <div style="font-size:.68rem;color:var(--v);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:.15rem">${myRole}</div>
       </div>
     </div>
+
+    <div class="card" style="margin-bottom:.75rem">
+      <div style="font-size:.7rem;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.65rem">Editar mi perfil</div>
+      <div class="f"><label>Foto de perfil</label>
+        <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+          <label class="fl">Elegir foto<input type="file" accept="image/*" id="profile-photo-file" onchange="previewUserProfilePhoto(event)"></label>
+          ${photo?`<button type="button" class="btn btg btsm" onclick="removeUserProfilePhoto()">Quitar foto</button>`:''}
+        </div>
+      </div>
+      <div class="f"><label>Nombre</label><input id="profile-name" value="${esc(profile.name||user.displayName||'')}" placeholder="Tu nombre"></div>
+      <div class="f"><label>Teléfono / contacto</label><input id="profile-phone" value="${esc(profile.phone||'')}" placeholder="Opcional"></div>
+      <div class="f"><label>Notas personales</label><textarea id="profile-bio" placeholder="Opcional">${esc(profile.bio||'')}</textarea></div>
+      <button class="btn bts btbl" onclick="saveUserProfile()">Guardar perfil</button>
+    </div>
+
     <div class="card" style="margin-bottom:.75rem">
       <div style="font-size:.7rem;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.5rem">Mi agenda de hoy</div>
       ${renderMyDayTasks()}
@@ -480,6 +503,82 @@ function openUserPanel(){
   panel.style.display='flex';
 }
 function closeUserPanel(){ document.getElementById('user-panel').style.display='none'; }
+
+function previewUserProfilePhoto(event){
+  const input=event&&event.target;
+  const f=input&&input.files&&input.files[0];
+  if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{
+    input.dataset.value=r.result;
+    const prev=document.getElementById('profile-photo-preview');
+    if(prev)prev.innerHTML=`<img src="${r.result}" style="width:100%;height:100%;object-fit:cover">`;
+  };
+  r.readAsDataURL(f);
+}
+function removeUserProfilePhoto(){
+  const input=document.getElementById('profile-photo-file');
+  if(input){input.dataset.value='__REMOVE__';input.value='';}
+  const prev=document.getElementById('profile-photo-preview');
+  const user=window._FBUSER, profile=window._FBPROFILE||{};
+  if(prev)prev.textContent=profileInitial(profile,user);
+}
+async function saveUserProfile(){
+  const fb=getFB();const user=window._FBUSER;if(!fb||!user)return;
+  const name=gv('profile-name').trim();
+  if(!name){toast('El nombre es obligatorio');return;}
+  const phone=gv('profile-phone').trim();
+  const bio=gv('profile-bio').trim();
+  const input=document.getElementById('profile-photo-file');
+  const current=window._FBPROFILE||{};
+  let photo=current.photo||'';
+  if(input&&input.dataset.value==='__REMOVE__')photo='';
+  else if(input&&input.dataset.value)photo=input.dataset.value;
+  const payload=cleanForFirestore({
+    name,
+    email:user.email||'',
+    phone,
+    bio,
+    photo,
+    updated:new Date().toISOString()
+  });
+  try{
+    await fb.updateProfile(user,{displayName:name});
+    await fb.setDoc(fb.doc(fb.db,'users',user.uid),payload,{merge:true});
+    window._FBPROFILE={...current,...payload};
+
+    // Sincroniza el nombre/foto del usuario vinculado dentro del equipo, sin tocar el mote del integrante.
+    const linked=D.team&&D.team.find(m=>m.uid===user.uid||m.userId===user.uid||m.authUid===user.uid);
+    if(linked){
+      linked.userName=name;
+      linked.userPhoto=photo;
+      linked.userPhone=phone;
+      save();
+    }
+
+    // Intento no bloqueante para refrescar el nombre en el documento de la cuadra si las reglas lo permiten.
+    try{
+      const sid=window._ACTIVE_STABLE_ID;
+      if(sid){
+        await fb.updateDoc(fb.doc(fb.db,'stables',sid),{
+          ['members.'+user.uid+'.name']:name,
+          ['members.'+user.uid+'.photo']:photo||null
+        });
+        if(window._ACTIVE_STABLE&&window._ACTIVE_STABLE.members&&window._ACTIVE_STABLE.members[user.uid]){
+          window._ACTIVE_STABLE.members[user.uid].name=name;
+          window._ACTIVE_STABLE.members[user.uid].photo=photo||null;
+        }
+      }
+    }catch(_e){}
+
+    const header=document.getElementById('header-user-name');
+    if(header)header.textContent=name.split(' ')[0];
+    toast('Perfil actualizado');
+    openUserPanel();
+  }catch(e){
+    toast('Error al guardar perfil: '+e.message);
+  }
+}
 
 function renderMyDayTasks(){
   const user=window._FBUSER;if(!user)return'';

@@ -488,6 +488,7 @@ function openUserPanel(){
           <label class="fl">Elegir foto<input type="file" accept="image/*" id="profile-photo-file" onchange="previewUserProfilePhoto(event)"></label>
           ${photo?`<button type="button" class="btn btg btsm" onclick="removeUserProfilePhoto()">Quitar foto</button>`:''}
         </div>
+        <div style="font-size:.68rem;color:var(--gr);margin-top:.35rem">La foto se reduce automáticamente para que pueda guardarse correctamente.</div>
       </div>
       <div class="f"><label>Nombre</label><input id="profile-name" value="${esc(profile.name||user.displayName||'')}" placeholder="Tu nombre"></div>
       <div class="f"><label>Teléfono / contacto</label><input id="profile-phone" value="${esc(profile.phone||'')}" placeholder="Opcional"></div>
@@ -504,17 +505,52 @@ function openUserPanel(){
 }
 function closeUserPanel(){ document.getElementById('user-panel').style.display='none'; }
 
-function previewUserProfilePhoto(event){
+function resizeProfileImageFile(file, maxSize=360, quality=0.72){
+  return new Promise((resolve,reject)=>{
+    if(!file)return resolve('');
+    if(!file.type || !file.type.startsWith('image/'))return reject(new Error('El archivo no es una imagen'));
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('No se pudo leer la imagen'));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onerror=()=>reject(new Error('No se pudo procesar la imagen'));
+      img.onload=()=>{
+        let w=img.width||maxSize, h=img.height||maxSize;
+        const scale=Math.min(1, maxSize/Math.max(w,h));
+        w=Math.max(1, Math.round(w*scale));
+        h=Math.max(1, Math.round(h*scale));
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(img,0,0,w,h);
+        let out=canvas.toDataURL('image/jpeg',quality);
+        // Firestore tiene límite por documento. Si aún pesa mucho, lo bajamos más.
+        if(out.length>220000) out=canvas.toDataURL('image/jpeg',0.55);
+        if(out.length>300000) return reject(new Error('La foto sigue siendo demasiado pesada. Prueba con otra imagen más pequeña.'));
+        resolve(out);
+      };
+      img.src=reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function previewUserProfilePhoto(event){
   const input=event&&event.target;
   const f=input&&input.files&&input.files[0];
   if(!f)return;
-  const r=new FileReader();
-  r.onload=()=>{
-    input.dataset.value=r.result;
+  try{
+    toast('Preparando foto...');
+    const dataUrl=await resizeProfileImageFile(f,360,0.72);
+    input.dataset.value=dataUrl;
     const prev=document.getElementById('profile-photo-preview');
-    if(prev)prev.innerHTML=`<img src="${r.result}" style="width:100%;height:100%;object-fit:cover">`;
-  };
-  r.readAsDataURL(f);
+    if(prev)prev.innerHTML=`<img src="${dataUrl}" style="width:100%;height:100%;object-fit:cover">`;
+    toast('Foto lista para guardar');
+  }catch(e){
+    input.value='';
+    input.dataset.value='';
+    toast('Error con la foto: '+e.message);
+  }
 }
 function removeUserProfilePhoto(){
   const input=document.getElementById('profile-photo-file');

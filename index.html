@@ -844,7 +844,7 @@ function openStablePanel(){
     <button class="btn btbl btg" onclick="closeStablePanel();window._fbShowStableSelector()" style="margin-bottom:.4rem;width:100%">← Cambiar de cuadra</button>
     ${canManage?`<button class="btn btr btbl" onclick="deleteStable()" style="margin-bottom:.4rem;width:100%">🗑️ Eliminar cuadra</button>`:`<button class="btn btr btbl" onclick="leaveStable()" style="margin-bottom:.4rem;width:100%">🚪 Abandonar cuadra</button>`}
     <p style="font-size:.7rem;color:var(--gr);line-height:1.45;margin-top:.35rem">
-      ${canManage?'Eliminar borra la cuadra actual y sus datos principales.':'Abandonar te quitará el acceso a esta cuadra, pero no borrará sus datos.'}
+      ${canManage?'Eliminar borra la cuadra actual y sus datos principales.':'Abandonar te quitará el acceso y desvinculará tu usuario del integrante del equipo.'}
     </p>`;
   panel.style.display='flex';
 }
@@ -949,14 +949,49 @@ async function leaveStable(){
   if(members.length<=1){toast('Eres el único miembro. Elimina la cuadra.');return;}
   if(!confirm(`¿Abandonar la cuadra "${stable.name}"?
 
-Perderás el acceso a sus caballos, tareas y datos.`))return;
+Tu usuario perderá el acceso a la cuadra.
+
+Si estabas vinculado a un integrante del equipo, ese integrante quedará desvinculado para que el administrador pueda eliminarlo o volver a invitarlo.`))return;
   try{
     showScreen('loading');
+
+    // Primero desvinculamos el usuario del integrante del equipo mientras todavía es miembro.
+    // Las reglas solo permiten escribir data/main a miembros de la cuadra; si quitamos antes memberIds,
+    // luego ya no podríamos limpiar uid/userId/authUid del perfil del equipo.
+    try{
+      const mainRef=fb.doc(fb.db,'stables',stable.id,'data','main');
+      const mainSnap=await fb.getDoc(mainRef);
+      if(mainSnap.exists()){
+        const mainData=mainSnap.data()||{};
+        let changed=false;
+        const team=(mainData.team||[]).map(m=>{
+          if(m && (m.uid===user.uid || m.userId===user.uid || m.authUid===user.uid)){
+            changed=true;
+            const clean={...m};
+            delete clean.uid;
+            delete clean.userId;
+            delete clean.authUid;
+            delete clean.linkedName;
+            delete clean.linkedAt;
+            delete clean.linkedEmail;
+            return clean;
+          }
+          return m;
+        });
+        if(changed){
+          await fb.setDoc(mainRef,{...mainData,team},{merge:false});
+        }
+      }
+    }catch(unlinkErr){
+      console.warn('No se pudo desvincular el integrante del equipo antes de abandonar:',unlinkErr);
+      // No bloqueamos la salida de la cuadra: lo importante es quitar el acceso del usuario.
+    }
+
     await fb.updateDoc(fb.doc(fb.db,'stables',stable.id),{
       memberIds:fb.arrayRemove(user.uid),
       ['members.'+user.uid]:fb.deleteField()
     });
-    toast('Has abandonado la cuadra');
+    toast('Has abandonado la cuadra y tu perfil de equipo quedó desvinculado');
     await goAfterStableExit();
   }catch(e){
     console.error('leaveStable:',e);

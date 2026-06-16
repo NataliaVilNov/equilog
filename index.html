@@ -756,11 +756,11 @@ async function linkUserToTeamMember(stableId, teamMemberId, fallbackTeamName, me
     linkedAt:new Date().toISOString()
   }:m);
   await fb.setDoc(mainRef,{...mainData,team},{merge:false});
-  const selected=(mainData.team||[]).find(m=>m.id===teamMemberId);
-  await fb.updateDoc(fb.doc(fb.db,'stables',stableId),{
-    ['members.'+user.uid+'.teamMemberId']:teamMemberId,
-    ['members.'+user.uid+'.teamName']:(selected&&selected.name)||fallbackTeamName||''
-  });
+  // IMPORTANTE: no volvemos a actualizar /stables/{stableId} aquí.
+  // Un usuario recién invitado ya es miembro normal, pero no administrador,
+  // y las reglas de Firestore no le permiten modificar el documento principal
+  // de la cuadra una segunda vez. La vinculación se guarda en data/main,
+  // que sí puede escribir cualquier miembro de la cuadra.
 }
 
 async function confirmJoinAs(teamMemberId){

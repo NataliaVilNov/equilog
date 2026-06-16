@@ -546,15 +546,42 @@ async function renderStableList(){
 
 window._fbSwitchStable = async function(stableId){
   const fb=getFB();const user=window._FBUSER;if(!fb||!user)return;
-  const {doc,getDoc}=fb;
+  const {doc,getDoc,setDoc}=fb;
   showScreen('loading');
   try{
     const snap=await getDoc(doc(fb.db,'stables',stableId));
-    if(!snap.exists()){toast('Cuadra no encontrada');return;}
+
+    // Caso importante: el usuario tenía guardada como lastStable una cuadra que ya fue eliminada
+    // por el administrador. No debe quedarse bloqueado en "Cargando"; limpiamos lastStable y
+    // volvemos a la pantalla normal de crear cuadra / introducir código.
+    if(!snap.exists()){
+      try{await setDoc(doc(fb.db,'users',user.uid),{lastStable:null},{merge:true});}catch(_e){}
+      if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
+      window._ACTIVE_STABLE_ID=null;
+      window._ACTIVE_STABLE=null;
+      D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[]};
+      toast('La cuadra ya no existe o fue eliminada');
+      await window._fbShowStableSelector();
+      return;
+    }
+
+    const stableData=snap.data();
+    // Segundo caso: la cuadra existe, pero este usuario ya no pertenece a ella.
+    // También limpiamos lastStable para que pueda crear una cuadra o unirse con otro código.
+    if(!((stableData.memberIds||[]).includes(user.uid))){
+      try{await setDoc(doc(fb.db,'users',user.uid),{lastStable:null},{merge:true});}catch(_e){}
+      if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
+      window._ACTIVE_STABLE_ID=null;
+      window._ACTIVE_STABLE=null;
+      D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[]};
+      toast('Ya no perteneces a esa cuadra');
+      await window._fbShowStableSelector();
+      return;
+    }
+
     window._ACTIVE_STABLE_ID=stableId;
-    window._ACTIVE_STABLE={id:stableId,...snap.data()};
+    window._ACTIVE_STABLE={id:stableId,...stableData};
     // Update user lastStable
-    const {setDoc,serverTimestamp}=fb;
     await setDoc(doc(fb.db,'users',user.uid),{lastStable:stableId},{merge:true});
     // Load data
     await _fbLoadData();
@@ -568,8 +595,14 @@ window._fbSwitchStable = async function(stableId){
     showScreen('app');
     V={name:'list'};render();
   }catch(e){
-    toast('Error al cargar cuadra: '+e.message);
-    window._fbShowStableSelector();
+    console.error('_fbSwitchStable:',e);
+    try{await setDoc(doc(fb.db,'users',user.uid),{lastStable:null},{merge:true});}catch(_e){}
+    if(_fbUnsubscribe){_fbUnsubscribe();_fbUnsubscribe=null;}
+    window._ACTIVE_STABLE_ID=null;
+    window._ACTIVE_STABLE=null;
+    D={horses:[],trainings:[],health:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[]};
+    toast('No se pudo abrir esa cuadra. Puedes crear una nueva o unirte con otro código.');
+    await window._fbShowStableSelector();
   }
 }
 

@@ -1804,18 +1804,50 @@ function rHorse(id){
     const owners=sv.owners||[{nombre:'',pct:100}];
     const totalPct=Math.round(owners.reduce((s,o)=>s+Number(o.pct||0),0)*100)/100;
 
-    // Gastos pagados por cada propietario (por nombre, case-insensitive)
+    // Gastos asignados por propietario.
+    // Si el gasto tiene reparto porcentual, se usa ese reparto.
+    // Si no lo tiene, se intenta asignar al pagador; si tampoco coincide, se reparte por porcentaje de propiedad.
     const gastosPorPropietario={};
-    owners.forEach(o=>{gastosPorPropietario[o.nombre.trim().toLowerCase()]=0;});
+    const gastosPorDefecto={};
+    const gastosPorReparto={};
+    owners.forEach(o=>{
+      const k=(o.nombre||'').trim().toLowerCase();
+      gastosPorPropietario[k]=0;
+      gastosPorDefecto[k]=0;
+      gastosPorReparto[k]=0;
+    });
     let gastosNoAsignados=0;
+    let gastosConReparto=0;
     ex.forEach(e=>{
       const ec=ef(e.cat);
       if(ec.d!=='out')return;
       const amt=Number(e.amount||0);
+      const sp=expSplitsForDisplay(e);
+      if(sp.length){
+        gastosConReparto+=amt;
+        sp.forEach(x=>{
+          const k=(x.name||'').trim().toLowerCase();
+          const v=splitAmount(amt,x.pct);
+          if(k&&gastosPorPropietario.hasOwnProperty(k)){
+            gastosPorPropietario[k]+=v;
+            gastosPorReparto[k]+=v;
+          } else {
+            gastosNoAsignados+=v;
+          }
+        });
+        return;
+      }
       const pagador=(e.payer||'').trim().toLowerCase();
       if(pagador&&gastosPorPropietario.hasOwnProperty(pagador)){
         gastosPorPropietario[pagador]+=amt;
       } else {
+        // Sin pagador/reparto claro: se imputa por % de propiedad para que la liquidación de venta no deje gastos fuera.
+        owners.forEach(o=>{
+          const k=(o.nombre||'').trim().toLowerCase();
+          const v=splitAmount(amt,Number(o.pct||0));
+          gastosPorPropietario[k]+=v;
+          gastosPorDefecto[k]+=v;
+        });
         gastosNoAsignados+=amt;
       }
     });
@@ -1831,12 +1863,14 @@ function rHorse(id){
     owners.forEach((o,i)=>{
       const pct=Number(o.pct||0);
       const key=(o.nombre||'').trim().toLowerCase();
-      const gastosAdelantados=gastosPorPropietario[key]||0;
+      const gastosAsignados=gastosPorPropietario[key]||0;
+      const gastosRepartidos=gastosPorReparto[key]||0;
+      const gastosProrrata=gastosPorDefecto[key]||0;
       const ingresosRecibidos=ingresosPorPropietario[key]||0;
-      // Su parte del beneficio neto según % de propiedad
-      const parteDelBeneficio=beneficioNeto*pct/100;
-      // Total que recibe: su parte del beneficio + recupera lo que adelantó - ingresos ya cobrados
-      const totalRecibe=parteDelBeneficio+gastosAdelantados-ingresosRecibidos;
+      const ventaBruta=precioVenta*pct/100;
+      const ingresosTeoricos=totalIngresos*pct/100;
+      // Total final: parte bruta de venta - gastos que corresponden según reparto + ingresos/primas no cobrados aún - ingresos ya cobrados
+      const totalRecibe=ventaBruta-gastosAsignados+ingresosTeoricos-ingresosRecibidos;
       ownerRows+=`<div class="vo" id="vo-${i}">
           <div class="vor">
             <input class="voi" placeholder="Nombre propietario" value="${esc(o.nombre||'')}" oninput="saleOwnerUpdate(${i},'nombre',this.value)">
@@ -1844,17 +1878,20 @@ function rHorse(id){
             ${owners.length>1?`<button class="db" onclick="saleRemoveOwner(${i})">✕</button>`:''}
           </div>
           ${precioVenta>0?`<div class="vostat">
-            <div class="vos"><span>📈 Beneficio (${pct}%)</span><b>${parteDelBeneficio>=0?'+':''}${parteDelBeneficio.toFixed(2)}€</b></div>
-            <div class="vos"><span>💳 Gastos adelantados</span><b>+${gastosAdelantados.toFixed(2)}€</b></div>
-            ${ingresosRecibidos>0?`<div class="vos" style="color:#2d9e5f"><span>🏆 Premios cobrados</span><b>-${ingresosRecibidos.toFixed(2)}€</b></div>`:''}
+            <div class="vos"><span>💵 Venta (${pct}%)</span><b>+${ventaBruta.toFixed(2)}€</b></div>
+            <div class="vos"><span>📌 Gastos asignados</span><b>-${gastosAsignados.toFixed(2)}€</b></div>
+            ${gastosRepartidos>0?`<div class="vos"><span>👥 Gastos repartidos</span><b>-${gastosRepartidos.toFixed(2)}€</b></div>`:''}
+            ${ingresosTeoricos>0?`<div class="vos" style="color:#2d9e5f"><span>🏆 Ingresos (${pct}%)</span><b>+${ingresosTeoricos.toFixed(2)}€</b></div>`:''}
+            ${ingresosRecibidos>0?`<div class="vos" style="color:#2d9e5f"><span>🏆 Ya cobrado</span><b>-${ingresosRecibidos.toFixed(2)}€</b></div>`:''}
             <div class="vos vosn ${totalRecibe>=0?'pos':'neg'}"><span>✅ Total a recibir</span><b>${totalRecibe>=0?'+':''}${totalRecibe.toFixed(2)}€</b></div>
           </div>
-          ${gastosAdelantados===0&&totalGastos>0?`<div class="vpw" style="margin-top:.4rem;font-size:.7rem">⚠️ Ningún gasto tiene a <b>${esc(o.nombre||'este propietario')}</b> como pagador</div>`:''}`:''}
+          ${gastosProrrata>0?`<div class="vpw" style="margin-top:.4rem;font-size:.7rem">ℹ️ ${gastosProrrata.toFixed(2)}€ se han imputado por % de propiedad al no tener reparto/pagador claro.</div>`:''}`:''}
         </div>`;
     });
 
     const pctWarn=Math.abs(totalPct-100)>0.01?`<div class="vpw">⚠️ Los porcentajes suman ${totalPct}% (deben sumar 100%)</div>`:'';
-    const sinAsignarWarn=gastosNoAsignados>0&&precioVenta>0?`<div class="vpw">ℹ️ ${gastosNoAsignados.toFixed(2)}€ en gastos sin pagador identificado — revisa el campo "De" en cada gasto</div>`:'';
+    const sinAsignarWarn=gastosNoAsignados>0&&precioVenta>0?`<div class="vpw">ℹ️ ${gastosNoAsignados.toFixed(2)}€ en gastos sin reparto o con reparto no asociado a propietarios. La app los imputa por defecto según % de propiedad cuando no hay dato mejor.</div>`:'';
+    const repartoWarn=gastosConReparto>0?`<div class="vpw" style="background:#EEF6FF;border-color:#BFDBFE;color:#1E3A8A">👥 Hay ${gastosConReparto.toFixed(2)}€ en gastos con reparto personalizado que se tienen en cuenta en esta liquidación.</div>`:'';
 
     const liquidacion=precioVenta>0&&Math.abs(totalPct-100)<0.01?`
       <div class="vblock vresumen">
@@ -1865,14 +1902,20 @@ function rHorse(id){
         ${owners.map((o,i)=>{
           const pct=Number(o.pct||0);
           const key=(o.nombre||'').trim().toLowerCase();
-          const gastosAdelantados=gastosPorPropietario[key]||0;
+          const gastosAsignados=gastosPorPropietario[key]||0;
+          const gastosRepartidos=gastosPorReparto[key]||0;
+          const gastosProrrata=gastosPorDefecto[key]||0;
           const ingresosRecibidos=ingresosPorPropietario[key]||0;
-          const parteDelBeneficio=beneficioNeto*pct/100;
-          const totalRecibe=parteDelBeneficio+gastosAdelantados-ingresosRecibidos;
+          const ventaBruta=precioVenta*pct/100;
+          const ingresosTeoricos=totalIngresos*pct/100;
+          const totalRecibe=ventaBruta-gastosAsignados+ingresosTeoricos-ingresosRecibidos;
           return `<div class="vliq">
             <div class="vliqn">${esc(o.nombre||'Propietario '+(i+1))} <span class="vliqp">${pct}%</span></div>
-            <div class="vliqd">Beneficio neto (${pct}%): ${parteDelBeneficio>=0?'+':''}${parteDelBeneficio.toFixed(2)}€</div>
-            ${gastosAdelantados>0?`<div class="vliqd">Gastos adelantados recuperados: +${gastosAdelantados.toFixed(2)}€</div>`:''}
+            <div class="vliqd">Parte bruta de venta (${pct}%): +${ventaBruta.toFixed(2)}€</div>
+            <div class="vliqd">Gastos asignados según reparto: -${gastosAsignados.toFixed(2)}€</div>
+            ${gastosRepartidos>0?`<div class="vliqd">👥 De ellos, gastos con reparto personalizado: -${gastosRepartidos.toFixed(2)}€</div>`:''}
+            ${gastosProrrata>0?`<div class="vliqd">Gastos imputados por % de propiedad: -${gastosProrrata.toFixed(2)}€</div>`:''}
+            ${ingresosTeoricos>0?`<div class="vliqd" style="color:#2d9e5f">🏆 Ingresos/primas (${pct}%): +${ingresosTeoricos.toFixed(2)}€</div>`:''}
             ${ingresosRecibidos>0?`<div class="vliqd" style="color:#2d9e5f">🏆 Premios ya cobrados: -${ingresosRecibidos.toFixed(2)}€</div>`:''}
             <div class="vliqt ${totalRecibe>=0?'pos':'neg'}">${totalRecibe>=0?'+':''}${totalRecibe.toFixed(2)}€</div>
           </div>`;
@@ -1899,6 +1942,7 @@ function rHorse(id){
         <div id="owners-list">${ownerRows}</div>
         ${pctWarn}
         ${sinAsignarWarn}
+        ${repartoWarn}
         <button class="btn bts" style="margin-top:.5rem" onclick="saleAddOwner('${h.id}')">+ Añadir propietario</button>
       </div>
       ${liquidacion}

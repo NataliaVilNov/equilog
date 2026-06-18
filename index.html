@@ -1228,6 +1228,32 @@ function wf(id){return WK.find(w=>w.id===id)||{l:id,i:"📋"}}
 function hf(id){return HK.find(h=>h.id===id)||{l:id,i:"📋"}}
 function af(id){return AK.find(a=>a.id===id)||{l:id,i:"📌",r:false}}
 function ef(id){return EK.find(e=>e.id===id)||{l:id,i:"💸",d:"out"}}
+
+function expSplitsForDisplay(e){
+  return (e&&Array.isArray(e.splits)) ? e.splits.filter(x=>x&&Number(x.pct||0)>0) : [];
+}
+function splitAmount(total,pct){ return Math.round((Number(total)||0)*(Number(pct)||0))/100; }
+function expenseSplitSummary(e){
+  const sp=expSplitsForDisplay(e);
+  if(!sp.length)return '';
+  return sp.map(x=>`${esc(x.name||'')} ${Number(x.pct||0)}% (${splitAmount(e.amount,x.pct).toFixed(2)}€)`).join(' · ');
+}
+function defaultExpenseSplitsForHorse(h,e){
+  if(e&&Array.isArray(e.splits)&&e.splits.length)return e.splits;
+  const owners=(h&&h.owners&&h.owners.length)?h.owners:(h&&h.owner?[{nombre:h.owner,pct:100}]:[]);
+  return owners.map(o=>({name:o.nombre||'',pct:Number(o.pct||0)}));
+}
+function syncSplitAmounts(){
+  const amount=Number(gv('e-amount'))||0;
+  document.querySelectorAll('.e-split-row').forEach(row=>{
+    const pct=Number(row.querySelector('.e-split-pct')?.value)||0;
+    const out=row.querySelector('.e-split-amt');
+    if(out)out.textContent=(amount*pct/100).toFixed(2)+'€';
+  });
+  const total=Array.from(document.querySelectorAll('.e-split-pct')).reduce((s,i)=>s+(Number(i.value)||0),0);
+  const warn=document.getElementById('e-split-warn');
+  if(warn){warn.style.display=Math.abs(total-100)>0.5?'block':'none';warn.textContent='⚠️ El reparto suma '+total.toFixed(0)+'%. Debe sumar 100%.';}
+}
 function catFromHealthType(type){
   if(type==="herraje")return "herrador";
   if(type==="vacuna"||type==="despar")return "vet";
@@ -1729,9 +1755,10 @@ function rHorse(id){
         <div class="xinf"><div class="xl">${esc(e.concept)}</div>
           <div class="xm">${fD(e.date)} · <b>${isIn?"":"-"}${Number(e.amount).toFixed(2)}€</b></div>
           <div class="pd">${isIn?"←":"→"} ${esc(e.payer||"?")} → ${esc(e.payee||"?")}</div>
+          ${expenseSplitSummary(e)?`<div class="pd" style="align-items:flex-start"><span>👥</span><span><b>Reparto:</b> ${expenseSplitSummary(e)}</span></div>`:""}
           <div style="margin-top:.18rem"><span class="sb s-${e.status}">${cap(e.status)}</span></div>
         </div>
-        <div class="ca"><button class="ib" onclick="V={name:'newExpense',hid:'${h.id}',eid:'${e.id}'};render()">✏️</button>${canPerm('deleteItems')?`<button class="db" onclick="if(confirm('¿Eliminar?')){D.expenses=D.expenses.filter(x=>x.id!=='${e.id}');save();V.tab='gastos';render()}">✕</button>`:""}</div>
+        <div class="ca"><button class="ib" onclick="V={name:'newExpense',hid:'${h.id}',eid:'${e.id}'};render()">✏️</button>${canPerm('expenses')?`<button class="db" onclick="deleteExpense('${e.id}','${h.id}')">✕</button>`:""}</div>
       </div>`;
     });
   }
@@ -1946,9 +1973,32 @@ function rNE(hid,eid){
     <div class="f"><label>Categoría</label><div class="og og3" id="og-ec">${cH}</div><input type="hidden" id="e-cat" value="${e?e.cat:"servicio"}"></div>
     <div class="f"><label>Concepto</label><input id="e-concept" value="${esc(e?e.concept:"")}" placeholder="Pensión mensual, Herrador..."></div>
     <div class="r2">
-      <div class="f"><label>Importe (€)</label><input type="number" id="e-amount" value="${e?e.amount:""}" placeholder="0.00" min="0" step="0.01"></div>
+      <div class="f"><label>Importe (€)</label><input type="number" id="e-amount" value="${e?e.amount:""}" placeholder="0.00" min="0" step="0.01" oninput="syncSplitAmounts()"></div>
       <div class="f"><label>Fecha</label><input type="date" id="e-date" value="${e?e.date:td()}"></div>
     </div>
+    ${(()=>{
+      const splits=defaultExpenseSplitsForHorse(h,e);
+      if(!splits.length)return '';
+      const checked=(e&&Array.isArray(e.splits)&&e.splits.length)?'checked':'';
+      return `<div class="card" style="padding:.75rem;margin-bottom:.85rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:.6rem;margin-bottom:.55rem">
+          <div>
+            <div style="font-size:.7rem;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.07em">👥 Reparto del gasto</div>
+            <div style="font-size:.72rem;color:var(--gr);margin-top:.1rem">Para gastos compartidos: mitad, porcentajes entre propietarios, etc.</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:.35rem;font-size:.72rem;color:var(--vd);font-weight:700;margin:0;text-transform:none;letter-spacing:0"><input type="checkbox" id="e-use-splits" ${checked} onchange="document.getElementById('e-splits-box').style.display=this.checked?'block':'none';syncSplitAmounts()" style="width:auto"> Repartir</label>
+        </div>
+        <div id="e-splits-box" style="display:${checked?'block':'none'}">
+          ${splits.map((sp,i)=>`<div class="e-split-row" style="display:grid;grid-template-columns:1fr 76px 82px;gap:.45rem;align-items:center;margin-bottom:.45rem">
+            <input class="e-split-name" value="${esc(sp.name||'')}" placeholder="Nombre" style="font-size:.82rem;padding:.45rem .55rem">
+            <div style="display:flex;align-items:center;background:var(--ar);border-radius:8px;padding:.22rem .45rem"><input type="number" class="e-split-pct" value="${Number(sp.pct||0)}" min="0" max="100" step="1" oninput="syncSplitAmounts()" style="border:none;background:transparent;padding:.2rem .1rem;font-size:.82rem;font-weight:700;text-align:right"><span style="font-size:.75rem;color:var(--gr);font-weight:700">%</span></div>
+            <div class="e-split-amt" style="font-size:.78rem;font-weight:700;color:var(--vd);text-align:right">${(((Number(e?e.amount:0)||0)*Number(sp.pct||0)/100)).toFixed(2)}€</div>
+          </div>`).join('')}
+          <div id="e-split-warn" style="display:none;font-size:.72rem;color:var(--am);font-weight:700;margin-top:.25rem"></div>
+          <button type="button" class="btn btg btsm" onclick="document.querySelectorAll('.e-split-pct').forEach(i=>i.value=(100/document.querySelectorAll('.e-split-pct').length).toFixed(0));syncSplitAmounts()">Repartir a partes iguales</button>
+        </div>
+      </div>`;
+    })()}
     <div class="card" style="padding:.75rem;margin-bottom:.85rem">
       <div id="dir-lbl" style="font-size:.7rem;font-weight:700;color:var(--gr);text-transform:uppercase;letter-spacing:.07em;margin-bottom:.5rem">${id==="in"?"INGRESO: ¿Quién paga?":"GASTO: ¿A quién?"}</div>
       <div class="r2">
@@ -1969,10 +2019,24 @@ function rNE(hid,eid){
     <div class="f"><label>Notas</label><textarea id="e-notes">${esc(e?e.notes:"")}</textarea></div>
     <div style="display:grid;gap:.42rem">
       <button type="button" class="btn bts btbl" id="save-expense-btn">${ed?"Guardar cambios":"Añadir gasto"}</button>
-      ${ed&&admin?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.expenses=D.expenses.filter(x=>x.id!=='${e.id}');save();V={name:'horse',hid:'${hid}',tab:'gastos'};render()}">Eliminar</button>`:""}
+      ${ed&&canPerm('expenses')?`<button type="button" class="btn btr btbl" onclick="deleteExpense('${e.id}','${hid}')">Eliminar gasto</button>`:""}
     </div>
   </div>`;
 }
+
+function deleteExpense(id,hid){
+  if(!canPerm('expenses')){toast('No tienes permiso para eliminar gastos');return;}
+  const exp=(D.expenses||[]).find(x=>x.id===id);
+  if(!exp){toast('Gasto no encontrado');return;}
+  if(!confirm('¿Eliminar este gasto?'))return;
+  D.expenses=(D.expenses||[]).filter(x=>x.id!==id);
+  // Si el gasto estaba vinculado a un registro sanitario, no borro el registro de salud: solo quito el gasto.
+  save();
+  V={name:'horse',hid:hid||exp.hid,tab:'gastos'};
+  render();
+  toast('Gasto eliminado');
+}
+
 function updDir(dir){
   const dl=document.getElementById("dir-lbl");const pl=document.getElementById("payer-lbl");const el=document.getElementById("payee-lbl");
   const pp=document.getElementById("e-payer");const pe=document.getElementById("e-payee");
@@ -3546,7 +3610,16 @@ function attach(){
     const concept=gv('e-concept').trim();if(!concept){toast('Concepto obligatorio');return;}
     const ed=!!V.eid;const id=ed?V.eid:uid();
     const ePayerSel=document.getElementById('e-payer-sel');const ePayer=ePayerSel?(ePayerSel.value||gv('e-payer').trim()):(gv('e-payer').trim());
-    const exp={id,createdBy:(window._FBUSER&&window._FBUSER.uid)||null,hid:V.hid,concept,amount:Number(gv('e-amount'))||0,date:gv('e-date')||td(),cat:gv('e-cat')||'servicio',payer:ePayer,payee:gv('e-payee').trim(),status:gv('e-status')||'pendiente',notes:gv('e-notes').trim()};
+    const useSplits=!!document.getElementById('e-use-splits')?.checked;
+    let splits=[];
+    if(useSplits){
+      const names=Array.from(document.querySelectorAll('.e-split-name'));
+      const pcts=Array.from(document.querySelectorAll('.e-split-pct'));
+      splits=names.map((n,i)=>({name:n.value.trim(),pct:Number(pcts[i]?.value)||0})).filter(x=>x.name&&x.pct>0);
+      const total=splits.reduce((s,x)=>s+x.pct,0);
+      if(Math.abs(total-100)>0.5){toast('El reparto debe sumar 100%');return;}
+    }
+    const exp={id,createdBy:(window._FBUSER&&window._FBUSER.uid)||null,hid:V.hid,concept,amount:Number(gv('e-amount'))||0,date:gv('e-date')||td(),cat:gv('e-cat')||'servicio',payer:ePayer,payee:gv('e-payee').trim(),status:gv('e-status')||'pendiente',notes:gv('e-notes').trim(),splits};
     if(ed){D.expenses=D.expenses.map(e=>e.id===id?exp:e);}else{D.expenses.push(exp);}
     save();V={name:'horse',hid:V.hid,tab:'gastos'};render();toast(ed?'Actualizado':'Gasto añadido');
   };}

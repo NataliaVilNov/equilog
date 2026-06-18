@@ -772,7 +772,7 @@ async function _fbLoadData(){
     if(snap.exists()){
       const d=snap.data();
       D=d;
-      ['horses','trainings','health','healthDocs','expenses','team','tasks','ctasks','cexpenses','salerts','templates','absences'].forEach(k=>{if(!D[k])D[k]=[];});
+      ['horses','trainings','health','healthDocs','expenses','team','tasks','ctasks','cexpenses','salerts','templates','absences','expenseSettlements'].forEach(k=>{if(!D[k])D[k]=[];});
     } else {
       D={horses:[],trainings:[],health:[],healthDocs:[],expenses:[],team:[],tasks:[],ctasks:[],cexpenses:[],salerts:[],templates:[],absences:[]};
     }
@@ -788,7 +788,7 @@ function _fbSetupListener(stableId){
     if(snap.exists()&&snap.metadata.hasPendingWrites===false){
       const d=snap.data();
       D=d;
-      ['horses','trainings','health','healthDocs','expenses','team','tasks','ctasks','cexpenses','salerts','templates','absences'].forEach(k=>{if(!D[k])D[k]=[];});
+      ['horses','trainings','health','healthDocs','expenses','team','tasks','ctasks','cexpenses','salerts','templates','absences','expenseSettlements'].forEach(k=>{if(!D[k])D[k]=[];});
       render();
     }
   });
@@ -1254,6 +1254,64 @@ function syncSplitAmounts(){
   const warn=document.getElementById('e-split-warn');
   if(warn){warn.style.display=Math.abs(total-100)>0.5?'block':'none';warn.textContent='⚠️ El reparto suma '+total.toFixed(0)+'%. Debe sumar 100%.';}
 }
+function ownerListForHorse(h){
+  return (h&&h.owners&&h.owners.length)?h.owners.map(o=>({name:o.nombre||o.name||'',pct:Number(o.pct||0)})):(h&&h.owner?[{name:h.owner,pct:100}]:[]);
+}
+function ownerKeyName(n){return (n||'').trim().toLowerCase();}
+function expenseIsOut(e){return ef(e&&e.cat).d==='out';}
+function settlementCandidateExpenses(hid, includeSettled=false){
+  return (D.expenses||[]).filter(e=>e.hid===hid&&expenseIsOut(e)&&(includeSettled||!e.settled));
+}
+function calcOwnerSettlement(hid, ids){
+  const h=D.horses.find(x=>x.id===hid);const owners=ownerListForHorse(h);
+  const map={};owners.forEach(o=>{const k=ownerKeyName(o.name);if(k)map[k]={key:k,name:o.name,pct:o.pct,paid:0,owed:0,balance:0};});
+  const warnings=[];let total=0;let used=[];
+  (D.expenses||[]).filter(e=>ids.includes(e.id)).forEach(e=>{
+    const amt=Number(e.amount||0); if(!amt||!expenseIsOut(e))return;
+    total+=amt; used.push(e);
+    const payerK=ownerKeyName(e.payer);
+    if(map[payerK]) map[payerK].paid+=amt; else warnings.push(`No encuentro pagador propietario para "${e.concept||'gasto'}" (${e.payer||'sin pagador'}).`);
+    let shares=expSplitsForDisplay(e).map(x=>({name:x.name,pct:Number(x.pct||0)})).filter(x=>x.name&&x.pct>0);
+    if(!shares.length) shares=owners.map(o=>({name:o.name,pct:Number(o.pct||0)}));
+    const sum=shares.reduce((a,b)=>a+Number(b.pct||0),0);
+    if(Math.abs(sum-100)>0.5)warnings.push(`El reparto de "${e.concept||'gasto'}" suma ${sum.toFixed(0)}%.`);
+    shares.forEach(sh=>{const k=ownerKeyName(sh.name);const v=splitAmount(amt,sh.pct);if(map[k])map[k].owed+=v;else warnings.push(`No encuentro propietario "${sh.name}" en el reparto de "${e.concept||'gasto'}".`);});
+  });
+  Object.values(map).forEach(o=>o.balance=Math.round((o.paid-o.owed)*100)/100);
+  const debtors=Object.values(map).filter(o=>o.balance<-0.01).map(o=>({...o,amount:-o.balance})).sort((a,b)=>b.amount-a.amount);
+  const creditors=Object.values(map).filter(o=>o.balance>0.01).map(o=>({...o,amount:o.balance})).sort((a,b)=>b.amount-a.amount);
+  const transfers=[];let i=0,j=0;
+  while(i<debtors.length&&j<creditors.length){
+    const v=Math.round(Math.min(debtors[i].amount,creditors[j].amount)*100)/100;
+    if(v>0.01)transfers.push({from:debtors[i].name,to:creditors[j].name,amount:v});
+    debtors[i].amount=Math.round((debtors[i].amount-v)*100)/100; creditors[j].amount=Math.round((creditors[j].amount-v)*100)/100;
+    if(debtors[i].amount<=0.01)i++; if(creditors[j].amount<=0.01)j++;
+  }
+  return {owners:Object.values(map),warnings,total,used,transfers};
+}
+function readSettlementCheckedIds(){return Array.from(document.querySelectorAll('.settle-exp:checked')).map(x=>x.value);}
+function renderSettlementPreview(){
+  const hid=V.hid;const box=document.getElementById('settlement-preview');if(!box)return;
+  const ids=readSettlementCheckedIds(); if(!ids.length){box.innerHTML='<div class="em" style="padding:1rem"><p>Selecciona algún gasto para calcular el ajuste.</p></div>';return;}
+  const c=calcOwnerSettlement(hid,ids);
+  box.innerHTML=`<div class="card" style="margin-top:.8rem"><div style="font-size:.7rem;font-weight:800;color:var(--gr);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.55rem">Resultado del ajuste</div>
+    <div class="vr"><span class="vrl">Gastos seleccionados</span><span class="vrv">${c.used.length}</span></div>
+    <div class="vr"><span class="vrl">Total ajustado</span><span class="vrv">${c.total.toFixed(2)}€</span></div>
+    <div style="margin-top:.65rem">${c.owners.map(o=>`<div class="vr"><span class="vrl">${esc(o.name)}</span><span class="vrv ${o.balance>=0?'pos':'neg'}">${o.balance>=0?'+':''}${o.balance.toFixed(2)}€</span></div>`).join('')}</div>
+    <div style="margin-top:.75rem">${c.transfers.length?c.transfers.map(t=>`<div class="xc" style="margin-bottom:.4rem"><div class="xi ingreso">↔️</div><div class="xinf"><div class="xl">${esc(t.from)} debe pagar a ${esc(t.to)}</div><div class="xm"><b>${t.amount.toFixed(2)}€</b></div></div></div>`).join(''):'<div class="ap ok">✓ Cuentas cuadradas</div>'}</div>
+    ${c.warnings.length?`<div class="vpw" style="margin-top:.6rem">${c.warnings.map(w=>'⚠️ '+esc(w)).join('<br>')}</div>`:''}
+    <button class="btn bts btbl" style="margin-top:.75rem" onclick="confirmExpenseSettlement()">Marcar estos gastos como ajustados</button>
+  </div>`;
+}
+function toggleAllSettlementExpenses(chk){document.querySelectorAll('.settle-exp').forEach(x=>x.checked=chk.checked);renderSettlementPreview();}
+function confirmExpenseSettlement(){
+  const hid=V.hid;const ids=readSettlementCheckedIds();if(!ids.length){toast('Selecciona gastos');return;}
+  const c=calcOwnerSettlement(hid,ids);const sid=uid();
+  D.expenseSettlements=D.expenseSettlements||[];
+  D.expenseSettlements.push({id:sid,hid,date:td(),expenseIds:ids,total:c.total,transfers:c.transfers,owners:c.owners,warnings:c.warnings,createdBy:(window._FBUSER&&window._FBUSER.uid)||null});
+  D.expenses=(D.expenses||[]).map(e=>ids.includes(e.id)?{...e,settled:true,settlementId:sid,settledDate:td()}:e);
+  save();V={name:'horse',hid,tab:'gastos'};render();toast('Ajuste guardado');
+}
 function catFromHealthType(type){
   if(type==="herraje")return "herrador";
   if(type==="vacuna"||type==="despar")return "vet";
@@ -1494,7 +1552,7 @@ function render(){
     const views={
       list:rList, addHorse:()=>rHF(null), editHorse:()=>rHF(D.horses.find(h=>h.id===V.hid)),
       horse:()=>rHorse(V.hid), newTraining:()=>rNT(V.hid), newHealth:()=>rNH(V.hid,V.eid),
-      newExpense:()=>rNE(V.hid,V.eid), report:()=>rRep(V.hid),
+      newExpense:()=>rNE(V.hid,V.eid), expenseSettlement:()=>rExpenseSettlement(V.hid), report:()=>rRep(V.hid),
       day:()=>rDay(V.dd||td()), smartOrder:()=>rSmartOrder(), newTask:()=>rNTask(null), editTask:()=>rNTask(D.tasks.find(t=>t.id===V.tid)),
       team:rTeam, teamCalendar:rTeamCalendar, addMember:()=>rMF(null), editMember:()=>rMF(D.team.find(m=>m.id===V.mid)),
       memberDay:()=>rMD(V.mid,V.dd||td()), teamReport:rTR,
@@ -1514,6 +1572,7 @@ function render(){
   if(canPerm('stable')&&nm==="cuadra"&&V.tab==="gastos"){fab.style.display="flex";fab.onclick=()=>{V={name:"newCE"};render()}}
   if(canPerm('team')&&nm==="templates"){fab.style.display="flex";fab.onclick=()=>{V={name:"editTemplate",tplid:null};render()}}
   attach();
+  if(nm==="expenseSettlement")setTimeout(renderSettlementPreview,0);
 }
 
 function rList(){
@@ -1747,7 +1806,7 @@ function rHorse(id){
 
   if(tab==="gastos"){
     html+=`${admin?`<div class="sg sg2"><div class="st"><div class="v">${totEx.toFixed(0)}€</div><div class="l">Total</div></div><div class="st red"><div class="v">${pendEx.toFixed(0)}€</div><div class="l">Pendiente</div></div></div>`:""}
-    <div style="margin-bottom:.8rem"><button class="btn bts btbl" onclick="V={name:'newExpense',hid:'${h.id}'};render()">+ Añadir gasto</button></div>`;
+    <div style="display:grid;gap:.42rem;margin-bottom:.8rem"><button class="btn bts btbl" onclick="V={name:'newExpense',hid:'${h.id}'};render()">+ Añadir gasto</button><button class="btn btg btbl" onclick="V={name:'expenseSettlement',hid:'${h.id}'};render()">↔️ Ajustar cuentas entre propietarios</button></div>`;
     if(!ex.length){html+=`<div class="em"><p>Sin gastos todavía.</p></div>`;}
     else ex.forEach(e=>{
       const ec=ef(e.cat);const isIn=ec.d==="in";
@@ -1756,7 +1815,8 @@ function rHorse(id){
           <div class="xm">${fD(e.date)} · <b>${isIn?"":"-"}${Number(e.amount).toFixed(2)}€</b></div>
           <div class="pd">${isIn?"←":"→"} ${esc(e.payer||"?")} → ${esc(e.payee||"?")}</div>
           ${expenseSplitSummary(e)?`<div class="pd" style="align-items:flex-start"><span>👥</span><span><b>Reparto:</b> ${expenseSplitSummary(e)}</span></div>`:""}
-          <div style="margin-top:.18rem"><span class="sb s-${e.status}">${cap(e.status)}</span></div>
+          ${e.settled?`<div class="pd"><span>✅</span><span>Ajustado el ${e.settledDate?fD(e.settledDate):''}</span></div>`:""}
+          <div style="margin-top:.18rem"><span class="sb s-${e.status}">${cap(e.status)}</span>${e.settled?` <span class="sb s-pagado">Ajustado</span>`:""}</div>
         </div>
         <div class="ca"><button class="ib" onclick="V={name:'newExpense',hid:'${h.id}',eid:'${e.id}'};render()">✏️</button>${canPerm('expenses')?`<button class="db" onclick="deleteExpense('${e.id}','${h.id}')">✕</button>`:""}</div>
       </div>`;
@@ -2003,6 +2063,46 @@ function rNH(hid,eid){
       ${ed&&canPerm('deleteItems')?`<button type="button" class="btn btr btbl" onclick="if(confirm('¿Eliminar?')){D.health=D.health.filter(x=>x.id!=='${r.id}');save();V={name:'horse',hid:'${hid}',tab:'salud'};render()}">Eliminar</button>`:""}
     </div>
   </div>`;
+}
+
+
+function rExpenseSettlement(hid){
+  const blocked=requirePermissionView('expenses','No tienes permiso para ajustar gastos.'); if(blocked)return blocked;
+  const h=D.horses.find(x=>x.id===hid); if(!h)return`<div class="view"><p>No encontrado.</p></div>`;
+  const owners=ownerListForHorse(h);
+  const candidates=settlementCandidateExpenses(hid,false).sort((a,b)=>a.date<b.date?1:-1);
+  const history=(D.expenseSettlements||[]).filter(x=>x.hid===hid).sort((a,b)=>a.date<b.date?1:-1);
+  let html=`<div class="view">
+    <div class="vh"><button class="ib" onclick="V={name:'horse',hid:'${hid}',tab:'gastos'};render()">←</button><h1>Ajustar cuentas</h1></div>
+    <div class="card">
+      <div style="font-size:.88rem;color:var(--ti);font-weight:700;margin-bottom:.25rem">${esc(h.name)}</div>
+      <p style="font-size:.78rem;color:var(--gr)">Selecciona los gastos compartidos que queréis cuadrar. La app calcula quién debe pagar a quién, tipo Tricount. Al confirmar, los gastos quedan marcados como ajustados.</p>
+    </div>`;
+  if(owners.length<2){
+    html+=`<div class="em"><p>Necesitas al menos dos propietarios en la ficha del caballo para ajustar cuentas.</p></div></div>`;return html;
+  }
+  if(!candidates.length){
+    html+=`<div class="em"><p>No hay gastos pendientes de ajustar.</p></div>`;
+  }else{
+    html+=`<div class="card"><label style="display:flex;align-items:center;gap:.45rem;margin-bottom:.65rem;text-transform:none;letter-spacing:0;color:var(--vd);font-size:.8rem"><input type="checkbox" checked onchange="toggleAllSettlementExpenses(this)" style="width:auto"> Seleccionar todos los gastos pendientes</label>`;
+    candidates.forEach(e=>{
+      const sp=expenseSplitSummary(e);const payer=e.payer||'Sin pagador';
+      html+=`<label class="xc" style="cursor:pointer;margin-bottom:.45rem">
+        <input type="checkbox" class="settle-exp" value="${e.id}" checked onchange="renderSettlementPreview()" style="width:auto;margin-top:.35rem;flex-shrink:0">
+        <div class="xi gasto">💸</div>
+        <div class="xinf"><div class="xl">${esc(e.concept||'Gasto')}</div><div class="xm">${fD(e.date)} · ${Number(e.amount||0).toFixed(2)}€ · Pagó: ${esc(payer)}</div>${sp?`<div class="pd"><span>👥</span><span>${sp}</span></div>`:`<div class="pd"><span>ℹ️</span><span>Sin reparto: se usará el porcentaje de propiedad.</span></div>`}</div>
+      </label>`;
+    });
+    html+=`</div><div id="settlement-preview"></div>`;
+  }
+  if(history.length){
+    html+=`<div class="sh"><h2>Ajustes anteriores</h2></div>`;
+    history.forEach(st=>{
+      html+=`<div class="card"><div style="display:flex;justify-content:space-between;gap:.5rem"><div><b>${fD(st.date)}</b><div style="font-size:.75rem;color:var(--gr)">${(st.expenseIds||[]).length} gastos · ${Number(st.total||0).toFixed(2)}€</div></div></div>
+      <div style="margin-top:.55rem">${(st.transfers||[]).length?(st.transfers||[]).map(t=>`<div class="pd"><span>↔️</span><span>${esc(t.from)} pagó a ${esc(t.to)} <b>${Number(t.amount||0).toFixed(2)}€</b></span></div>`).join(''):'<span class="ap ok">Cuentas cuadradas</span>'}</div></div>`;
+    });
+  }
+  return html+`</div>`;
 }
 
 function rNE(hid,eid){

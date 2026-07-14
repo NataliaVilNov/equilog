@@ -24,13 +24,13 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Preparar Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
-          cache: npm
+          package-manager-cache: false
 
       - name: Instalar dependencias
-        run: npm ci
+        run: npm install
 
       - name: Construir aplicación
         run: npm run build

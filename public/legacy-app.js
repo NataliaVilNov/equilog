@@ -1358,21 +1358,50 @@ function rBoards(){
 function rWeeklyBoard(week){
   const dates=boardWeekDates(week);const periodic=D.boardConfig.periodicColumns;
   const end=dates[6];
-  let html=`<div class="board-toolbar"><button class="ib" onclick="boardShiftWeek(-1)">←</button><div><b>${fD(week)} — ${fD(end)}</b><small>Pulsa una casilla para ordenar las actividades.</small></div><button class="ib" onclick="boardShiftWeek(1)">→</button></div>`;
+  let html=`<div class="board-toolbar"><button class="ib" onclick="boardShiftWeek(-1)">←</button><div><b>${fD(week)} — ${fD(end)}</b><small>${_boardQuickActivity?'Modo rápido activo: toca casillas para añadir o quitar.':'Selecciona una actividad rápida o pulsa una casilla para ordenar.'}</small></div><button class="ib" onclick="boardShiftWeek(1)">→</button></div>`;
   if(!D.horses.length)return html+'<div class="em"><div class="big">🐴</div><p>Añade caballos para utilizar la pizarra.</p></div>';
-  html+=`<div class="board-scroll"><table class="weekly-board"><thead><tr><th class="horse-col">Caballo</th>${dates.map(d=>`<th class="${d===td()?'is-today':''}">${cap(boardDateLabel(d))}</th>`).join('')}${periodic.map(c=>`<th class="periodic-head">${esc(c.label)}</th>`).join('')}</tr></thead><tbody>`;
+  html+=`<div class="quick-board-panel"><div class="quick-board-title"><div><b>Asignación rápida</b><small>Pulsa una actividad y después toca todas las casillas necesarias. El orden se ajusta entrando en cada caballo.</small></div>${_boardQuickActivity?`<button class="btn btg btsm" onclick="setBoardQuickActivity(null)">Terminar</button>`:''}</div><div class="quick-board-actions">${D.boardConfig.activities.map(a=>`<button class="quick-board-btn ${boardToneClass(a.tone)} ${_boardQuickActivity===a.id?'active':''}" onclick="setBoardQuickActivity('${a.id}')"><span>${esc(a.code)}</span><small>${esc(a.label)}</small></button>`).join('')}</div></div>`;
+  html+=`<div class="board-fit"><table class="weekly-board compact-board"><colgroup><col class="col-horse">${dates.map(()=>'<col class="col-day">').join('')}${periodic.map(()=>'<col class="col-periodic">').join('')}</colgroup><thead><tr><th class="horse-col">Caballo</th>${dates.map(d=>`<th class="${d===td()?'is-today':''}"><span>${cap(boardDateLabel(d)).replace(' ','<br>')}</span></th>`).join('')}${periodic.map(c=>`<th class="periodic-head" title="${esc(c.label)}"><span>${esc(c.label)}</span></th>`).join('')}</tr></thead><tbody>`;
   D.horses.forEach(h=>{
-    html+=`<tr><th class="horse-col"><span class="horse-mini">${h.photo?`<img src="${h.photo}" alt="">`:'🐴'}</span><span>${esc(h.name)}</span></th>`;
-    dates.forEach(d=>{const acts=boardPlanActs(h.id,d);html+=`<td class="plan-cell ${d===td()?'is-today':''}" onclick="openBoardCell('${h.id}','${d}')">${acts.length?`<div class="plan-sequence">${acts.map((id,i)=>{const a=boardActivity(id);return `<span class="plan-code ${boardToneClass(a.tone)}" title="${esc(a.label)}">${esc(a.code)}</span>${i<acts.length-1?'<i>›</i>':''}`;}).join('')}</div>`:'<span class="plan-empty">＋</span>'}</td>`;});
-    periodic.forEach(c=>{const val=boardPeriodicValue(h.id,c.id),st=periodicStatus(val);html+=`<td class="periodic-cell"><input type="date" value="${val}" onchange="setBoardPeriodic('${h.id}','${c.id}',this.value)" class="periodic-input ${boardToneClass(st.cls)}"><small class="periodic-status ${boardToneClass(st.cls)}">${st.txt}</small></td>`;});
+    html+=`<tr><th class="horse-col"><div class="board-horse-name">${h.photo?`<img src="${h.photo}" alt="">`:'<span>🐴</span>'}<b>${esc(h.name)}</b></div></th>`;
+    dates.forEach(d=>{const acts=boardPlanActs(h.id,d);html+=`<td class="plan-cell ${d===td()?'is-today':''} ${_boardQuickActivity?'quick-mode':''}" onclick="boardQuickCell('${h.id}','${d}')">${acts.length?`<div class="plan-sequence">${acts.map((id,i)=>{const a=boardActivity(id);return `<span class="plan-code ${boardToneClass(a.tone)} ${_boardQuickActivity===id?'quick-hit':''}" title="${esc(a.label)}">${esc(a.code)}</span>${i<acts.length-1?'<i>›</i>':''}`;}).join('')}</div>`:'<span class="plan-empty">＋</span>'}</td>`;});
+    periodic.forEach(c=>{const val=boardPeriodicValue(h.id,c.id),st=periodicStatus(val);html+=`<td class="periodic-cell" onclick="editBoardPeriodic('${h.id}','${c.id}','${val}')"><button type="button" class="periodic-compact ${boardToneClass(st.cls)}" title="${esc(c.label)}: ${val||'sin fecha'}"><b>${val?val.slice(8,10)+'/'+val.slice(5,7):'—'}</b><small>${st.txt}</small></button></td>`;});
     html+='</tr>';
   });
   return html+'</tbody></table></div><div class="board-legend"><span class="ok">Verde: al día</span><span class="warn">Amarillo: próximo o pendiente</span><span class="bad">Rojo: vencido o conflicto</span><span class="info">Azul: información</span></div>';
 }
+
 function boardActivityCandidates(type,date){const actId=type==='walker'?'caminador':'paddock';return D.horses.filter(h=>boardHasActivity(h.id,date,actId));}
 function boardAssignment(type,date,resourceId,slotId,position){ensureBoardData();return D.boardAssignments.find(a=>a.type===type&&a.date===date&&a.resourceId===resourceId&&a.slotId===slotId&&Number(a.position)===Number(position));}
 function boardAssignedHorseIds(type,date){return new Set(D.boardAssignments.filter(a=>a.type===type&&a.date===date).map(a=>a.hid));}
 let _boardPickedHorse=null;
+let _boardQuickActivity=null;
+function setBoardQuickActivity(id){
+  _boardQuickActivity=_boardQuickActivity===id?null:id;
+  render();
+  if(_boardQuickActivity){
+    const a=boardActivity(_boardQuickActivity);
+    toast('Modo rápido '+a.code+': toca las casillas que quieras');
+  }else toast('Modo rápido desactivado');
+}
+function boardQuickCell(hid,date){
+  if(!_boardQuickActivity){openBoardCell(hid,date);return;}
+  ensureBoardData();
+  let p=boardPlan(hid,date);
+  if(!p){p={id:uid(),hid,date,activities:[]};D.weeklyPlans.push(p);}
+  if(!Array.isArray(p.activities))p.activities=[];
+  const i=p.activities.indexOf(_boardQuickActivity);
+  if(i>=0)p.activities.splice(i,1);else p.activities.push(_boardQuickActivity);
+  save();render();
+}
+function editBoardPeriodic(hid,columnId,current){
+  const val=prompt('Introduce la próxima fecha (AAAA-MM-DD). Déjalo vacío para borrar.',current||'');
+  if(val===null)return;
+  const clean=val.trim();
+  if(clean&&!/^\d{4}-\d{2}-\d{2}$/.test(clean)){toast('Fecha no válida. Usa AAAA-MM-DD');return;}
+  setBoardPeriodic(hid,columnId,clean);
+}
+
 function setBoardPickedHorse(hid){_boardPickedHorse=hid;document.querySelectorAll('.pending-horse').forEach(x=>x.classList.toggle('selected',x.dataset.hid===hid));toast('Caballo seleccionado. Pulsa un hueco libre.');}
 function boardDragHorse(ev,hid){_boardPickedHorse=hid;try{ev.dataTransfer.setData('text/plain',JSON.stringify({hid}));}catch(e){}}
 function boardDragAssignment(ev,id){try{ev.dataTransfer.setData('text/plain',JSON.stringify({assignmentId:id}));}catch(e){}}

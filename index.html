@@ -10,7 +10,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 
-<link href="/src/styles.css" rel="stylesheet"/><script src="/src/main.js" type="module"></script></head>
+</head>
 <body>
 <!-- AUTH SCREEN -->
 <div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:500;background:var(--fo);overflow-y:auto">
@@ -139,5 +139,7 @@
 <div class="toast" id="toast"></div>
 <div id="loading-screen" style="display:none;position:fixed;inset:0;z-index:480;background:var(--fo);align-items:center;justify-content:center;flex-direction:column;gap:.75rem"><div class="sp"></div><div style="font-size:.82rem;color:var(--gr)">Cargando...</div></div>
 
-<script src="/src/legacy-app.js"></script></body>
+<script src="./legacy-app.js"></script>
+<script type="module" src="./src/main.js"></script>
+</body>
 </html>

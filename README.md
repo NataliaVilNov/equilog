@@ -1,20 +1,15 @@
-# EquiLog para GitHub Pages
+# EquiLog — versión con pizarras personalizables
+
+Esta versión incorpora:
+
+- Pizarra principal semanal por caballo y día.
+- Actividades ordenadas cronológicamente mediante abreviaturas configurables.
+- Columnas periódicas personalizables (herraje, desparasitación, dientes, etc.).
+- Pizarra diaria de caminadores con número de huecos y horarios configurables.
+- Pizarra diaria de paddocks con nombres y franjas configurables.
+- Asignación mediante arrastrar y soltar en ordenador, y selección + toque como alternativa en móvil.
+- Colores consistentes: verde correcto, amarillo pendiente, rojo conflicto y azul información.
 
 ## Publicación
 
-En GitHub deben verse directamente en la raíz del repositorio:
-
-- `.github`
-- `public`
-- `src`
-- `index.html`
-- `package.json`
-- `vite.config.js`
-
-En **Settings → Pages → Source** selecciona **GitHub Actions**.
-
-## Muy importante
-
-En `.github/workflows` debe quedar únicamente el archivo `deploy.yml` incluido en este proyecto. Elimina workflows antiguos para evitar que GitHub ejecute configuraciones con `actions/checkout@v4` o `actions/upload-artifact@v4`.
-
-Después abre **Actions → Publicar EquiLog → Run workflow** o sube un nuevo cambio para ejecutar la publicación.
+Sube todo el contenido de esta carpeta al repositorio de GitHub y pulsa `Commit changes`. GitHub Actions publicará automáticamente la versión.

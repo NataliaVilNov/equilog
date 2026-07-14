@@ -413,7 +413,7 @@ window._fbSwitchStable = async function(stableId){
     const userNameEl=document.getElementById('header-user-name');
     if(userNameEl)userNameEl.textContent=(user.displayName||user.email||'').split(' ')[0];
     showScreen('app');
-    V={name:'list'};render();
+    V={name:'home'};render();
   }catch(e){
     console.error('_fbSwitchStable:',e);
     try{await setDoc(doc(fb.db,'users',user.uid),{lastStable:null},{merge:true});}catch(_e){}
@@ -1029,7 +1029,7 @@ function save(){
 
 let D=load();
 ["horses","trainings","health","expenses","team","tasks","ctasks","cexpenses","salerts","templates","absences"].forEach(k=>{if(!D[k])D[k]=[]});
-let V={name:"list"};
+let V={name:"home"};
 
 function sanA(){
   return D.health.filter(r=>r.nxt).flatMap(r=>{
@@ -1187,6 +1187,84 @@ async function deleteHealthDoc(id){
   }catch(e){toast('Error al eliminar: '+(e.message||e));}
 }
 
+function greetingText(){
+  const hour=new Date().getHours();
+  if(hour<13)return 'Buenos días';
+  if(hour<20)return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
+function rHome(){
+  const user=window._FBUSER;
+  const profile=window._FBPROFILE||{};
+  const firstName=((profile.name||(user&&user.displayName)||'')+'').trim().split(/\s+/)[0];
+  const today=td();
+  const allToday=tfD(today);
+  const visibleToday=visibleTasksForUser(allToday);
+  const done=visibleToday.filter(t=>t.status==='done').length;
+  const pending=Math.max(0,visibleToday.length-done);
+  const healthAlerts=canPerm('health')?sanA():[];
+  const sessionAlerts=visibleAlertsForUser(sesA());
+  const pendingExpenses=canPerm('expenses')?(D.expenses||[]).filter(e=>e.status!=='pagado').length:0;
+  const workedIds=new Set((D.trainings||[]).filter(t=>t.date===today).map(t=>t.hid));
+  const totalHorses=(D.horses||[]).length;
+  const nextHealth=healthAlerts.slice(0,3);
+  const urgent=healthAlerts.filter(a=>a.ov).length+sessionAlerts.length;
+  const progress=visibleToday.length?Math.round(done/visibleToday.length*100):0;
+  return `<div class="view home-view">
+    <section class="home-hero">
+      <div><span class="ey">${esc((window._ACTIVE_STABLE&&window._ACTIVE_STABLE.name)||'EquiLog')}</span><h1>${greetingText()}${firstName?', '+esc(firstName):''}</h1><p>Este es el resumen de tu cuadra para hoy.</p></div>
+      <div class="home-date">${cap(fDL(today))}</div>
+    </section>
+
+    ${urgent?`<button class="attention-card" onclick="V={name:'alerts'};render()"><span class="attention-icon">!</span><span><b>${urgent} aviso${urgent!==1?'s':''} requiere${urgent===1?'':'n'} atención</b><small>Revisa partes pendientes y controles sanitarios.</small></span><span>→</span></button>`:''}
+
+    <section class="home-stats">
+      <button class="home-stat" onclick="V={name:'day',dd:'${today}'};render()"><span class="home-stat-icon task">✓</span><strong>${pending}</strong><small>Tareas pendientes</small></button>
+      <button class="home-stat" onclick="V={name:'list'};render()"><span class="home-stat-icon horse">🐴</span><strong>${workedIds.size}/${totalHorses}</strong><small>Caballos trabajados</small></button>
+      <button class="home-stat" onclick="V={name:'alerts'};render()"><span class="home-stat-icon health">＋</span><strong>${healthAlerts.length}</strong><small>Controles próximos</small></button>
+      <button class="home-stat" onclick="V={name:'stats'};render()"><span class="home-stat-icon money">€</span><strong>${pendingExpenses}</strong><small>Pagos pendientes</small></button>
+    </section>
+
+    <section class="home-section">
+      <div class="section-title"><div><span class="ey">Acciones rápidas</span><h2>¿Qué necesitas hacer?</h2></div></div>
+      <div class="quick-grid">
+        ${canPerm('trainings')&&D.horses.length?`<button class="quick-action primary" onclick="V={name:'list'};render();toast('Elige el caballo para registrar el entrenamiento')"><span>＋</span><b>Entrenamiento</b><small>Elegir caballo y registrar</small></button>`:''}
+        ${canPerm('tasks')?`<button class="quick-action" onclick="V={name:'newTask',dd:'${today}'};render()"><span>✓</span><b>Nueva tarea</b><small>Organizar el día</small></button>`:''}
+        ${canPerm('horses')?`<button class="quick-action" onclick="V={name:'addHorse'};render()"><span>🐴</span><b>Nuevo caballo</b><small>Añadir una ficha</small></button>`:''}
+        <button class="quick-action" onclick="openMorePanel()"><span>•••</span><b>Más opciones</b><small>Salud, gastos y gestión</small></button>
+      </div>
+    </section>
+
+    <section class="home-section">
+      <div class="section-title"><div><span class="ey">Agenda</span><h2>Tareas de hoy</h2></div><button class="text-link" onclick="V={name:'day',dd:'${today}'};render()">Ver todas →</button></div>
+      <div class="day-progress"><div><b>${done} de ${visibleToday.length}</b><span> completadas</span></div><strong>${progress}%</strong><div class="progress-track"><span style="width:${progress}%"></span></div></div>
+      ${visibleToday.length?visibleToday.slice(0,4).map(t=>tcard(t)).join(''):`<div class="empty-soft"><span>✓</span><div><b>Todo tranquilo</b><p>No hay tareas asignadas para hoy.</p></div></div>`}
+    </section>
+
+    ${nextHealth.length?`<section class="home-section"><div class="section-title"><div><span class="ey">Salud</span><h2>Próximos controles</h2></div><button class="text-link" onclick="V={name:'alerts'};render()">Ver alertas →</button></div>${nextHealth.map(a=>scard(a)).join('')}</section>`:''}
+  </div>`;
+}
+
+function openMorePanel(){
+  const panel=document.getElementById('more-panel');
+  const content=document.getElementById('more-panel-content');
+  if(!panel||!content)return;
+  const items=[];
+  if(canPerm('stable'))items.push({icon:'🏠',title:'Cuadra',sub:'Tareas y gastos generales',go:"V={name:'cuadra',tab:'tareas'};render()"});
+  items.push({icon:'🔔',title:'Alertas',sub:'Avisos y recordatorios',go:"V={name:'alerts'};render()"});
+  if(canPerm('stats'))items.push({icon:'▥',title:'Estadísticas',sub:'Actividad y finanzas',go:"V={name:'stats'};render()"});
+  items.push({icon:'👤',title:'Mi perfil',sub:'Datos personales y sesión',go:'openUserPanel()'});
+  items.push({icon:'⇄',title:'Cambiar de cuadra',sub:'Abrir otra cuadra',go:'openStablePanel()'});
+  content.innerHTML=items.map(i=>`<button class="more-item" onclick="closeMorePanel();${i.go}"><span>${i.icon}</span><div><b>${i.title}</b><small>${i.sub}</small></div><i>→</i></button>`).join('');
+  panel.style.display='flex';
+  document.getElementById('nb-more')?.classList.add('active');
+}
+function closeMorePanel(){
+  const panel=document.getElementById('more-panel');if(panel)panel.style.display='none';
+  document.getElementById('nb-more')?.classList.remove('active');
+}
+
 function render(){
   applyNavPermissions();
   const app=document.getElementById("app");
@@ -1204,15 +1282,13 @@ function render(){
      (['newTask','editTask'].includes(nm) && !canPerm('tasks'))){
     nm='list'; V={name:'list'};
   }
-  document.getElementById("nb-horses").classList.toggle("active",["list","addHorse","editHorse","horse","newTraining","newHealth","newExpense","report"].includes(nm));
-  document.getElementById("nb-day").classList.toggle("active",["day","newTask","editTask","smartOrder"].includes(nm));
-  document.getElementById("nb-team").classList.toggle("active",["team","addMember","editMember","memberDay","teamReport","templates","editTemplate","teamCalendar"].includes(nm));
-  document.getElementById("nb-cuadra").classList.toggle("active",["cuadra","newCT","newCE"].includes(nm));
-  document.getElementById("nb-alerts").classList.toggle("active",["alerts","answerS"].includes(nm));
-  document.getElementById("nb-stats").classList.toggle("active",nm==="stats");
+  document.getElementById("nb-home")?.classList.toggle("active",nm==="home");
+  document.getElementById("nb-horses")?.classList.toggle("active",["list","addHorse","editHorse","horse","newTraining","newHealth","newExpense","expenseSettlement","report"].includes(nm));
+  document.getElementById("nb-day")?.classList.toggle("active",["day","newTask","editTask","smartOrder"].includes(nm));
+  document.getElementById("nb-team")?.classList.toggle("active",["team","addMember","editMember","memberDay","teamReport","templates","editTemplate","teamCalendar"].includes(nm));
   try{
     const views={
-      list:rList, addHorse:()=>rHF(null), editHorse:()=>rHF(D.horses.find(h=>h.id===V.hid)),
+      home:rHome, list:rList, addHorse:()=>rHF(null), editHorse:()=>rHF(D.horses.find(h=>h.id===V.hid)),
       horse:()=>rHorse(V.hid), newTraining:()=>rNT(V.hid), newHealth:()=>rNH(V.hid,V.eid),
       newExpense:()=>rNE(V.hid,V.eid), expenseSettlement:()=>rExpenseSettlement(V.hid), report:()=>rRep(V.hid),
       day:()=>rDay(V.dd||td()), smartOrder:()=>rSmartOrder(), newTask:()=>rNTask(null), editTask:()=>rNTask(D.tasks.find(t=>t.id===V.tid)),
@@ -3432,12 +3508,11 @@ function attach(){
 }
 
 /* === BOTTOM NAV + INIT === */
+document.getElementById('nb-home').onclick=()=>{V={name:'home'};render()};
 document.getElementById('nb-horses').onclick=()=>{V={name:'list'};render()};
 document.getElementById('nb-day').onclick=()=>{V={name:'day',dd:td()};render()};
 document.getElementById('nb-team').onclick=()=>{V={name:'team'};render()};
-document.getElementById('nb-cuadra').onclick=()=>{V={name:'cuadra',tab:'tareas'};render()};
-document.getElementById('nb-alerts').onclick=()=>{V={name:'alerts'};render()};
-document.getElementById('nb-stats').onclick=()=>{V={name:'stats'};render()};
+document.getElementById('nb-more').onclick=()=>openMorePanel();
 // Show loading until Firebase auth resolves
 showScreen('loading');
 

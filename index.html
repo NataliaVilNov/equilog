@@ -129,14 +129,20 @@
 </div>
 <div class="wrap" id="app-wrap"><div id="app"></div></div>
 <button class="fab" id="fab" style="display:none">+</button>
-<nav class="bn" style="display:none">
+<nav class="bn" style="display:none" aria-label="Navegación principal">
+<button class="nb" id="nb-home"><span class="ni">⌂</span>Inicio</button>
 <button class="nb" id="nb-horses"><span class="ni">🐴</span>Caballos</button>
-<button class="nb" id="nb-day"><span class="ni">📋</span>Hoy</button>
+<button class="nb" id="nb-day"><span class="ni">✓</span>Hoy</button>
 <button class="nb" id="nb-team"><span class="ni">👥</span>Equipo</button>
-<button class="nb" id="nb-cuadra"><span class="ni">🏠</span>Cuadra</button>
-<button class="nb" id="nb-alerts"><span class="ni">🔔</span>Alertas</button>
-<button class="nb" id="nb-stats"><span class="ni">📊</span>Stats</button>
+<button class="nb" id="nb-more"><span class="ni">•••</span>Más</button>
 </nav>
+
+<div id="more-panel" class="sheet-overlay" style="display:none" onclick="if(event.target===this)closeMorePanel()">
+  <section class="sheet" aria-label="Más opciones">
+    <div class="sheet-head"><div><span class="ey">EquiLog</span><h2>Más opciones</h2></div><button class="ib" onclick="closeMorePanel()" aria-label="Cerrar">✕</button></div>
+    <div id="more-panel-content" class="more-grid"></div>
+  </section>
+</div>
 <div class="toast" id="toast"></div>
 <div id="loading-screen" style="display:none;position:fixed;inset:0;z-index:480;background:var(--fo);align-items:center;justify-content:center;flex-direction:column;gap:.75rem"><div class="sp"></div><div style="font-size:.82rem;color:var(--gr)">Cargando...</div></div>
 

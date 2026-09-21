@@ -17,7 +17,10 @@ import { useDebouncedSave } from "../hooks/useDebouncedSave.js";
 // fallback below lands in the same place the legacy app already writes to.
 const LOCAL_STORAGE_KEY = "equilog_v4";
 
-// Mirrors the array shape returned by the legacy load() (public/legacy-app.js:986-989).
+// Mirrors the defensive array-defaulting list in _fbLoadData/_fbSetupListener
+// (public/legacy-app.js:437,453) — note this is one key longer than legacy's own load()
+// (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
+// listener always defaults it.
 const COLLECTION_KEYS = [
   "horses",
   "trainings",
@@ -31,6 +34,7 @@ const COLLECTION_KEYS = [
   "salerts",
   "templates",
   "absences",
+  "expenseSettlements",
 ];
 
 function emptyData() {

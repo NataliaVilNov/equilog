@@ -7,10 +7,12 @@ import {
 } from "./contexts/StableSelectionContext.jsx";
 import { StableDataProvider } from "./contexts/StableDataContext.jsx";
 import { ToastProvider } from "./contexts/ToastContext.jsx";
-import { ModalProvider } from "./contexts/ModalContext.jsx";
+import { ModalContext, ModalProvider } from "./contexts/ModalContext.jsx";
 import { AppHeader } from "./components/layout/AppHeader.jsx";
 import { BottomNav } from "./components/layout/BottomNav.jsx";
 import { Toast } from "./components/Toast.jsx";
+import { StablePanel } from "./features/stables/StablePanel.jsx";
+import { JoinTeamModal } from "./features/stables/JoinTeamModal.jsx";
 import { AppRoutes } from "./routes/routes.jsx";
 
 // StableDataProvider takes the active stable id as a prop rather than reading
@@ -24,6 +26,7 @@ function StableDataScope({ children }) {
 function AppShell() {
   const { user } = useContext(AuthContext) || {};
   const { activeStableId } = useContext(StableSelectionContext) || {};
+  const { isModalOpen } = useContext(ModalContext) || {};
   const showChrome = !!user && !!activeStableId;
 
   return (
@@ -35,6 +38,8 @@ function AppShell() {
         </div>
       </div>
       {showChrome && <BottomNav />}
+      {showChrome && isModalOpen && isModalOpen("stablePanel") && <StablePanel />}
+      <JoinTeamModal />
       <Toast />
     </>
   );

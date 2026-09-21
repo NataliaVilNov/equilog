@@ -1,0 +1,110 @@
+# EquiLog — Backlog / Known Problems
+
+Concrete, actionable problems found while documenting the codebase (see `FEATURES.md` and
+`DATABASE.md`), ordered roughly by severity/urgency. None of these are fixed in this pass —
+this is a tracking document. Line numbers refer to the repo state on branch
+`refactor/react-migration` at the time this doc was written.
+
+## Security
+
+### 1. Firebase API key committed to the repo, no `.gitignore`, no `.env` anywhere
+`src/firebase.js:11` hardcodes the Firebase Web `apiKey` directly in source, and the repo has
+**no `.gitignore` file at all** — nothing is excluded from git. The key is already in git
+history on the public/shared remote.
+- **Fix**: add a `.gitignore` (node_modules, dist, `.env*`), move the Firebase config into
+  Vite env vars (`VITE_FIREBASE_API_KEY`, etc., read via `import.meta.env.VITE_*`), and
+  **rotate the key** in the Firebase console since it's already exposed in history. Note:
+  Firebase Web API keys are not secret by design (they're safe to ship in a client bundle
+  when Firestore Security Rules + App Check are properly configured) — the real ask here is
+  hygiene (get it out of git going forward) plus verifying Firestore Security Rules actually
+  restrict access, since there's no rules file visible in this repo to confirm that.
+
+### 2. AI report features call the Anthropic API directly from the browser
+`genRep()` (training reports) and `genTR()` (team reports) do a client-side
+`fetch("https://api.anthropic.com/v1/messages", ...)` with **no API key or auth header
+visible in the code**. Two possibilities, both bad:
+- The feature is already broken in production (the call 401s), meaning a paid feature is
+  silently non-functional and no one may have noticed.
+- Or a key was stripped before this commit but the intent was to embed one — which would be a
+  **client-exposed secret vulnerability**, letting anyone inspect the bundle and drain the
+  API key's quota/budget.
+- **Fix**: never call a paid LLM API directly from client code with an embedded key. Stand up
+  a minimal server-side proxy (Cloud Function, or any small backend) that holds the key and
+  the client calls that instead. Until that exists, this feature should be explicitly
+  descoped/disabled rather than left in an ambiguous broken/vulnerable state.
+
+## Data model
+
+### 3. Single Firestore document per stable (scalability + concurrency risk)
+The entire stable dataset (every horse, every training/health/expense record, tasks, team,
+etc.) lives in one Firestore document (`stables/{id}/data/main`), overwritten wholesale on
+every save. See `DATABASE.md` §5 for full detail. Concretely:
+- Any two team members editing different things at the same time can silently clobber each
+  other's changes (whole-document last-write-wins, no field-level merge).
+- The document will eventually hit Firestore's 1 MiB size limit, especially since horse
+  photos are stored as inline base64 rather than in Firebase Storage.
+- No server-side querying, pagination, or per-resource security rules are possible.
+- **Fix**: migrate to per-collection subcollections (`stables/{id}/horses/{hid}`, `.../tasks/{id}`,
+  etc.) with per-document listeners aggregated client-side, and move horse photos to Storage.
+  This is a substantial, separate effort from the React component migration — see
+  `REFACTOR_PLAN.md`'s note on this — and should be scheduled as its own phase after the
+  React port stabilizes.
+
+## Code organization
+
+### 4. No React / component structure — 3,741-line monolith
+`public/legacy-app.js` is a single file implementing all 21 features, hand-rolled routing, a
+global mutable state object, and a 110-line function that manually rewires every form's event
+handlers after each render. This is the primary subject of `REFACTOR_PLAN.md`.
+
+### 5. Dead duplicate file: `src/legacy-app.js`
+`src/legacy-app.js` (221KB, ~3,443 lines) is ~85% identical to `public/legacy-app.js` but is
+**not referenced anywhere** — `index.html` loads `./legacy-app.js`, which Vite resolves to
+`public/legacy-app.js`. The `src/` copy is missing newer features (Home dashboard, the entire
+Boards feature) and appears to be a stale snapshot left behind after edits continued only in
+`public/`.
+- **Fix**: delete `src/legacy-app.js` once confirmed unreferenced (Phase 0 of
+  `REFACTOR_PLAN.md`). Trivial, zero-risk cleanup — do this regardless of whether/when the
+  full React migration proceeds.
+
+### 6. Horsetelex pedigree import is CORS-fragile
+`fetchHorsetelexHtml()` does a direct client-side `fetch()` against an external
+horsetelex.com URL with no server-side proxy. This will break unpredictably if
+horsetelex.com's CORS policy changes, and there's already a manual-paste fallback in the UI
+suggesting this is a known pain point.
+- **Fix**: either accept manual-paste as the primary path and simplify the UI, or add a small
+  server-side proxy endpoint for the fetch.
+
+## Testing & process
+
+### 7. No automated tests anywhere in the repo
+There is no test runner configured, no test files, and no CI step beyond the GitHub Pages
+deploy workflow (`.github/workflows/deploy.yml`, which just runs `npm run build` and deploys
+`/dist`). Every feature is currently validated by hand.
+- **Fix**: not urgent to fix on the legacy codebase, but the React migration is a natural
+  point to start — e.g. `REFACTOR_PLAN.md` Phase 7 (Smart Order) explicitly calls out
+  extracting the `so*` parser functions as pure functions specifically because they're the
+  first realistic unit-test target in the app.
+
+## Documentation
+
+### 8. README only documents the most recently added feature
+`README.md` documents exclusively the "Boards" (pizarras) feature — the app's other 20
+features have no top-level documentation, no setup/install instructions (`npm install`,
+`npm run dev`), no architecture overview, and it's Spanish-only with no translation.
+- **Fix**: `FEATURES.md` and `DATABASE.md` in this same `docs/` folder now cover this gap;
+  consider trimming `README.md` down to a short pointer (setup steps + links into `docs/`)
+  rather than a feature-specific document.
+
+## Minor / non-blocking
+
+- **No error boundaries**: the only error handling around rendering is one top-level
+  `try/catch` inside `render()` (`public/legacy-app.js` ~line 1525) that replaces the entire
+  app body with a generic error message on any render exception — a single bug on any screen
+  takes down the whole UI with no recovery path short of reloading.
+- **Heavy inline `style="..."` attributes** throughout `index.html` for static shell markup
+  (auth screen, modals, panels) rather than CSS classes — makes the shell markup hard to
+  scan/maintain even though `src/styles.css` already defines a full class-based design
+  system used elsewhere in the app.
+- **No CI beyond deploy**: no lint step, no build-failure gate other than the deploy workflow
+  itself failing.

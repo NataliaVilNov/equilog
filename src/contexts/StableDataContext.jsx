@@ -400,6 +400,50 @@ export function StableDataProvider({ stableId, children }) {
     [updateData, data.healthDocs]
   );
 
+  // Ports the expense-save handler (public/legacy-app.js:3713-3730) and deleteExpense
+  // (public/legacy-app.js:2132-2143 — deliberately doesn't touch a linked health record,
+  // matching the legacy comment there).
+  const addExpense = useCallback(
+    (expense) => {
+      updateData((prev) => ({ ...prev, expenses: [...prev.expenses, expense] }));
+    },
+    [updateData]
+  );
+
+  const updateExpense = useCallback(
+    (expense) => {
+      updateData((prev) => ({
+        ...prev,
+        expenses: prev.expenses.map((e) => (e.id === expense.id ? expense : e)),
+      }));
+    },
+    [updateData]
+  );
+
+  const deleteExpense = useCallback(
+    (id) => {
+      updateData((prev) => ({ ...prev, expenses: prev.expenses.filter((e) => e.id !== id) }));
+    },
+    [updateData]
+  );
+
+  // Ports confirmExpenseSettlement (public/legacy-app.js:969-976): records the settlement
+  // and marks every settled expense.
+  const addExpenseSettlement = useCallback(
+    (settlement) => {
+      updateData((prev) => ({
+        ...prev,
+        expenseSettlements: [...(prev.expenseSettlements || []), settlement],
+        expenses: prev.expenses.map((e) =>
+          settlement.expenseIds.includes(e.id)
+            ? { ...e, settled: true, settlementId: settlement.id, settledDate: settlement.date }
+            : e
+        ),
+      }));
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -417,6 +461,10 @@ export function StableDataProvider({ stableId, children }) {
       addHealthDocLink,
       uploadHealthDocs,
       deleteHealthDoc,
+      addExpense,
+      updateExpense,
+      deleteExpense,
+      addExpenseSettlement,
     }),
     [
       data,
@@ -434,6 +482,10 @@ export function StableDataProvider({ stableId, children }) {
       addHealthDocLink,
       uploadHealthDocs,
       deleteHealthDoc,
+      addExpense,
+      updateExpense,
+      deleteExpense,
+      addExpenseSettlement,
     ]
   );
 

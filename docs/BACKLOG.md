@@ -18,6 +18,10 @@ history on the public/shared remote.
   when Firestore Security Rules + App Check are properly configured) — the real ask here is
   hygiene (get it out of git going forward) plus verifying Firestore Security Rules actually
   restrict access, since there's no rules file visible in this repo to confirm that.
+- **Status**: `.gitignore` added and `src/firebase.js` now reads `import.meta.env.VITE_*`
+  (`.env.example` documents the required vars) as of the Phase 0 housekeeping commits on
+  `refactor/react-migration`. The key is still present in git history on `main`, so **rotating
+  it in the Firebase console remains outstanding** — that's a manual step outside this repo.
 
 ### 2. AI report features call the Anthropic API directly from the browser
 `genRep()` (training reports) and `genTR()` (team reports) do a client-side
@@ -66,6 +70,7 @@ Boards feature) and appears to be a stale snapshot left behind after edits conti
 - **Fix**: delete `src/legacy-app.js` once confirmed unreferenced (Phase 0 of
   `REFACTOR_PLAN.md`). Trivial, zero-risk cleanup — do this regardless of whether/when the
   full React migration proceeds.
+- **Status**: done — removed on `refactor/react-migration` during Phase 0.
 
 ### 6. Horsetelex pedigree import is CORS-fragile
 `fetchHorsetelexHtml()` does a direct client-side `fetch()` against an external

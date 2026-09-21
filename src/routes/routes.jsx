@@ -1,13 +1,10 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./ProtectedRoute.jsx";
 import { AuthScreen } from "../features/auth/AuthScreen.jsx";
+import { StableListScreen } from "../features/stables/StableListScreen.jsx";
 
-// Placeholders — replaced by the real screens as they're built (stable list: step 18,
-// home: Phase 4). Keeping them inline here means this routing skeleton is buildable
-// and testable on its own before those features exist.
-function StableListPlaceholder() {
-  return <p>Stable list — under construction</p>;
-}
+// Placeholder — replaced once Phase 4 (home dashboard) exists. Keeping it inline here
+// means this routing skeleton is buildable and testable on its own before that exists.
 function HomePlaceholder() {
   return <p>Home — under construction</p>;
 }
@@ -16,7 +13,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<AuthScreen />} />
-      <Route path="/stables" element={<StableListPlaceholder />} />
+      <Route path="/stables" element={<StableListScreen />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/home" element={<HomePlaceholder />} />
       </Route>

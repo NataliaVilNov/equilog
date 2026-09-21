@@ -134,9 +134,43 @@ export function StableDataProvider({ stableId, children }) {
     [stableId, debouncedWrite]
   );
 
+  // Ports the horse CRUD portion of the save-horse-btn handler in attach()
+  // (public/legacy-app.js:3622-3646) and delHorse (public/legacy-app.js:1644-1653).
+  const addHorse = useCallback(
+    (horse) => {
+      updateData((prev) => ({ ...prev, horses: [...prev.horses, horse] }));
+    },
+    [updateData]
+  );
+
+  const updateHorse = useCallback(
+    (horse) => {
+      updateData((prev) => ({
+        ...prev,
+        horses: prev.horses.map((h) => (h.id === horse.id ? horse : h)),
+      }));
+    },
+    [updateData]
+  );
+
+  const deleteHorse = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        horses: prev.horses.filter((h) => h.id !== id),
+        trainings: prev.trainings.filter((t) => t.hid !== id),
+        health: prev.health.filter((r) => r.hid !== id),
+        healthDocs: (prev.healthDocs || []).filter((r) => r.hid !== id),
+        expenses: prev.expenses.filter((e) => e.hid !== id),
+        tasks: prev.tasks.filter((t) => t.hid !== id),
+      }));
+    },
+    [updateData]
+  );
+
   const value = useMemo(
-    () => ({ ...data, loading, error, updateData }),
-    [data, loading, error, updateData]
+    () => ({ ...data, loading, error, updateData, addHorse, updateHorse, deleteHorse }),
+    [data, loading, error, updateData, addHorse, updateHorse, deleteHorse]
   );
 
   return (

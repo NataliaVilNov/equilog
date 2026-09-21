@@ -12,8 +12,46 @@ import {
 } from "../lib/firestore.js";
 import { cleanForFirestore } from "../lib/cleanForFirestore.js";
 import { useDebouncedSave } from "../hooks/useDebouncedSave.js";
+import {
+  ref as storageRef,
+  uploadBytesResumable,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
+import { storage } from "../lib/firebaseClient.js";
 import { catFromHealthType } from "../lib/constants.js";
 import { uid } from "../lib/id.js";
+import { td } from "../lib/date.js";
+
+// Ports uploadFileWithProgress (public/legacy-app.js:1097-1109), minus the DOM status
+// write — callers pass an onProgress(pct) callback instead.
+function uploadFileWithProgress(ref, file, metadata, onProgress) {
+  return new Promise((resolve, reject) => {
+    const task = uploadBytesResumable(ref, file, metadata);
+    task.on(
+      "state_changed",
+      (snap) => {
+        onProgress(Math.round((snap.bytesTransferred / snap.totalBytes) * 100));
+      },
+      reject,
+      async () => {
+        try {
+          resolve(await getDownloadURL(task.snapshot.ref));
+        } catch (e) {
+          reject(e);
+        }
+      }
+    );
+  });
+}
+
+function safeStorageName(name) {
+  return (name || "documento")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "_")
+    .slice(0, 120);
+}
 
 // Matches the legacy app's localStorage key (public/legacy-app.js:880) so the write-only
 // fallback below lands in the same place the legacy app already writes to.
@@ -275,6 +313,93 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports addHealthDocLink (public/legacy-app.js:1116-1130).
+  const addHealthDocLink = useCallback(
+    ({ hid, category, date, notes, title, url, userId }) => {
+      const horse = data.horses.find((x) => x.id === hid);
+      const doc = {
+        id: uid(),
+        hid,
+        horseName: horse ? horse.name : "",
+        category: category || "otro",
+        date: date || td(),
+        notes: notes || "",
+        title: title || "Documento enlazado",
+        name: title || "Documento enlazado",
+        url,
+        source: "link",
+        createdBy: userId || null,
+        createdAt: new Date().toISOString(),
+      };
+      updateData((prev) => ({ ...prev, healthDocs: [...(prev.healthDocs || []), doc] }));
+    },
+    [updateData, data.horses]
+  );
+
+  // Ports uploadHealthDocs (public/legacy-app.js:1132-1176): uploads every file to Firebase
+  // Storage, then pushes all resulting doc records in one updateData call (matching
+  // legacy's single loop + one save()), reporting progress via onProgress(label, pct).
+  const uploadHealthDocs = useCallback(
+    async ({ hid, files, category, date, notes, userId, onProgress }) => {
+      const horse = data.horses.find((x) => x.id === hid);
+      const added = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const id = uid();
+        const path = `stables/${stableId}/horses/${hid}/health_docs/${Date.now()}_${id}_${safeStorageName(
+          file.name
+        )}`;
+        const ref = storageRef(storage, path);
+        const metadata = {
+          contentType: file.type || "application/octet-stream",
+          customMetadata: { stableId, horseId: hid, uploadedBy: userId || "", originalName: file.name },
+        };
+        const url = await uploadFileWithProgress(ref, file, metadata, (pct) =>
+          onProgress && onProgress(`${i + 1}/${files.length}`, pct)
+        );
+        added.push({
+          id,
+          hid,
+          horseName: horse ? horse.name : "",
+          category: category || "otro",
+          date: date || td(),
+          notes: notes || "",
+          name: file.name,
+          title: file.name,
+          type: file.type || "",
+          size: file.size || 0,
+          path,
+          url,
+          createdBy: userId || null,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      updateData((prev) => ({ ...prev, healthDocs: [...(prev.healthDocs || []), ...added] }));
+      return added;
+    },
+    [updateData, data.horses, stableId]
+  );
+
+  // Ports deleteHealthDoc (public/legacy-app.js:1177-1188).
+  const deleteHealthDoc = useCallback(
+    async (id) => {
+      const doc = (data.healthDocs || []).find((x) => x.id === id);
+      if (!doc) return;
+      if (doc.path) {
+        try {
+          await deleteObject(storageRef(storage, doc.path));
+        } catch (_e) {
+          // non-fatal, mirrors legacy behavior
+        }
+      }
+      updateData((prev) => ({
+        ...prev,
+        healthDocs: (prev.healthDocs || []).filter((x) => x.id !== id),
+      }));
+    },
+    [updateData, data.healthDocs]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -289,6 +414,9 @@ export function StableDataProvider({ stableId, children }) {
       addHealthRecord,
       updateHealthRecord,
       deleteHealthRecord,
+      addHealthDocLink,
+      uploadHealthDocs,
+      deleteHealthDoc,
     }),
     [
       data,
@@ -303,6 +431,9 @@ export function StableDataProvider({ stableId, children }) {
       addHealthRecord,
       updateHealthRecord,
       deleteHealthRecord,
+      addHealthDocLink,
+      uploadHealthDocs,
+      deleteHealthDoc,
     ]
   );
 

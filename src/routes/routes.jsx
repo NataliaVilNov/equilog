@@ -8,6 +8,8 @@ import { HorseFormPage } from "../features/horses/HorseFormPage.jsx";
 import { HorseDetailPage } from "../features/horses/detail/HorseDetailPage.jsx";
 import { TrainingFormPage } from "../features/trainings/TrainingFormPage.jsx";
 import { HealthFormPage } from "../features/health/HealthFormPage.jsx";
+import { ExpenseFormPage } from "../features/expenses/ExpenseFormPage.jsx";
+import { ExpenseSettlementPage } from "../features/expenses/ExpenseSettlementPage.jsx";
 
 // Placeholder — replaced once Phase 4 (home dashboard) exists. Keeping it inline here
 // means this routing skeleton is buildable and testable on its own before that exists.
@@ -34,6 +36,11 @@ export function AppRoutes() {
         <Route element={<PermissionRoute requires="health" />}>
           <Route path="/horses/:hid/health/new" element={<HealthFormPage />} />
           <Route path="/horses/:hid/health/:eid/edit" element={<HealthFormPage />} />
+        </Route>
+        <Route element={<PermissionRoute requires="expenses" />}>
+          <Route path="/horses/:hid/expenses/new" element={<ExpenseFormPage />} />
+          <Route path="/horses/:hid/expenses/:eid/edit" element={<ExpenseFormPage />} />
+          <Route path="/horses/:hid/expenses/settlement" element={<ExpenseSettlementPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />

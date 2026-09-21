@@ -5,6 +5,7 @@ import { HorseHeader } from "./HorseHeader.jsx";
 import { HorseTabs } from "./HorseTabs.jsx";
 import { TrainingTab } from "./TrainingTab.jsx";
 import { HealthTab } from "./HealthTab.jsx";
+import { ExpensesTab } from "./ExpensesTab.jsx";
 
 // Ports the shell of rHorse (public/legacy-app.js:1657-1696): horse lookup, permission-
 // gated tab fallback, header, and tab navigation. Tab bodies land one at a time in Phase 3 —
@@ -40,7 +41,8 @@ export function HorseDetailPage() {
       <HorseTabs active={tab} onChange={handleTabChange} />
       {tab === "entrenos" && <TrainingTab horse={horse} />}
       {tab === "salud" && <HealthTab horse={horse} />}
-      {tab !== "entrenos" && tab !== "salud" && (
+      {tab === "gastos" && <ExpensesTab horse={horse} />}
+      {tab === "venta" && (
         <div className="em">
           <p>Esta pestaña se completará en la Fase 3 de la migración.</p>
         </div>

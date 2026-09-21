@@ -8,12 +8,12 @@ import { getFirestore, doc, getDoc, setDoc, collection, getDocs, addDoc, updateD
 import { getStorage, ref as storageRef, uploadBytes, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCf1ljX8ow5y2R9L1WhEH4_ifpqbl09d5U",
-  authDomain: "equilog-f0e57.firebaseapp.com",
-  projectId: "equilog-f0e57",
-  storageBucket: "equilog-f0e57.firebasestorage.app",
-  messagingSenderId: "255037268401",
-  appId: "1:255037268401:web:41e0dc8863448c9a6e9d90"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);

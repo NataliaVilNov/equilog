@@ -444,6 +444,25 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports saleUpdate/saleOwnerUpdate/saleAddOwner/saleRemoveOwner
+  // (public/legacy-app.js:3584-3614) as one generic mutator: the venta tab has no separate
+  // save button in legacy either — every field writes straight through, debounced same as
+  // everything else.
+  const updateHorseSale = useCallback(
+    (hid, updater) => {
+      updateData((prev) => ({
+        ...prev,
+        horses: prev.horses.map((h) => {
+          if (h.id !== hid) return h;
+          const currentSale = h.sale || { precio: 0, owners: [{ nombre: "", pct: 100 }] };
+          const nextSale = typeof updater === "function" ? updater(currentSale) : { ...currentSale, ...updater };
+          return { ...h, sale: nextSale };
+        }),
+      }));
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -465,6 +484,7 @@ export function StableDataProvider({ stableId, children }) {
       updateExpense,
       deleteExpense,
       addExpenseSettlement,
+      updateHorseSale,
     }),
     [
       data,
@@ -486,6 +506,7 @@ export function StableDataProvider({ stableId, children }) {
       updateExpense,
       deleteExpense,
       addExpenseSettlement,
+      updateHorseSale,
     ]
   );
 

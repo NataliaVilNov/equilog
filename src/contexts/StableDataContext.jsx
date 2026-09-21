@@ -12,6 +12,8 @@ import {
 } from "../lib/firestore.js";
 import { cleanForFirestore } from "../lib/cleanForFirestore.js";
 import { useDebouncedSave } from "../hooks/useDebouncedSave.js";
+import { catFromHealthType } from "../lib/constants.js";
+import { uid } from "../lib/id.js";
 
 // Matches the legacy app's localStorage key (public/legacy-app.js:880) so the write-only
 // fallback below lands in the same place the legacy app already writes to.
@@ -192,6 +194,87 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports the health portion of save-health-btn (public/legacy-app.js:3644-3665): adding or
+  // editing a health record with amount > 0 auto-creates/updates a linked expense entry.
+  const addHealthRecord = useCallback(
+    (record) => {
+      updateData((prev) => {
+        const health = [...prev.health, record];
+        let expenses = prev.expenses;
+        if (Number(record.amount) > 0) {
+          expenses = [
+            ...expenses,
+            {
+              id: uid(),
+              hid: record.hid,
+              concept: record.label || record.type,
+              amount: record.amount,
+              date: record.date,
+              cat: catFromHealthType(record.type),
+              payer: "Cuadra",
+              payee: record.payee,
+              status: record.payStatus,
+              notes: "",
+              healthId: record.id,
+            },
+          ];
+        }
+        return { ...prev, health, expenses };
+      });
+    },
+    [updateData]
+  );
+
+  const updateHealthRecord = useCallback(
+    (record) => {
+      updateData((prev) => {
+        const health = prev.health.map((r) => (r.id === record.id ? record : r));
+        const linked = prev.expenses.find((e) => e.healthId === record.id);
+        const amount = Number(record.amount) || 0;
+        let expenses = prev.expenses;
+        if (linked && amount > 0) {
+          expenses = prev.expenses.map((e) =>
+            e.id === linked.id
+              ? {
+                  ...e,
+                  amount: record.amount,
+                  status: record.payStatus,
+                  payee: record.payee,
+                  concept: record.label || record.type,
+                }
+              : e
+          );
+        } else if (!linked && amount > 0) {
+          expenses = [
+            ...expenses,
+            {
+              id: uid(),
+              hid: record.hid,
+              concept: record.label || record.type,
+              amount: record.amount,
+              date: record.date,
+              cat: catFromHealthType(record.type),
+              payer: "Cuadra",
+              payee: record.payee,
+              status: record.payStatus,
+              notes: "",
+              healthId: record.id,
+            },
+          ];
+        }
+        return { ...prev, health, expenses };
+      });
+    },
+    [updateData]
+  );
+
+  const deleteHealthRecord = useCallback(
+    (id) => {
+      updateData((prev) => ({ ...prev, health: prev.health.filter((r) => r.id !== id) }));
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -203,6 +286,9 @@ export function StableDataProvider({ stableId, children }) {
       deleteHorse,
       addTraining,
       deleteTraining,
+      addHealthRecord,
+      updateHealthRecord,
+      deleteHealthRecord,
     }),
     [
       data,
@@ -214,6 +300,9 @@ export function StableDataProvider({ stableId, children }) {
       deleteHorse,
       addTraining,
       deleteTraining,
+      addHealthRecord,
+      updateHealthRecord,
+      deleteHealthRecord,
     ]
   );
 

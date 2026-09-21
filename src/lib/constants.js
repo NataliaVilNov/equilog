@@ -57,3 +57,11 @@ export function activityById(id) {
 export function expenseCategoryById(id) {
   return EK.find((e) => e.id === id) || { l: id, i: "💸", d: "out" };
 }
+
+// Ports catFromHealthType (public/legacy-app.js:977-980): maps a health record type to the
+// expense category used for its auto-created linked expense.
+export function catFromHealthType(type) {
+  if (type === "herraje") return "herrador";
+  if (type === "vacuna" || type === "despar") return "vet";
+  return "vet";
+}

@@ -172,9 +172,49 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports the training portion of save-training-btn (public/legacy-app.js:3648-3651) and
+  // the training-delete inline handler in the "entrenos" tab (public/legacy-app.js:1707).
+  // No update mutator — legacy has no training-edit UI.
+  const addTraining = useCallback(
+    (training) => {
+      updateData((prev) => ({ ...prev, trainings: [...prev.trainings, training] }));
+    },
+    [updateData]
+  );
+
+  const deleteTraining = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        trainings: prev.trainings.filter((t) => t.id !== id),
+      }));
+    },
+    [updateData]
+  );
+
   const value = useMemo(
-    () => ({ ...data, loading, error, updateData, addHorse, updateHorse, deleteHorse }),
-    [data, loading, error, updateData, addHorse, updateHorse, deleteHorse]
+    () => ({
+      ...data,
+      loading,
+      error,
+      updateData,
+      addHorse,
+      updateHorse,
+      deleteHorse,
+      addTraining,
+      deleteTraining,
+    }),
+    [
+      data,
+      loading,
+      error,
+      updateData,
+      addHorse,
+      updateHorse,
+      deleteHorse,
+      addTraining,
+      deleteTraining,
+    ]
   );
 
   return (

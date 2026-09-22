@@ -57,17 +57,24 @@ src/components/SlideUpSheet.jsx   — the bottom-sheet backdrop/panel chrome the
 ```
 
 **State & data**
-- Four `StableDataContext` collections: `boardConfig` (an object — the only non-array
-  collection in this context — defaulting from `boardDefaults()`), `weeklyPlans[]`,
-  `periodicBoardDates[]`, `boardAssignments[]`.
-- `weeklyPlans[]` rows: `{id, hid, date, activities: string[], completed: string[], note:
-  string, vetHealthId: string|null}`. The last three fields were added for the weekly-board
-  rework (not a legacy port) — `completed` is a subset of `activities` marked done,
-  `vetHealthId` links a cell's VET flag to a real `health[]` record (see below). Stables
-  created before this rework get these fields defaulted at read time in `withDefaults`
-  (`StableDataContext.jsx`), same treatment as every other optional field there. Existing
-  stables also get the `boardConfig.activities` list backfilled with a new default `vet`
-  entry the same way, since `boardDefaults()` only seeds brand-new stables.
+- Four collections, all moved off the single-document-per-stable model (see
+  `docs/DATABASE.md`): `stables/{stableId}/weeklyPlans/{planId}`,
+  `stables/{stableId}/periodicBoardDates/{recordId}`,
+  `stables/{stableId}/boardAssignments/{assignmentId}` — each a real subcollection with its
+  own listener — and `stables/{stableId}/boardConfig/main`, a **single document** rather than
+  a subcollection, since it's small admin-edited config, not per-record data that grows with
+  usage (the one deliberate exception to "everything becomes a subcollection" in this app).
+  `createStable` explicitly seeds `boardConfig/main` with `boardDefaults()` now, since nothing
+  implicitly defaults it into existence the way the old shared blob document used to.
+- `weeklyPlans` docs: `{id, hid, date, activities: string[], completed: string[], note:
+  string, vetHealthId: string|null}`, keyed by a deterministic `${hid}__${date}` document id
+  since every mutator looks a cell up by `(hid, date)`, never by an opaque id — a simplifying
+  change from the array-era code, which minted a random id per cell. `completed` is a subset
+  of `activities` marked done, `vetHealthId` links a cell's VET flag to a real `health` record
+  (see below). `boardConfig`'s field-level defaulting (missing arrays, the backfilled `vet`
+  activity) now happens in `normalizeBoardConfig()` in `StableDataContext.jsx`, applied to
+  whatever the `boardConfig/main` doc listener reads back, replacing the old blob-era
+  `withDefaults()` logic for this collection.
 - Mutators: `setWeeklyPlanActivities`/`toggleWeeklyPlanActivity` (weekly plan activities,
   unchanged by the rework), `setWeeklyPlanNote`, `toggleWeeklyPlanCompleted`,
   `pasteWeeklyPlanContent` (copy/paste, single-cell or batched to a whole day/horse-row),
@@ -138,21 +145,24 @@ explicit request so a future decision has the groundwork already thought through
 
 **Tasks/board unification.** The board's `activities`/`completed` fields could in principle
 become the source of truth the Tasks/"Hoy" feature reads from (or vice versa), so planning
-and daily execution tracking live in one place instead of two. The core obstacle is a
-granularity mismatch: `tasks[]` rows are one-activity-per-row with `pid`/`status`/`notes`/
-`dur`/`time`, while `weeklyPlans[]` rows are one-cell-with-multiple-activities. Any real
-unification has to resolve that mismatch first — likely by exploding each `weeklyPlans`
-activity into its own addressable unit — and then decide what happens to
-`cycleTaskStatus`'s paddock/caminador return-trip cycling and its session-report-alert-on-
-done logic, neither of which the board has any concept of today.
+and daily execution tracking live in one place instead of two. The tasks side of this got
+materially closer with the tasks/ctasks unification and recurrence support (`docs/DATABASE.md`
+§7, `docs/components/tasks.md`) — a `weeklyPlans` cell and a recurring task's daily occurrence
+are now conceptually similar shapes — but the granularity mismatch remains the core obstacle:
+`tasks` docs are one-activity-per-document with `assignedTo`/`status`/`notes`/`dur`/`time`,
+while `weeklyPlans` docs are one-cell-with-multiple-activities. Any real unification has to
+resolve that mismatch first — likely by exploding each `weeklyPlans` activity into its own
+addressable unit — and then decide what happens to `cycleTaskStatus`'s paddock/caminador
+return-trip cycling and its session-report-alert-on-done logic, neither of which the board has
+any concept of today.
 
 **Person-tags on cells.** The reference app has a "Personas" tool category — tapping a
 team-member code tags a cell with who's doing it, entirely independent of any assignment
 system (since that app doesn't have one). EquiLog could add a parallel `people: string[]`
 field to `weeklyPlans` rows with team-member-linked tool buttons reusing `team[]`. The open
 design tension: this would create a second, independent "who's responsible" answer
-alongside Tasks' `pid` field — a future decision would need to pick whether board
-person-tags *become* the assignment mechanism (replacing `pid`) or stay purely
+alongside Tasks' `assignedTo` field — a future decision would need to pick whether board
+person-tags *become* the assignment mechanism (replacing `assignedTo`) or stay purely
 informational, coexisting with it.
 
 **Known gaps / follow-ups**

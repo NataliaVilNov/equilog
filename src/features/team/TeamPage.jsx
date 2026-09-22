@@ -78,7 +78,7 @@ export function TeamPage() {
                 onClick={() => navigate(`/team/${m.id}/day?d=${today}`)}
                 style={{ cursor: "pointer" }}
               >
-                {m.photo ? <img src={m.photo} alt="" /> : m.emoji || "👤"}
+                {m.photo ? <img src={m.photo.url} alt="" /> : m.emoji || "👤"}
               </div>
               <div
                 style={{ flex: 1, minWidth: 0, cursor: "pointer" }}

@@ -137,7 +137,7 @@ function TeamTab({ team, tasks, fS, fE }) {
             const pct = Math.round((md / mt.length) * 100);
             return (
               <div className="mc" style={{ cursor: "default" }} key={m.id}>
-                <div className="av">{m.photo ? <img src={m.photo} alt="" /> : m.emoji || "👤"}</div>
+                <div className="av">{m.photo ? <img src={m.photo.url} alt="" /> : m.emoji || "👤"}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: ".93rem" }}>{m.name}</div>
                   <div style={{ marginTop: ".28rem", height: "6px", background: "var(--ar)", borderRadius: "999px", overflow: "hidden" }}>

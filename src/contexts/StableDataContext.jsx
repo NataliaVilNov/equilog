@@ -580,6 +580,18 @@ export function StableDataProvider({ stableId, children }) {
     [stableId]
   );
 
+  // Uploads a team member's photo to Storage, same pattern as uploadHorsePhoto.
+  const uploadTeamMemberPhoto = useCallback(
+    async (mid, file, onProgress) => {
+      const path = `stables/${stableId}/team/${mid}/photo/${Date.now()}_${safeStorageName(file.name)}`;
+      const ref = storageRef(storage, path);
+      const metadata = { contentType: file.type || "application/octet-stream" };
+      const url = await uploadFileWithProgress(ref, file, metadata, onProgress);
+      return { path, url };
+    },
+    [stableId]
+  );
+
   // Ports deleteHealthDoc (public/legacy-app.js:1177-1188).
   const deleteHealthDoc = useCallback(
     async (id) => {
@@ -1456,6 +1468,7 @@ export function StableDataProvider({ stableId, children }) {
       addHealthDocLink,
       uploadHealthDocs,
       uploadHorsePhoto,
+      uploadTeamMemberPhoto,
       deleteHealthDoc,
       addExpense,
       updateExpense,
@@ -1538,6 +1551,7 @@ export function StableDataProvider({ stableId, children }) {
       addHealthDocLink,
       uploadHealthDocs,
       uploadHorsePhoto,
+      uploadTeamMemberPhoto,
       deleteHealthDoc,
       addExpense,
       updateExpense,

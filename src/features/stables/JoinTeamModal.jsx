@@ -97,7 +97,7 @@ export function JoinTeamModal() {
                   onClick={() => handleSelect(m.id, m.name)}
                   style={{ width: "100%", opacity: linked ? 0.5 : 1, cursor: linked ? "not-allowed" : "pointer" }}
                 >
-                  <div className="av">{m.photo ? <img src={m.photo} alt="" /> : m.emoji || "👤"}</div>
+                  <div className="av">{m.photo ? <img src={m.photo.url} alt="" /> : m.emoji || "👤"}</div>
                   <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: ".94rem", color: "var(--ti)" }}>
                       {m.name || "Sin nombre"}

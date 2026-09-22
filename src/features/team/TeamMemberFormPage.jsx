@@ -24,14 +24,18 @@ const PERM_OPTS = [
 // inline rather than a separate component — one consumer, same call made for Home (Phase 4).
 export function TeamMemberFormPage() {
   const { mid } = useParams();
-  const { team, addTeamMember, updateTeamMember, deleteTeamMember } = useStableData();
+  const { team, addTeamMember, updateTeamMember, deleteTeamMember, uploadTeamMemberPhoto } = useStableData();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
   const editing = !!mid;
   const member = editing ? team.find((m) => m.id === mid) : null;
+  // Generated up front so a photo picked before saving can upload straight to its final
+  // Storage path under this member's own id.
+  const [id] = useState(() => (editing ? mid : uid()));
 
   const [photo, setPhoto] = useState(member ? member.photo || null : null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [emoji, setEmoji] = useState(member ? member.emoji || "👤" : "👤");
   const [name, setName] = useState(member ? member.name || "" : "");
   const [role, setRole] = useState(member ? member.role || "" : "");
@@ -51,12 +55,18 @@ export function TeamMemberFormPage() {
     );
   }
 
-  function handlePhotoChange(e) {
+  async function handlePhotoChange(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhoto(reader.result);
-    reader.readAsDataURL(file);
+    setUploadingPhoto(true);
+    try {
+      const uploaded = await uploadTeamMemberPhoto(id, file, () => {});
+      setPhoto(uploaded);
+    } catch (_err) {
+      showToast("Error subiendo la foto");
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   function togglePermission(key) {
@@ -69,7 +79,6 @@ export function TeamMemberFormPage() {
       showToast("Nombre obligatorio");
       return;
     }
-    const id = editing ? mid : uid();
     const record = {
       id,
       name: trimmedName,
@@ -112,11 +121,11 @@ export function TeamMemberFormPage() {
         <label>Foto</label>
         <div className="pu">
           <div className="pp" style={{ borderRadius: "50%" }}>
-            {photo ? <img src={photo} alt="" /> : emoji}
+            {uploadingPhoto ? "…" : photo ? <img src={photo.url} alt="" /> : emoji}
           </div>
           <label className="fl">
             Foto
-            <input type="file" accept="image/*" onChange={handlePhotoChange} />
+            <input type="file" accept="image/*" onChange={handlePhotoChange} disabled={uploadingPhoto} />
           </label>
         </div>
       </div>

@@ -47,7 +47,7 @@ export function MemberDayPage() {
           ←
         </button>
         <div style={{ display: "flex", alignItems: "center", gap: ".6rem", flex: 1, margin: "0 .4rem" }}>
-          <div className="avsm">{member.photo ? <img src={member.photo} alt="" /> : member.emoji || "👤"}</div>
+          <div className="avsm">{member.photo ? <img src={member.photo.url} alt="" /> : member.emoji || "👤"}</div>
           <div>
             <div style={{ fontWeight: 700, fontSize: ".93rem" }}>{member.name}</div>
             <div style={{ fontSize: ".7rem", color: "var(--gr)" }}>{member.role || ""}</div>

@@ -24,8 +24,6 @@ import { AuthContext } from "./AuthContext.jsx";
 
 export const StableSelectionContext = createContext(null);
 
-const EMPTY_STABLE_DATA = {};
-
 export function StableSelectionProvider({ children }) {
   const { user, profile } = useContext(AuthContext) || {};
   const [stables, setStables] = useState([]);
@@ -134,7 +132,6 @@ export function StableSelectionProvider({ children }) {
         inviteCode,
         created: serverTimestamp(),
       });
-      await setDoc(doc(db, "stables", stableRef.id, "data", "main"), EMPTY_STABLE_DATA);
       await setDoc(doc(db, "stables", stableRef.id, "boardConfig", "main"), boardDefaults());
       await setDoc(doc(db, "inviteCodes", inviteCode), {
         stableId: stableRef.id,

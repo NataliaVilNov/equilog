@@ -5,13 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import {
-  getStableDoc,
-  setStableDoc,
-  subscribeToStableDoc,
-} from "../lib/firestore.js";
 import { cleanForFirestore } from "../lib/cleanForFirestore.js";
-import { useDebouncedSave } from "../hooks/useDebouncedSave.js";
 import { writeBatch, query, where } from "firebase/firestore";
 import {
   stableCollection,
@@ -68,36 +62,11 @@ function safeStorageName(name) {
     .slice(0, 120);
 }
 
-// Matches the legacy app's localStorage key (public/legacy-app.js:880) so the write-only
-// fallback below lands in the same place the legacy app already writes to.
-const LOCAL_STORAGE_KEY = "equilog_v4";
-
-// Mirrors the defensive array-defaulting list in _fbLoadData/_fbSetupListener
-// (public/legacy-app.js:437,453) — note this is one key longer than legacy's own load()
-// (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
-// listener always defaults it.
-const COLLECTION_KEYS = [];
-
 // Weekly-plan cells are always looked up by (hid, date), never by an opaque id, so a
 // deterministic id lets every mutator target a cell's doc directly instead of first finding
 // its existing random id.
 function weeklyPlanCellId(hid, date) {
   return `${hid}__${date}`;
-}
-
-function emptyData() {
-  return COLLECTION_KEYS.reduce((acc, key) => {
-    acc[key] = [];
-    return acc;
-  }, {});
-}
-
-function withDefaults(raw) {
-  const data = { ...emptyData(), ...raw };
-  COLLECTION_KEYS.forEach((key) => {
-    if (!data[key]) data[key] = [];
-  });
-  return data;
 }
 
 // Mirrors ensureBoardData's defensive defaulting (public/legacy-app.js:1289-1299) applied to
@@ -120,9 +89,6 @@ function normalizeBoardConfig(raw) {
 export const StableDataContext = createContext(null);
 
 export function StableDataProvider({ stableId, children }) {
-  const [data, setData] = useState(emptyData);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [horses, setHorses] = useState([]);
   const [trainings, setTrainings] = useState([]);
   const [health, setHealth] = useState([]);
@@ -139,69 +105,6 @@ export function StableDataProvider({ stableId, children }) {
   const [periodicBoardDates, setPeriodicBoardDates] = useState([]);
   const [boardAssignments, setBoardAssignments] = useState([]);
   const [boardConfig, setBoardConfig] = useState(boardDefaults());
-
-  // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
-  // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
-  // legacy app never reads this back either; it's a safety net, not an offline cache).
-  const writeToFirestore = useCallback(async (id, nextData) => {
-    const cleanData = cleanForFirestore(nextData);
-    if (!id) {
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cleanData));
-      } catch (_e) {
-        // ignore
-      }
-      return;
-    }
-    try {
-      await setStableDoc(id, cleanData);
-    } catch (e) {
-      setError(e);
-      try {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(cleanData));
-      } catch (_e) {
-        // ignore
-      }
-    }
-  }, []);
-
-  const debouncedWrite = useDebouncedSave(writeToFirestore, 250);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!stableId) {
-      setData(emptyData());
-      setLoading(false);
-      setError(null);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-
-    // First paint via a one-time read, mirrors _fbLoadData (public/legacy-app.js:429-442).
-    getStableDoc(stableId)
-      .then((initial) => {
-        if (!cancelled) setData(withDefaults(initial || {}));
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    // Realtime sync, mirrors _fbSetupListener (public/legacy-app.js:445-457).
-    const unsubscribe = subscribeToStableDoc(stableId, (remoteData) => {
-      if (!cancelled) setData(withDefaults(remoteData));
-    });
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, [stableId]);
 
   useEffect(() => {
     if (!stableId) {
@@ -315,20 +218,6 @@ export function StableDataProvider({ stableId, children }) {
     ];
     return () => unsubs.forEach((u) => u());
   }, [stableId]);
-
-  // Generic mutation primitive: feature-specific mutators (addHorse, cycleTaskStatus, etc.)
-  // are built on top of this as each feature needs them, rather than pre-built here.
-  const updateData = useCallback(
-    (updater) => {
-      setData((prev) => {
-        const next =
-          typeof updater === "function" ? updater(prev) : { ...prev, ...updater };
-        debouncedWrite(stableId, next);
-        return next;
-      });
-    },
-    [stableId, debouncedWrite]
-  );
 
   // Ports the horse CRUD portion of the save-horse-btn handler in attach()
   // (public/legacy-app.js:3622-3646) and delHorse (public/legacy-app.js:1644-1653).
@@ -1357,7 +1246,7 @@ export function StableDataProvider({ stableId, children }) {
 
   // Ports the write side of confirmSmartOrder (public/legacy-app.js:3095-3109): builds one
   // tasks/health/expenses record per confirmed draft item and writes them all in a single
-  // updateData call (same batching precedent as applyTemplate). The caller is expected to
+  // writeBatch (same batching precedent as applyTemplate). The caller is expected to
   // have already filtered `items` down to the ones the user checked and is allowed to
   // create — this mutator just builds records from whatever it's given, same split used
   // throughout this context. Unlike the regular health form, a health item here never
@@ -1435,7 +1324,6 @@ export function StableDataProvider({ stableId, children }) {
 
   const value = useMemo(
     () => ({
-      ...data,
       stableId,
       horses,
       trainings,
@@ -1453,9 +1341,6 @@ export function StableDataProvider({ stableId, children }) {
       periodicBoardDates,
       boardAssignments,
       boardConfig,
-      loading,
-      error,
-      updateData,
       addHorse,
       updateHorse,
       deleteHorse,
@@ -1518,7 +1403,6 @@ export function StableDataProvider({ stableId, children }) {
       confirmSmartOrderDraft,
     }),
     [
-      data,
       stableId,
       horses,
       trainings,
@@ -1536,9 +1420,6 @@ export function StableDataProvider({ stableId, children }) {
       periodicBoardDates,
       boardAssignments,
       boardConfig,
-      loading,
-      error,
-      updateData,
       addHorse,
       updateHorse,
       deleteHorse,

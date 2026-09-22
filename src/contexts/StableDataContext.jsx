@@ -24,7 +24,7 @@ import { taskNeedsReturn } from "../features/tasks/taskHelpers.js";
 import { boardDefaults } from "../features/boards/boardDefaults.js";
 import { boardAssignment, horseConflict, safeBoardId } from "../features/boards/boardHelpers.js";
 import { uid } from "../lib/id.js";
-import { td } from "../lib/date.js";
+import { td, addD } from "../lib/date.js";
 
 // Ports uploadFileWithProgress (public/legacy-app.js:1097-1109), minus the DOM status
 // write — callers pass an onProgress(pct) callback instead.
@@ -867,6 +867,74 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Copies one weekly-plan cell's activities + note into one or more target cells.
+  // Deliberately does not copy completed-state (always starts un-done, matching the
+  // reference behavior this ports the interaction from) or vetHealthId (a pasted VET flag
+  // needs its own fresh detail, not a duplicate reference to the source's health record).
+  // One updateData call handles a single-cell paste, a whole-day paste, and a whole-
+  // horse-row paste — the caller just passes more/fewer targets.
+  const pasteWeeklyPlanContent = useCallback(
+    (sourceHid, sourceDate, targets) => {
+      updateData((prev) => {
+        const weeklyPlans = prev.weeklyPlans || [];
+        const source = weeklyPlans.find((p) => p.hid === sourceHid && p.date === sourceDate);
+        const activities = source ? [...(source.activities || [])] : [];
+        const note = source ? source.note || "" : "";
+        if (!activities.length && !note) return prev;
+        let next = weeklyPlans;
+        (targets || []).forEach(({ hid, date }) => {
+          const i = next.findIndex((p) => p.hid === hid && p.date === date);
+          const rec = {
+            id: i >= 0 ? next[i].id || uid() : uid(),
+            hid,
+            date,
+            activities: [...activities],
+            completed: [],
+            note,
+            vetHealthId: null,
+          };
+          next = i >= 0 ? next.map((p, idx) => (idx === i ? rec : p)) : [...next, rec];
+        });
+        return { ...prev, weeklyPlans: next };
+      });
+    },
+    [updateData]
+  );
+
+  // For every weekly-plan cell in the 7 days before weekStart that had content, writes that
+  // same activities+note into the corresponding day this week (date shifted +7). Only
+  // writes cells that had source content — never touches a cell whose corresponding source
+  // day was empty, even if that cell already has different content today.
+  const repeatPreviousWeek = useCallback(
+    (weekStart) => {
+      updateData((prev) => {
+        const weeklyPlans = prev.weeklyPlans || [];
+        const prevWeekStart = addD(weekStart, -7);
+        const prevWeekDates = new Set(Array.from({ length: 7 }, (_, i) => addD(prevWeekStart, i)));
+        const sourceRows = weeklyPlans.filter(
+          (p) => prevWeekDates.has(p.date) && ((p.activities || []).length || p.note)
+        );
+        let next = weeklyPlans;
+        sourceRows.forEach((source) => {
+          const targetDate = addD(source.date, 7);
+          const i = next.findIndex((p) => p.hid === source.hid && p.date === targetDate);
+          const rec = {
+            id: i >= 0 ? next[i].id || uid() : uid(),
+            hid: source.hid,
+            date: targetDate,
+            activities: [...(source.activities || [])],
+            completed: [],
+            note: source.note || "",
+            vetHealthId: null,
+          };
+          next = i >= 0 ? next.map((p, idx) => (idx === i ? rec : p)) : [...next, rec];
+        });
+        return { ...prev, weeklyPlans: next };
+      });
+    },
+    [updateData]
+  );
+
   // Ports setBoardPeriodic (public/legacy-app.js:1311-1317).
   const setBoardPeriodic = useCallback(
     (hid, columnId, date) => {
@@ -1216,6 +1284,8 @@ export function StableDataProvider({ stableId, children }) {
       toggleWeeklyPlanActivity,
       setWeeklyPlanNote,
       toggleWeeklyPlanCompleted,
+      pasteWeeklyPlanContent,
+      repeatPreviousWeek,
       setBoardPeriodic,
       assignBoardHorse,
       moveBoardAssignment,
@@ -1278,6 +1348,8 @@ export function StableDataProvider({ stableId, children }) {
       toggleWeeklyPlanActivity,
       setWeeklyPlanNote,
       toggleWeeklyPlanCompleted,
+      pasteWeeklyPlanContent,
+      repeatPreviousWeek,
       setBoardPeriodic,
       assignBoardHorse,
       moveBoardAssignment,

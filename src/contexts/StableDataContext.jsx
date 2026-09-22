@@ -534,6 +534,35 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports the save-session-btn handler (public/legacy-app.js:3706-3712): answering a
+  // pending session-report alert creates a new training record and marks the alert
+  // answered, in one atomic action (legacy treats it as one user action, not two).
+  const answerSessionAlert = useCallback(
+    (alertId, sessionData) => {
+      updateData((prev) => {
+        const alert = prev.salerts.find((s) => s.id === alertId);
+        if (!alert) return prev;
+        const training = {
+          id: uid(),
+          hid: alert.hid,
+          date: alert.date,
+          dur: sessionData.dur,
+          wtype: alert.act === "longe" ? "longe" : "doma",
+          state: sessionData.state,
+          feel: sessionData.feel,
+          notes: sessionData.notes,
+          rating: sessionData.rating,
+        };
+        return {
+          ...prev,
+          trainings: [...prev.trainings, training],
+          salerts: prev.salerts.map((s) => (s.id === alertId ? { ...s, ans: true } : s)),
+        };
+      });
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -560,6 +589,7 @@ export function StableDataProvider({ stableId, children }) {
       updateTask,
       deleteTask,
       cycleTaskStatus,
+      answerSessionAlert,
     }),
     [
       data,
@@ -586,6 +616,7 @@ export function StableDataProvider({ stableId, children }) {
       updateTask,
       deleteTask,
       cycleTaskStatus,
+      answerSessionAlert,
     ]
   );
 

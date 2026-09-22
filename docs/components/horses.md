@@ -51,9 +51,13 @@ src/components/EmptyState.jsx, src/components/Tabs.jsx, src/components/StatGrid.
 ```
 
 **State & data**
-- `StableDataContext` gained (across Phase 2 and Phase 3): `addHorse`/`updateHorse`
-  (full-record replace)/`deleteHorse` (cascades to trainings/health/healthDocs/expenses/tasks
-  for that horse id), and `updateHorseSale(hid, updater)` for the sale sub-object.
+- Horses live at `stables/{stableId}/horses/{horseId}`, one document per horse (moved off the
+  single-document-per-stable model — see `docs/DATABASE.md`). `StableDataContext` gained
+  `addHorse`/`updateHorse` (full-record `setDoc`)/`deleteHorse` (deletes the horse doc plus
+  its `trainings`/`health`/`healthDocs`/`expenses` subcollections; the `tasks` cascade still
+  runs against the shared document until tasks migrate in a later phase), and
+  `updateHorseSale(hid, updater)`, which now patches just the horse doc's `sale` field instead
+  of rewriting the whole document.
 - `reorderHorses(orderedIds)` (added for the weekly-board rework, not a legacy port — legacy
   never had horse ordering) sets each horse's `sortOrder` to its index in `orderedIds`.
   `horses/horseOrder.js`'s `sortHorsesByOrder` applies it — used by both `HorseListPage` and

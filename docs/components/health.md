@@ -24,17 +24,21 @@ src/features/horses/detail/HealthTab.jsx — the "salud" tab body
 ```
 
 **State & data**
-- `StableDataContext` gained, in two commits:
+- Health records live at `stables/{stableId}/horses/{hid}/health/{healthId}`, and attached
+  documents at `stables/{stableId}/horses/{hid}/healthDocs/{docId}` — both aggregated
+  stable-wide via a `collectionGroup` listener (see `docs/DATABASE.md`). `StableDataContext`
+  gained, in two commits:
   - `addHealthRecord`/`updateHealthRecord`/`deleteHealthRecord` — the first two also create
-    or update a linked `expenses` entry (matched by `healthId`) whenever the record's
-    `amount > 0`, exactly mirroring the legacy save handler's branching (add-linked /
-    update-linked / leave-alone-if-amount-drops-to-zero).
+    or update a linked entry in the horse's `expenses` subcollection (matched by `healthId`)
+    whenever the record's `amount > 0`, written in the same `writeBatch` as the health record
+    so both commit together — exactly mirroring the legacy save handler's branching
+    (add-linked / update-linked / leave-alone-if-amount-drops-to-zero).
   - `addHealthDocLink`/`uploadHealthDocs`/`deleteHealthDoc` — the Storage-backed document
     mutators. `uploadHealthDocs` takes an array of files and an `onProgress(label, pct)`
     callback (replacing legacy's direct DOM status writes), uploads each to
-    `stables/{stableId}/horses/{hid}/health_docs/...`, and pushes all resulting doc records
-    in a single `updateData` call once every upload finishes — matching legacy's one-loop
-    one-save batching.
+    `stables/{stableId}/horses/{hid}/health_docs/...` in Storage, and writes all resulting
+    doc records to Firestore in a single `writeBatch` once every upload finishes — matching
+    legacy's one-loop one-save batching.
 - These mutators don't read `AuthContext` themselves (contexts stay decoupled, same pattern
   as Phase 1); the calling components (`HealthDocUploader`) read the current user's `uid`
   from `AuthContext` and pass it in explicitly for `createdBy`/`uploadedBy` fields.
@@ -55,5 +59,4 @@ src/features/horses/detail/HealthTab.jsx — the "salud" tab body
 - The file-size limit (25 MB) and the accepted-file-types list are preserved exactly.
 
 **Known gaps / follow-ups**
-- None outside what's already tracked in `docs/BACKLOG.md` (the single-Firestore-document
-  data model's size/concurrency ceiling applies here too, especially as `healthDocs` grows).
+- None outside what's already tracked in `docs/BACKLOG.md`.

@@ -22,12 +22,15 @@ src/features/horses/detail/ExpensesTab.jsx — the "gastos" tab body
 ```
 
 **State & data**
-- `StableDataContext` gained `addExpense`, `updateExpense`, `deleteExpense` (`deleteExpense`
+- Per-horse expenses live at `stables/{stableId}/horses/{hid}/expenses/{expenseId}`,
+  aggregated stable-wide via a `collectionGroup` listener (see `docs/DATABASE.md`).
+  `StableDataContext` gained `addExpense`, `updateExpense`, `deleteExpense` (`deleteExpense`
   deliberately does **not** touch a health record even if the expense was auto-created from
   one — matches the legacy comment at `public/legacy-app.js:2138`), and
-  `addExpenseSettlement(settlement)`, which appends to the `expenseSettlements` collection
-  (see the `fix:` commit earlier in this phase that added it to `StableDataContext`'s tracked
-  collections) and marks every settled expense's `settled`/`settlementId`/`settledDate`.
+  `addExpenseSettlement(settlement)`, which batches an update to every settled expense's
+  `settled`/`settlementId`/`settledDate` field across however many horses they belong to, and
+  separately records the settlement itself (still in the shared document until stable-wide
+  collections migrate in a later phase).
 - `expenseSplits.js` exports `calcOwnerSettlement(horse, expenses, ids)` — the Tricount-style
   greedy debtor/creditor matching algorithm, ported byte-for-byte from legacy's
   `calcOwnerSettlement`. It's a pure function (no context, no DOM), making it this phase's

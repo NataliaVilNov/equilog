@@ -20,8 +20,11 @@ src/features/horses/detail/TrainingTab.jsx — the "entrenos" tab body, ports rH
 ```
 
 **State & data**
-- `StableDataContext` gained `addTraining(training)` and `deleteTraining(id)`. There's no
-  `updateTraining` — the legacy app has no training-edit UI either, only add and delete.
+- Trainings live at `stables/{stableId}/horses/{hid}/trainings/{trainingId}`, one document per
+  session (a `collectionGroup` listener aggregates every horse's trainings for the stable —
+  see `docs/DATABASE.md`). `StableDataContext` gained `addTraining(training)` and
+  `deleteTraining(id)`. There's no `updateTraining` — the legacy app has no training-edit UI
+  either, only add and delete.
 - `TrainingTab` derives its stats (session count, average rating, total minutes) from the
   `trainings` slice filtered to the current horse, memoized with `useMemo`.
 

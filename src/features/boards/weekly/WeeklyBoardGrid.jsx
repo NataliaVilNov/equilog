@@ -349,6 +349,7 @@ export function WeeklyBoardGrid({ week }) {
           allActivities={boardConfig.activities}
           onToggle={handleToggleDone}
           onClose={() => setDoneTarget(null)}
+          onEditOrder={() => navigate(`/boards/cell/${doneTarget.hid}/${doneTarget.date}?week=${week}`)}
         />
       )}
       {vetTarget && (

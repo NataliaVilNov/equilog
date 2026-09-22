@@ -36,10 +36,18 @@ src/features/smart-order/
   and per-item edits as component state instead.
 - `StableDataContext` gained `confirmSmartOrderDraft(items)` — ports the write side of
   `confirmSmartOrder`: builds `tasks`/`health`/`expenses` records from the given items and
-  writes them all in one `updateData` call (same batching precedent as `applyTemplate`,
-  Phase 4). The caller (`SmartOrderPage`) is responsible for filtering down to
-  `item.checked && item.allowed` first — the mutator just builds records from whatever list
-  it's given, matching the split used throughout this context.
+  writes them all in one `writeBatch` (same batching precedent as `applyTemplate`, Phase 4).
+  The caller (`SmartOrderPage`) is responsible for filtering down to `item.checked &&
+  item.allowed` first — the mutator just builds records from whatever list it's given,
+  matching the split used throughout this context.
+- Draft items themselves keep their original `hid`/`pid`/`date` field names (unchanged from
+  this doc's earlier description) — `buildSmartOrderDraft` builds all three item kinds
+  (task/health/expense) through the same shared shape, and only the final Firestore write
+  needs kind-specific field names (the unified `tasks` collection uses `horseId`/
+  `assignedTo`/`startDate`, while `health`/`expenses` keep `hid`/`date`). `confirmSmartOrderDraft`
+  is exactly the boundary that translates a task-kind draft item into that shape, so nothing
+  upstream of it (the parser modules, `SmartOrderReview`, `SmartOrderDraftItem`) needed to
+  change when the tasks schema did.
 - **One deliberate fix**: each draft item from `buildSmartOrderDraft` gets a `checked`
   boolean (defaulting to `allowed`), because legacy's `confirmSmartOrder` reads live
   `.so-check` DOM checkboxes instead of storing checked-state on the draft itself — there's

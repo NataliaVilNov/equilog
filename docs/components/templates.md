@@ -16,11 +16,17 @@ src/features/templates/
 ```
 
 **State & data**
+- Templates live at `stables/{stableId}/taskTemplates/{templateId}` (moved off the
+  single-document-per-stable model — see `docs/DATABASE.md`). Each template row's own fields
+  are named `horseId`/`assignedTo` (renamed from `hid`/`pid`) to match the unified task shape
+  they mirror — a deliberate consistency choice, not a legacy port.
 - `StableDataContext` gained `addTemplate`, `updateTemplate`, `deleteTemplate`, and
   `applyTemplate(templateId, date)` — the last one builds every new task from the template's
-  task list and writes them all in a single `updateData` call, matching legacy's
-  single-loop-then-one-`save()` batching (`public/legacy-app.js:3503-3507`) rather than N
-  separate task-adds.
+  task list and writes them all into the unified `tasks` collection (`docs/components/
+  tasks.md`) in a single `writeBatch`, matching legacy's single-loop-then-one-`save()`
+  batching (`public/legacy-app.js:3503-3507`) rather than N separate task-adds. Applied tasks
+  are always one-off (`recurrenceRule: null`) — templates and recurrence stay orthogonal,
+  they don't compete with each other.
 - `TemplateFormPage` holds the in-progress task list as local component state, replacing
   legacy's `V._tt` view-state field — same "nothing saved until you press Guardar" behavior
   as every other form in this migration.

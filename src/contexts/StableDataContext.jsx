@@ -19,7 +19,8 @@ import {
   deleteObject,
 } from "firebase/storage";
 import { storage } from "../lib/firebaseClient.js";
-import { catFromHealthType } from "../lib/constants.js";
+import { catFromHealthType, activityById } from "../lib/constants.js";
+import { taskNeedsReturn } from "../features/tasks/taskHelpers.js";
 import { uid } from "../lib/id.js";
 import { td } from "../lib/date.js";
 
@@ -463,6 +464,76 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports the task-save handler (public/legacy-app.js:3669-3676) and its inline delete
+  // handler (public/legacy-app.js:3274, which also clears any salerts tied to the task).
+  const addTask = useCallback(
+    (task) => {
+      updateData((prev) => ({ ...prev, tasks: [...prev.tasks, task] }));
+    },
+    [updateData]
+  );
+
+  const updateTask = useCallback(
+    (task) => {
+      updateData((prev) => ({ ...prev, tasks: prev.tasks.map((t) => (t.id === task.id ? task : t)) }));
+    },
+    [updateData]
+  );
+
+  const deleteTask = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        tasks: prev.tasks.filter((t) => t.id !== id),
+        salerts: prev.salerts.filter((s) => s.tid !== id),
+      }));
+    },
+    [updateData]
+  );
+
+  // Ports cycleTask (public/legacy-app.js:3226-3242): cycling a task to "done" auto-creates
+  // a pending session-report alert for activities that require one (AK[].r); cycling away
+  // from "done" removes any unanswered alert it created.
+  const cycleTaskStatus = useCallback(
+    (id) => {
+      updateData((prev) => {
+        const task = prev.tasks.find((t) => t.id === id);
+        if (!task) return prev;
+        let nextStatus;
+        if (taskNeedsReturn(task.activity)) {
+          nextStatus = { pending: "inprogress", inprogress: "done", done: "pending" }[task.status] || "pending";
+        } else {
+          nextStatus = task.status === "done" ? "pending" : "done";
+        }
+        const tasks = prev.tasks.map((t) => (t.id === id ? { ...t, status: nextStatus } : t));
+        let salerts = prev.salerts;
+        if (nextStatus === "done") {
+          const activity = activityById(task.activity);
+          if (activity.r && !salerts.some((s) => s.tid === id && !s.ans)) {
+            const horse = prev.horses.find((h) => h.id === task.hid);
+            salerts = [
+              ...salerts,
+              {
+                id: uid(),
+                tid: id,
+                hid: task.hid,
+                hn: horse ? horse.name : "",
+                act: task.activity,
+                date: task.date,
+                pid: task.pid,
+                ans: false,
+              },
+            ];
+          }
+        } else {
+          salerts = salerts.filter((s) => !(s.tid === id && !s.ans));
+        }
+        return { ...prev, tasks, salerts };
+      });
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -485,6 +556,10 @@ export function StableDataProvider({ stableId, children }) {
       deleteExpense,
       addExpenseSettlement,
       updateHorseSale,
+      addTask,
+      updateTask,
+      deleteTask,
+      cycleTaskStatus,
     }),
     [
       data,
@@ -507,6 +582,10 @@ export function StableDataProvider({ stableId, children }) {
       deleteExpense,
       addExpenseSettlement,
       updateHorseSale,
+      addTask,
+      updateTask,
+      deleteTask,
+      cycleTaskStatus,
     ]
   );
 

@@ -1,25 +1,8 @@
-import { td } from "../../lib/date.js";
-
-// Ports monthStartStr/addMonth/monthLabel/absenceFor/memberColor/memberColorSoft
-// (public/legacy-app.js:3300-3313), as explicit-param pure functions instead of readers of
-// the global D/td().
-
-export function monthStartStr(m) {
-  return (m || td().slice(0, 7)) + "-01";
-}
-
-export function addMonth(m, n) {
-  const d = new Date(monthStartStr(m) + "T12:00:00");
-  d.setMonth(d.getMonth() + n);
-  return d.toISOString().slice(0, 7);
-}
-
-export function monthLabel(m) {
-  return new Date(monthStartStr(m) + "T12:00:00").toLocaleDateString("es-ES", {
-    month: "long",
-    year: "numeric",
-  });
-}
+// Ports absenceFor/memberColor/memberColorSoft (public/legacy-app.js:3300-3313), as
+// explicit-param pure functions instead of readers of the global D. monthStartStr/addMonth/
+// monthLabel moved to lib/date.js (generic month math, reused by the board's month view) —
+// re-exported here so existing callers of this module don't need to change their import.
+export { monthStartStr, addMonth, monthLabel } from "../../lib/date.js";
 
 export function absenceFor(absences, pid, date) {
   return (absences || []).find((a) => a.pid === pid && a.date === date);

@@ -29,3 +29,24 @@ export function dU(s) {
   n.setHours(0, 0, 0, 0);
   return Math.round((new Date(s + "T12:00:00") - n) / 86400000);
 }
+
+// Generic month math, originally written for the team absence calendar
+// (public/legacy-app.js:3300-3313) — moved here so any other month-grid view (e.g. the
+// board's month tab) can reuse it instead of duplicating it. teamCalendarHelpers.js
+// re-exports these so its existing callers don't need to change their import.
+export function monthStartStr(m) {
+  return (m || td().slice(0, 7)) + "-01";
+}
+
+export function addMonth(m, n) {
+  const d = new Date(monthStartStr(m) + "T12:00:00");
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().slice(0, 7);
+}
+
+export function monthLabel(m) {
+  return new Date(monthStartStr(m) + "T12:00:00").toLocaleDateString("es-ES", {
+    month: "long",
+    year: "numeric",
+  });
+}

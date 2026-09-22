@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { ProtectedRoute } from "./ProtectedRoute.jsx";
+import { GuestRoute } from "./GuestRoute.jsx";
 import { PermissionRoute } from "./PermissionRoute.jsx";
 import { AuthScreen } from "../features/auth/AuthScreen.jsx";
 import { StableListScreen } from "../features/stables/StableListScreen.jsx";
@@ -34,8 +35,12 @@ import { TrainingReportPage } from "../features/reports/TrainingReportPage.jsx";
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<AuthScreen />} />
-      <Route path="/stables" element={<StableListScreen />} />
+      <Route element={<GuestRoute />}>
+        <Route path="/login" element={<AuthScreen />} />
+      </Route>
+      <Route element={<ProtectedRoute requireStable={false} />}>
+        <Route path="/stables" element={<StableListScreen />} />
+      </Route>
       <Route element={<ProtectedRoute />}>
         <Route path="/home" element={<HomePage />} />
         <Route path="/horses" element={<HorseListPage />} />

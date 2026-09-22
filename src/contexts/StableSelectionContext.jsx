@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   query,
@@ -104,6 +104,23 @@ export function StableSelectionProvider({ children }) {
     },
     [user]
   );
+
+  // Ports the "if(profile.lastStable) _fbSwitchStable(profile.lastStable)" branch of
+  // onAuthStateChanged (former src/firebase.js:28-38, deleted in the Phase 8c cutover).
+  // Nothing else in the React port re-selects a returning user's last-used stable — without
+  // this, every login lands on the stable list with no stable chosen. Runs once per signed-in
+  // user (tracked by uid), not on every render, so it doesn't fight a manual switchStable/
+  // exitActiveStable call later in the same session.
+  const autoSelectedForUid = useRef(null);
+  useEffect(() => {
+    if (!user) {
+      autoSelectedForUid.current = null;
+      return;
+    }
+    if (!profile || autoSelectedForUid.current === user.uid) return;
+    autoSelectedForUid.current = user.uid;
+    if (profile.lastStable) switchStable(profile.lastStable);
+  }, [user, profile, switchStable]);
 
   // Ports doCreateStable (public/legacy-app.js:464-492).
   const createStable = useCallback(

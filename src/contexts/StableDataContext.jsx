@@ -78,7 +78,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 const COLLECTION_KEYS = [
   "ctasks",
   "cexpenses",
-  "salerts",
   "templates",
   "absences",
   "expenseSettlements",
@@ -142,6 +141,7 @@ export function StableDataProvider({ stableId, children }) {
   const [healthDocs, setHealthDocs] = useState([]);
   const [team, setTeam] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [sessionAlerts, setSessionAlerts] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -228,6 +228,14 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "tasks"), setTasks);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setSessionAlerts([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "sessionAlerts"), setSessionAlerts);
   }, [stableId]);
 
   useEffect(() => {
@@ -603,13 +611,14 @@ export function StableDataProvider({ stableId, children }) {
 
   const deleteTask = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        salerts: prev.salerts.filter((s) => s.tid !== id),
-      }));
+      const batch = writeBatch(db);
+      sessionAlerts
+        .filter((s) => s.tid === id)
+        .forEach((s) => batch.delete(stableDoc(stableId, "sessionAlerts", s.id)));
+      batch.commit();
       deleteDocRef(stableDoc(stableId, "tasks", id));
     },
-    [updateData, stableId]
+    [sessionAlerts, stableId]
   );
 
   // Ports cycleTask (public/legacy-app.js:3226-3242): cycling a task to "done" auto-creates
@@ -627,33 +636,32 @@ export function StableDataProvider({ stableId, children }) {
         nextStatus = task.status === "done" ? "pending" : "done";
       }
       writeDoc(stableDoc(stableId, "tasks", id), { ...task, status: nextStatus, stableId });
-      updateData((prev) => {
-        let salerts = prev.salerts;
-        if (nextStatus === "done") {
-          const activity = activityById(task.activity);
-          if (activity.r && task.horseId != null && !salerts.some((s) => s.tid === id && !s.ans)) {
-            const horse = horses.find((h) => h.id === task.horseId);
-            salerts = [
-              ...salerts,
-              {
-                id: uid(),
-                tid: id,
-                hid: task.horseId,
-                hn: horse ? horse.name : "",
-                act: task.activity,
-                date: task.startDate,
-                pid: task.assignedTo,
-                ans: false,
-              },
-            ];
-          }
-        } else {
-          salerts = salerts.filter((s) => !(s.tid === id && !s.ans));
+      if (nextStatus === "done") {
+        const activity = activityById(task.activity);
+        if (activity.r && task.horseId != null && !sessionAlerts.some((s) => s.tid === id && !s.ans)) {
+          const horse = horses.find((h) => h.id === task.horseId);
+          const alertId = uid();
+          writeDoc(stableDoc(stableId, "sessionAlerts", alertId), {
+            id: alertId,
+            stableId,
+            tid: id,
+            hid: task.horseId,
+            hn: horse ? horse.name : "",
+            act: task.activity,
+            date: task.startDate,
+            pid: task.assignedTo,
+            ans: false,
+          });
         }
-        return { ...prev, salerts };
-      });
+      } else {
+        const batch = writeBatch(db);
+        sessionAlerts
+          .filter((s) => s.tid === id && !s.ans)
+          .forEach((s) => batch.delete(stableDoc(stableId, "sessionAlerts", s.id)));
+        batch.commit();
+      }
     },
-    [tasks, horses, updateData, stableId]
+    [tasks, horses, sessionAlerts, stableId]
   );
 
   // Ports the save-session-btn handler (public/legacy-app.js:3706-3712): answering a
@@ -661,7 +669,7 @@ export function StableDataProvider({ stableId, children }) {
   // answered, in one atomic action (legacy treats it as one user action, not two).
   const answerSessionAlert = useCallback(
     (alertId, sessionData) => {
-      const alert = data.salerts.find((s) => s.id === alertId);
+      const alert = sessionAlerts.find((s) => s.id === alertId);
       if (!alert) return;
       const training = {
         id: uid(),
@@ -678,12 +686,9 @@ export function StableDataProvider({ stableId, children }) {
         ...training,
         stableId,
       });
-      updateData((prev) => ({
-        ...prev,
-        salerts: prev.salerts.map((s) => (s.id === alertId ? { ...s, ans: true } : s)),
-      }));
+      writeDoc(stableDoc(stableId, "sessionAlerts", alertId), { ...alert, ans: true });
     },
-    [data.salerts, updateData, stableId]
+    [sessionAlerts, stableId]
   );
 
   // Ports saveTpl/applyTpl (public/legacy-app.js:3503-3551).
@@ -1388,6 +1393,7 @@ export function StableDataProvider({ stableId, children }) {
       healthDocs,
       team,
       tasks,
+      sessionAlerts,
       loading,
       error,
       updateData,
@@ -1462,6 +1468,7 @@ export function StableDataProvider({ stableId, children }) {
       healthDocs,
       team,
       tasks,
+      sessionAlerts,
       loading,
       error,
       updateData,

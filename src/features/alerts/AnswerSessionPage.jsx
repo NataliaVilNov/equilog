@@ -9,11 +9,11 @@ import { fD } from "../../lib/date.js";
 // decision as the training form (docs/components/trainings.md).
 export function AnswerSessionPage() {
   const { aid } = useParams();
-  const { salerts, answerSessionAlert } = useStableData();
+  const { sessionAlerts, answerSessionAlert } = useStableData();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  const alert = salerts.find((s) => s.id === aid);
+  const alert = sessionAlerts.find((s) => s.id === aid);
 
   const [state, setState] = useState("");
   const [feel, setFeel] = useState("");

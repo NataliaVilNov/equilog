@@ -32,7 +32,7 @@ export function HomePage() {
   const { user, profile } = useContext(AuthContext) || {};
   const { activeStable } = useContext(StableSelectionContext) || {};
   const { openModal } = useContext(ModalContext) || {};
-  const { tasks, horses, trainings, expenses, health, salerts } = useStableData();
+  const { tasks, horses, trainings, expenses, health, sessionAlerts: allSessionAlerts } = useStableData();
   const { isAdmin, myTeamMember, can } = usePermissions();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -46,7 +46,7 @@ export function HomePage() {
   const done = visibleToday.filter((t) => t.status === "done").length;
   const pending = Math.max(0, visibleToday.length - done);
   const healthAlerts = can("health") ? upcomingHealthAlerts(health, horses) : [];
-  const sessionAlerts = visibleAlertsForUser(pendingSessionAlerts(salerts), isAdmin, myMid);
+  const sessionAlerts = visibleAlertsForUser(pendingSessionAlerts(allSessionAlerts), isAdmin, myMid);
   const pendingExpenses = can("expenses") ? expenses.filter((e) => e.status !== "pagado").length : 0;
   const workedIds = new Set(trainings.filter((t) => t.date === today).map((t) => t.hid));
   const totalHorses = horses.length;

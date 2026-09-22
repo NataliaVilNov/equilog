@@ -9,12 +9,16 @@ import { upcomingHealthAlerts, pendingSessionAlerts, visibleAlertsForUser } from
 
 // Ports rAlerts (public/legacy-app.js:2345-2373).
 export function AlertsPage() {
-  const { health, horses, salerts, team } = useStableData();
+  const { health, horses, sessionAlerts, team } = useStableData();
   const { isAdmin, myTeamMember } = usePermissions();
   const navigate = useNavigate();
 
   const sa = isAdmin ? upcomingHealthAlerts(health, horses) : [];
-  const ss = visibleAlertsForUser(pendingSessionAlerts(salerts), isAdmin, myTeamMember ? myTeamMember.id : null);
+  const ss = visibleAlertsForUser(
+    pendingSessionAlerts(sessionAlerts),
+    isAdmin,
+    myTeamMember ? myTeamMember.id : null
+  );
   const ov = sa.filter((a) => a.ov);
   const soon = sa.filter((a) => !a.ov);
 

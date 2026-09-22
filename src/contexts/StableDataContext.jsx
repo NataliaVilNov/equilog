@@ -243,6 +243,23 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Sets each horse's sortOrder to its index in orderedIds — the shared order used by both
+  // the horse list and the weekly board's rows (see sortHorsesByOrder in
+  // features/horses/horseOrder.js). Horses missing from orderedIds keep their existing
+  // sortOrder (defensive — shouldn't happen, the caller always passes every horse id).
+  const reorderHorses = useCallback(
+    (orderedIds) => {
+      updateData((prev) => ({
+        ...prev,
+        horses: prev.horses.map((h) => {
+          const idx = orderedIds.indexOf(h.id);
+          return idx === -1 ? h : { ...h, sortOrder: idx };
+        }),
+      }));
+    },
+    [updateData]
+  );
+
   // Ports the training portion of save-training-btn (public/legacy-app.js:3648-3651) and
   // the training-delete inline handler in the "entrenos" tab (public/legacy-app.js:1707).
   // No update mutator — legacy has no training-edit UI.
@@ -1281,6 +1298,7 @@ export function StableDataProvider({ stableId, children }) {
       addHorse,
       updateHorse,
       deleteHorse,
+      reorderHorses,
       addTraining,
       deleteTraining,
       addHealthRecord,
@@ -1347,6 +1365,7 @@ export function StableDataProvider({ stableId, children }) {
       addHorse,
       updateHorse,
       deleteHorse,
+      reorderHorses,
       addTraining,
       deleteTraining,
       addHealthRecord,

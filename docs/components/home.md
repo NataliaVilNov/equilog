@@ -24,11 +24,15 @@ health controls.
 
 **State & data**
 - No new `StableDataContext` mutators — this is a read-only dashboard. It reads `tasks`,
-  `horses`, `trainings`, `expenses`, `health`, `salerts` directly and derives everything else
-  (today's visible tasks, health/session alert counts, worked-horse count, pending-expense
-  count, progress percentage) with the same helpers `DayBoardPage`/`AlertsPage` already use
-  (`tasksForDate`, `visibleTasksForUser`, `upcomingHealthAlerts`, `pendingSessionAlerts`,
-  `visibleAlertsForUser`).
+  `horses`, `trainings`, `expenses`, `health`, `sessionAlerts` directly and derives everything
+  else (today's visible tasks, health/session alert counts, worked-horse count,
+  pending-expense count, progress percentage) with the same helpers `DayBoardPage`/
+  `AlertsPage` already use (`useTaskOccurrences`, `visibleTasksForUser`,
+  `upcomingHealthAlerts`, `pendingSessionAlerts`, `visibleAlertsForUser`).
+- "Tareas de hoy" now resolves through `useTaskOccurrences`, same as `DayBoardPage` — so it
+  includes general stable chores (not just horse tasks, closing the gap where the old
+  `ctasks` never appeared on the home dashboard at all) and any recurring task's occurrence
+  for today, with its per-date status if one was already recorded.
 - Reads `AuthContext` (for greeting name), `StableSelectionContext` (for the active stable's
   name shown in the hero), and `ModalContext` (for the "Más opciones" button).
 

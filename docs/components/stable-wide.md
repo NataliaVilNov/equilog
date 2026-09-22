@@ -2,51 +2,41 @@
 
 ## Overview
 
-Tasks and expenses that aren't tied to a specific horse — general stable upkeep (recurring
-tasks like cleaning or laundry, with a frequency and an optional assignee) and shared costs
-(material, payroll, maintenance, supplies). Ported from `public/legacy-app.js:2213-2342`
-(`rCuadra`, `rNCT`, `rNCE`, `doneCT`).
+Shared costs not tied to a specific horse (material, payroll, maintenance, supplies). Ported
+from `public/legacy-app.js:2213-2342` (`rCuadra`, `rNCE`). Recurring stable-wide *tasks*
+(cleaning, laundry, etc.) used to live here too (`rNCT`/`doneCT`) but moved into the unified
+tasks feature — a general chore is now just a task with no `horseId`, optionally recurring —
+see `docs/components/tasks.md` and `docs/DATABASE.md` §7 for why.
 
 ## Implementation
 
 **Component tree**
 ```
 src/features/stable-wide/
-  stableTaskHelpers.js         — pure ctasksDueToday(), ports cDue()
-  StableTaskList.jsx             — "tareas" tab content
-  StableExpenseList.jsx           — "gastos" tab content
-  StableWidePage.jsx               — /cuadra, tab shell over the two lists above
-  StableTaskFormPage.jsx            — /cuadra/tasks/new, /cuadra/tasks/:eid/edit, ports rNCT
+  StableExpenseList.jsx           — expense list content
+  StableWidePage.jsx               — /cuadra, now just hosts the expense list directly
   StableExpenseFormPage.jsx          — /cuadra/expenses/new, /cuadra/expenses/:eid/edit,
                                         ports rNCE
 ```
 
 **State & data**
-- `StableDataContext` gained `addStableTask`/`updateStableTask`/`deleteStableTask`/
-  `doneStableTask` (sets `ld` — last-done date — to today, ports `doneCT`) for the `ctasks`
-  collection, and `addStableExpense`/`updateStableExpense`/`deleteStableExpense` for
-  `cexpenses`.
-- `StableTaskFormPage` preserves the existing record's `ld` field when editing (a name/
-  frequency/assignee edit shouldn't reset when the task was last marked done), matching
-  legacy's `ld:ex?ex.ld:null` (`public/legacy-app.js:3692`).
-- `ctasksDueToday()` (the "which recurring tasks are due today" logic, based on frequency
-  and `ld`) is pure and shared between the due-today banner and each task row's "toca hoy"
-  badge, same as legacy's single `cDue()` call.
+- `StableDataContext` gained `addStableExpense`/`updateStableExpense`/`deleteStableExpense`
+  for the `cexpenses` collection.
 
 **Routing**
-- `/cuadra` (reads `?tab=tareas|gastos`), `/cuadra/tasks/new`, `/cuadra/tasks/:eid/edit`,
-  `/cuadra/expenses/new`, `/cuadra/expenses/:eid/edit` — all under
+- `/cuadra`, `/cuadra/expenses/new`, `/cuadra/expenses/:eid/edit` — all under
   `<PermissionRoute requires="stable">`.
 
 **Permissions**
 - `can('stable')` gates every route in this feature.
 - Unlike most other delete buttons ported so far (which also check `can('deleteItems')`),
-  the delete buttons here have **no** additional gate — matches legacy exactly
-  (`public/legacy-app.js:2253,2273`): having `stable` access alone is enough to delete a
-  stable-wide task or expense.
+  the delete button here has **no** additional gate — matches legacy exactly
+  (`public/legacy-app.js:2273`): having `stable` access alone is enough to delete a
+  stable-wide expense.
 
 **Notable decisions / deviations from the legacy behavior**
-- None — a close, direct port.
+- The "tareas"/"gastos" tab switcher is gone along with the tasks tab — with only expenses
+  left here, a single list replaces the two-tab shell.
 
 **Known gaps / follow-ups**
 - None beyond what's already tracked in `docs/BACKLOG.md`.

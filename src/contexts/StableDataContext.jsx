@@ -22,6 +22,7 @@ import { storage } from "../lib/firebaseClient.js";
 import { catFromHealthType, activityById } from "../lib/constants.js";
 import { taskNeedsReturn } from "../features/tasks/taskHelpers.js";
 import { boardDefaults } from "../features/boards/boardDefaults.js";
+import { boardAssignment, horseConflict } from "../features/boards/boardHelpers.js";
 import { uid } from "../lib/id.js";
 import { td } from "../lib/date.js";
 
@@ -793,6 +794,66 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports assignBoardHorse (public/legacy-app.js:1416-1423). Validation/occupied/conflict
+  // outcomes are returned as a status for the caller to toast/confirm on, rather than
+  // calling toast()/confirm() here directly (same split used throughout this context).
+  // Pass { force: true } to place anyway after the caller confirms a reported conflict.
+  const assignBoardHorse = useCallback(
+    (hid, type, date, resourceId, slotId, position, { force } = {}) => {
+      if (!hid) throw new Error("Selecciona un caballo");
+      const occupied = boardAssignment(data.boardAssignments, type, date, resourceId, slotId, position);
+      if (occupied) return { status: "occupied" };
+      const conflict = horseConflict(data.boardConfig, data.boardAssignments, hid, date, type, slotId);
+      if (conflict && !force) return { status: "conflict" };
+      updateData((prev) => ({
+        ...prev,
+        boardAssignments: [
+          ...(prev.boardAssignments || []),
+          { id: uid(), type, date, resourceId, slotId, position: Number(position), hid },
+        ],
+      }));
+      return { status: "ok" };
+    },
+    [data.boardAssignments, data.boardConfig, updateData]
+  );
+
+  // Ports moveBoardAssignment (public/legacy-app.js:1416-1423). Fix: also runs the same
+  // horseConflict check assignBoardHorse does — legacy's version skips it, so dragging an
+  // already-placed horse into a time-overlapping slot bypassed the warning a fresh
+  // placement of the same horse into the same slot would show. The moved assignment itself
+  // is excluded from the conflict check so its own pre-move slot isn't compared against
+  // itself.
+  const moveBoardAssignment = useCallback(
+    (id, type, date, resourceId, slotId, position, { force } = {}) => {
+      const a = (data.boardAssignments || []).find((x) => x.id === id);
+      if (!a) return { status: "not-found" };
+      const occupied = boardAssignment(data.boardAssignments, type, date, resourceId, slotId, position);
+      if (occupied && occupied.id !== id) return { status: "occupied" };
+      const others = (data.boardAssignments || []).filter((x) => x.id !== id);
+      const conflict = horseConflict(data.boardConfig, others, a.hid, date, type, slotId);
+      if (conflict && !force) return { status: "conflict" };
+      updateData((prev) => ({
+        ...prev,
+        boardAssignments: (prev.boardAssignments || []).map((x) =>
+          x.id === id ? { ...x, type, date, resourceId, slotId, position: Number(position) } : x
+        ),
+      }));
+      return { status: "ok" };
+    },
+    [data.boardAssignments, data.boardConfig, updateData]
+  );
+
+  // Ports removeBoardAssignment (public/legacy-app.js:1416-1423).
+  const removeBoardAssignment = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        boardAssignments: (prev.boardAssignments || []).filter((a) => a.id !== id),
+      }));
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -838,6 +899,9 @@ export function StableDataProvider({ stableId, children }) {
       setWeeklyPlanActivities,
       toggleWeeklyPlanActivity,
       setBoardPeriodic,
+      assignBoardHorse,
+      moveBoardAssignment,
+      removeBoardAssignment,
     }),
     [
       data,
@@ -883,6 +947,9 @@ export function StableDataProvider({ stableId, children }) {
       setWeeklyPlanActivities,
       toggleWeeklyPlanActivity,
       setBoardPeriodic,
+      assignBoardHorse,
+      moveBoardAssignment,
+      removeBoardAssignment,
     ]
   );
 

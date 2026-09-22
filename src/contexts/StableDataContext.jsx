@@ -563,6 +563,53 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports saveTpl/applyTpl (public/legacy-app.js:3503-3551).
+  const addTemplate = useCallback(
+    (template) => {
+      updateData((prev) => ({ ...prev, templates: [...prev.templates, template] }));
+    },
+    [updateData]
+  );
+
+  const updateTemplate = useCallback(
+    (template) => {
+      updateData((prev) => ({
+        ...prev,
+        templates: prev.templates.map((t) => (t.id === template.id ? template : t)),
+      }));
+    },
+    [updateData]
+  );
+
+  const deleteTemplate = useCallback(
+    (id) => {
+      updateData((prev) => ({ ...prev, templates: prev.templates.filter((t) => t.id !== id) }));
+    },
+    [updateData]
+  );
+
+  const applyTemplate = useCallback(
+    (templateId, date) => {
+      updateData((prev) => {
+        const tpl = prev.templates.find((t) => t.id === templateId);
+        if (!tpl) return prev;
+        const newTasks = tpl.tasks.map((t) => ({
+          id: uid(),
+          hid: t.hid,
+          activity: t.activity,
+          pid: t.pid,
+          dur: t.dur,
+          date,
+          status: "pending",
+          notes: "",
+          time: null,
+        }));
+        return { ...prev, tasks: [...prev.tasks, ...newTasks] };
+      });
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -590,6 +637,10 @@ export function StableDataProvider({ stableId, children }) {
       deleteTask,
       cycleTaskStatus,
       answerSessionAlert,
+      addTemplate,
+      updateTemplate,
+      deleteTemplate,
+      applyTemplate,
     }),
     [
       data,
@@ -617,6 +668,10 @@ export function StableDataProvider({ stableId, children }) {
       deleteTask,
       cycleTaskStatus,
       answerSessionAlert,
+      addTemplate,
+      updateTemplate,
+      deleteTemplate,
+      applyTemplate,
     ]
   );
 

@@ -76,8 +76,10 @@ src/components/EmptyState.jsx, src/components/Tabs.jsx, src/components/StatGrid.
 - `HorsetelexImportButton`/`horsetelexParser.js` are pure — they return `{updates, success}`
   rather than writing into DOM inputs directly.
 - `SaleTab` has **no local draft state** — every field writes straight through
-  `updateHorseSale` on change (debounced by `StableDataContext`, same as everywhere else),
-  matching legacy's own no-separate-save-button venta tab.
+  `updateHorseSale` on change, matching legacy's own no-separate-save-button venta tab. This
+  now means one Firestore write per keystroke (no debouncing since the schema migration —
+  see `docs/DATABASE.md` §5) rather than the 250ms-debounced write it had before; tracked as a
+  minor follow-up in `docs/BACKLOG.md`, not fixed in this pass.
 
 **Routing**
 - `/horses` → `HorseListPage`; `/horses/:hid` → `HorseDetailPage`.

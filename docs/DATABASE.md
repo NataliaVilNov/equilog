@@ -6,25 +6,24 @@ no ORM, and no migrations folder — this document describes the Firestore/NoSQL
 it exists today, plus the app's read/write patterns.
 
 This reflects the current React implementation (`src/contexts/`, `src/lib/`) — the
-pre-migration vanilla-JS app (`public/legacy-app.js`, `src/firebase.js`, the
-`window._FB`/`window._fbLoadUserProfile` bridge this doc originally described) was deleted in
-the Phase 8c cutover. See `docs/REFACTOR_PLAN.md` for that history if you need it.
+pre-migration vanilla-JS app (`public/legacy-app.js`, `src/firebase.js`) was deleted in the
+Phase 8c cutover, and the single-document-per-stable model that app used was itself replaced
+by the subcollection layout described below. See `docs/BACKLOG.md` #3 and this file's git
+history if you need that earlier design's rationale.
 
 Connection setup lives in `src/lib/firebaseClient.js` — a standalone Firebase app instance
 initialized from `VITE_FIREBASE_*` env vars (`.env.example`), exporting `auth`/`db`/`storage`
-directly as module exports (no global `window` bridge; nothing else needs one now that the
-legacy script is gone).
+directly as module exports.
 
 ## 1. Firestore collections
 
 ### `users/{uid}`
 One document per authenticated user, keyed by their Firebase Auth uid. Written by
 `register()`/`updateUserProfile()` (`src/features/auth/authActions.js`): `name`, `email`,
-`phone`, `bio`, `photo` (a small client-resized data URL — see §4), `role`, `created`/
+`phone`, `bio`, `photo` (a small client-resized data URL — see §3), `role`, `created`/
 `updated` timestamps. `lastStable` (the stable id to auto-load on next login) is written
 separately by `StableSelectionContext`'s `switchStable`/`exitActiveStable`. Loaded once per
-auth-state change by `AuthContext`'s `loadProfile()`, which falls back to
-`{name, email, stables: []}` if the doc doesn't exist yet (e.g. mid-registration).
+auth-state change by `AuthContext`'s `loadProfile()`.
 
 ### `stables/{stableId}`
 One document per stable ("cuadra"). Metadata only, written by `StableSelectionContext`
@@ -37,236 +36,73 @@ joins.
 ### `inviteCodes/{code}`
 Top-level, short random-code-keyed docs, written by `createStable` (a general stable invite)
 and `createMemberInvite` (a per-team-member invite): `{stableId, name, teamMemberId?,
-teamMemberName?, createdBy?, created}`. `joinByCode()` reads one of these to resolve which
-stable — and optionally which team-member profile to link — an entered code points to.
+teamMemberName?, createdBy?, created}`.
 
-### `stables/{stableId}/data/main`
-**The entire operational dataset for a stable lives in this single document.** Everything a
-user does inside a stable — horses, training logs, health records, expenses, tasks, team
-roster, absences, board plans — is stored as arrays inside this one JSON blob, read/written
-as a whole by `StableDataContext` (`src/contexts/StableDataContext.jsx`).
+### Everything else lives under `stables/{stableId}/...`
+Every operational record for a stable is its own document in its own subcollection, sized to
+how it's actually queried:
 
-The shape is defined by `emptyData()`/`withDefaults()` in that file — one array per key in
-`COLLECTION_KEYS`, plus one object field (`boardConfig`):
+| Collection | Purpose |
+|---|---|
+| `horses/{horseId}` | one document per horse |
+| `horses/{horseId}/trainings/{trainingId}` | one document per training session |
+| `horses/{horseId}/health/{healthId}` | one document per health record |
+| `horses/{horseId}/healthDocs/{docId}` | one document per uploaded/linked health document |
+| `horses/{horseId}/expenses/{expenseId}` | one document per horse-specific expense |
+| `team/{memberId}` | one document per team-roster member |
+| `tasks/{taskId}` | unified tasks — horse-specific or general chore, one-off or recurring, see §2 |
+| `tasks/{taskId}/occurrences/{date}` | sparse per-date exceptions for recurring tasks, see §2 |
+| `stableExpenses/{expenseId}` | stable-wide expenses |
+| `sessionAlerts/{alertId}` | pending training-report alerts |
+| `taskTemplates/{templateId}` | reusable task bundles, stamped on demand — orthogonal to recurrence, see §2 |
+| `absences/{absenceId}` | team member absence-calendar entries |
+| `expenseSettlements/{settlementId}` | recorded owner-to-owner settlement transfers |
+| `weeklyPlans/{planId}` | Boards weekly grid rows, one per horse+day (deterministic id: `${hid}__${date}`) |
+| `periodicBoardDates/{recordId}` | Boards due-date tracker rows, one per horse+column (deterministic id: `${hid}__${columnId}`) |
+| `boardAssignments/{assignmentId}` | Boards walker/paddock resource-slot bookings |
+| `boardConfig/main` | Boards settings — a **single document**, not a subcollection (see §5) |
 
-| Field | Shape | Holds |
-|---|---|---|
-| `horses` | array | id, name, breed, dob, `owners[]` (name + % split), pedigree (sire/dam/grandparents), `photo` (inline base64), sale info, `sortOrder` |
-| `trainings` | array | training sessions, keyed by horse id: date, duration, work type, rating, notes |
-| `health` | array | health records, keyed by horse id: type, date, next-due date (`nxt`), amount, payee, payment status |
-| `healthDocs` | array | uploaded document/photo references (Firebase Storage path + URL — see §4), linked to a health record |
-| `expenses` | array | per-horse expenses, with owner-split settlement fields |
-| `team` | array | team members: name, linked auth uid (if linked), per-member permissions object |
-| `tasks` | array | per-horse daily tasks, assignable to a team member |
-| `ctasks` | array | stable-wide ("cuadra") recurring tasks, not tied to a horse |
-| `cexpenses` | array | stable-wide expenses |
-| `salerts` | array | pending "session alerts" needing a training-report response |
-| `templates` | array | reusable task templates |
-| `absences` | array | team member absence-calendar entries |
-| `expenseSettlements` | array | recorded owner-to-owner settlement transfers |
-| `weeklyPlans` | array | the Boards weekly grid: one row per horse+day — `activities[]`, `completed[]`, `note`, `vetHealthId` (links to a `health` record) |
-| `periodicBoardDates` | array | Boards' due-date tracker columns (herraje/desparasitación/etc.), one row per horse+column |
-| `boardAssignments` | array | Boards' walker/paddock resource-slot bookings |
-| `boardConfig` | object | the only non-array field: `{activities[], periodicColumns[], walkers[], paddocks[], paddockSlots[]}` — configurable Boards settings |
+Boards data (`weeklyPlans`, `periodicBoardDates`, `boardAssignments`) is scoped to the
+*stable*, not nested under each horse, because board views are inherently "every horse for
+this day/week" queries — nesting under `horses` would make that the awkward
+cross-subcollection query instead of the easy one.
 
-Full field-level detail for any of these lives in that feature's own
-`docs/components/*.md` — this table is the map, not the territory.
-
-### No other Firestore collections
-There is no separate collection per entity type (no top-level `horses` collection, no
-`trainings` collection, etc.) — everything except `users`, `stables` metadata, and
-`inviteCodes` is nested inside the one `data/main` document per stable.
-
-## 2. Read path
-
-`StableDataContext`'s effect (keyed on the active `stableId`) does two things on every
-stable switch:
-
-1. **`getStableDoc(stableId)`** (`src/lib/firestore.js`) — a one-time `getDoc()`, so first
-   paint doesn't wait on the realtime listener.
-2. **`subscribeToStableDoc(stableId, onChange)`** — an `onSnapshot()` listener on the same
-   document. It only calls `onChange` when `snap.metadata.hasPendingWrites === false` —
-   this is what stops the app from redundantly re-rendering off its own optimistic local
-   write before the round-trip to the server completes, and is how multiple team members
-   editing the same stable see each other's changes live.
-
-Both paths run their result through `withDefaults()`, which back-fills any collection or
-field an older stable's stored document predates (e.g. `weeklyPlans[].note` defaulting to
-`""` for rows written before that field existed, or the `vet` board activity getting
-appended to a stable's `boardConfig.activities` if it's missing). This is how schema changes
-roll out without a migration step — new fields just get a sensible default the first time
-an old document is read.
-
-## 3. Write path
-
-Every feature-specific mutator (`addHorse`, `cycleTaskStatus`, `toggleWeeklyPlanCompleted`,
-etc.) is built on one shared primitive in `StableDataContext`: `updateData(updater)`.
-
-1. Applies `updater` to local React state immediately (`setData`) — this is why the UI
-   feels instant/optimistic; nothing waits on the network round-trip.
-2. Feeds the new full data object into `useDebouncedSave` (`src/hooks/useDebouncedSave.js`)
-   — a 250ms debounce, so rapid successive edits (typing in a form, a run of board-toolbar
-   taps) collapse into a single write instead of one per change.
-3. That calls `cleanForFirestore()` (`src/lib/cleanForFirestore.js` — recursively replaces
-   `undefined` with `null`, since Firestore rejects `undefined` in writes) and then
-   `setStableDoc()` — a plain `setDoc()`. **This is a full-document overwrite on every
-   save** — there is no partial/field-level update. Toggling one task's status rewrites the
-   entire stable dataset, because the whole thing is one JS object saved as one document.
-4. If the write fails (offline, permissions, etc.), it falls back to writing the same JSON
-   shape into `localStorage` under a fixed key (`equilog_v4`) — write-only, never read back;
-   a safety net against losing the in-progress edit, not an offline cache.
-
-## 4. Firebase Storage usage
-
-Only health-record document/photo attachments (`healthDocs`) go to actual Storage, via
-`uploadHealthDocs()`/`deleteHealthDoc()` in `StableDataContext.jsx`. Files land at
-`stables/{stableId}/horses/{hid}/health_docs/{timestamp}_{id}_{safeName}`; only the
-resulting path + download URL are stored in the Firestore document, not the file content.
-
-Everything else is inline in Firestore, not Storage:
-- **Horse and team-member photos** are stored as base64 data URLs directly inside the
-  `horses`/`team` arrays, with no client-side resizing — this contributes directly to
-  document-size growth (see §5).
-- **Profile photos** (`users/{uid}.photo`) are the one exception: resized/recompressed
-  client-side (`src/lib/imageResize.js`) before being written, specifically to keep the
-  small per-user profile document from ballooning.
-
-## 5. Known limitations of this model
-
-These are documented here as context, not fixed in this pass — see `docs/BACKLOG.md` for
-prioritization:
-
-- **Firestore's 1 MiB per-document limit** applies to the entire stable dataset. A stable
-  with enough horses, history, and inline base64 photos will eventually hit this ceiling.
-- **Whole-document last-write-wins**: if two team members edit different things
-  simultaneously (e.g. one edits a horse's notes while another marks a task done), both
-  writes race to overwrite the *entire* document — the loser's change is silently dropped,
-  not merged. There is no field-level conflict resolution.
-- **No per-collection queries or indexes**: because everything is one document, Firestore's
-  querying/indexing features (server-side filtering/pagination) are unavailable — all
-  filtering happens client-side in JS after loading the entire blob.
-- **No per-collection Firestore Security Rules**: access control is enforced entirely in the
-  client's `usePermissions().can()` logic, not by Firestore rules scoped to sub-resources,
-  since there are no sub-resources to scope rules to.
-- **Write amplification**: every single mutation, however small, re-serializes and re-sends
-  the entire dataset.
-
-The recommended long-term direction (tracked in `docs/BACKLOG.md` #3) is splitting this into
-per-collection subcollections — e.g. `stables/{id}/horses/{hid}`,
-`stables/{id}/horses/{hid}/trainings/{tid}`, `stables/{id}/tasks/{taskId}`, etc. — with
-per-document `onSnapshot` listeners aggregated client-side, and moving horse/team photos into
-Storage rather than inline base64. This is a materially larger, separate effort from any of
-the feature work done so far and should not be bundled into it.
-
-## 6. Firestore capabilities this design isn't using
-
-None of the limitations in §5 are forced by Firestore itself — Firestore's actual feature set
-argues for the opposite structure. This section exists so a future subcollection redesign
-doesn't have to rediscover why. The single-blob shape is best understood as a straight port
-of the pre-migration vanilla-JS app's single in-memory `D` object (see the legacy-app note at
-the top of this doc) — persisting one JS object wholesale was the path of least resistance for
-that app's architecture, not a decision driven by how Firestore works.
-
-- **Field-level writes exist.** `updateDoc()` supports dot-path field updates,
-  `arrayUnion()`/`arrayRemove()`, and `FieldValue.increment()`. None of these require reading
-  or rewriting a whole document. The current `setDoc()` full-document overwrite on every save
-  (§3) is a code choice, not a Firestore requirement — toggling one task's status doesn't need
-  to re-serialize every horse and health record.
-- **Multi-document atomicity exists via batched writes and transactions** (`writeBatch()`,
-  `runTransaction()`), covering up to 500 documents per batch. If the motivation for one
-  document per stable was "these related changes must land together," that guarantee is
-  available across separate documents too — it doesn't require them to be one document.
-- **Security rules are meant to be scoped per collection/document**, with rule expressions
-  over `request.auth.uid`, `resource.data`, etc. A single document holding every sub-resource
-  is exactly the case where per-resource rules become impossible, which is why this app pushes
-  all access control into client-side `usePermissions().can()` logic instead (§5). That logic
-  is a workaround for the schema's shape, not something Firestore requires — a subcollection
-  layout (e.g. `stables/{id}/tasks/{taskId}`) would let rules restrict writes per-resource
-  (e.g. only an assigned team member or admin can write a given task) directly at the database
-  layer.
-- **Querying, filtering, and pagination only work on top-level fields of documents inside a
-  collection** — not on values nested inside an array field of one document. The "no
-  per-collection queries or indexes" limitation in §5 isn't a Firestore ceiling; it's the
-  direct consequence of storing `tasks`, `health`, etc. as arrays-in-a-blob instead of as
-  documents in their own collections, which is what unlocks Firestore's query/index/paginate
-  features in the first place.
-- **The 1 MiB per-document limit (§5) is the one hard constraint here, and it cuts against the
-  current design**, not in favor of it. Subcollections have no equivalent ceiling — each
-  horse, training, or health record would be its own small document, so dataset growth scales
-  without a per-stable cap.
-- **The one real (if minor) argument for fewer documents**: many small `onSnapshot` listeners
-  are somewhat fussier to wire up and aggregate client-side than one. This doesn't justify a
-  single document, though — a handful of subcollections (`horses`, `tasks`, `health`, etc.)
-  with a few collection-level `onSnapshot` queries is the idiomatic middle ground, and is what
-  the redesign above already proposes.
-
-## 7. Proposed schema redesign (not yet implemented)
-
-This section is the concrete target for the §5/§6 migration — a subcollection layout sized to
-how each piece of data actually grows and gets queried, rather than one document per stable.
-Nothing below is implemented; it's the design to build toward under `docs/BACKLOG.md` #3.
-
-### 7.1 Collection layout
-
-| Path | Replaces | Purpose |
-|---|---|---|
-| `users/{uid}` | *(unchanged)* | see §1 |
-| `stables/{stableId}` | *(unchanged)* | see §1 |
-| `inviteCodes/{code}` | *(unchanged)* | see §1 |
-| `stables/{stableId}/horses/{horseId}` | `horses[]` | one document per horse |
-| `stables/{stableId}/horses/{horseId}/trainings/{trainingId}` | `trainings[]` | one document per training session |
-| `stables/{stableId}/horses/{horseId}/health/{healthId}` | `health[]` | one document per health record |
-| `stables/{stableId}/horses/{horseId}/healthDocs/{docId}` | `healthDocs[]` | one document per uploaded/linked health document |
-| `stables/{stableId}/horses/{horseId}/expenses/{expenseId}` | `expenses[]` | one document per horse-specific expense |
-| `stables/{stableId}/team/{memberId}` | `team[]` | one document per team-roster member |
-| `stables/{stableId}/tasks/{taskId}` | `tasks[]` + `ctasks[]` | unified tasks — horse-specific or general chore, see §7.3 |
-| `stables/{stableId}/tasks/{taskId}/occurrences/{date}` | *(new)* | sparse per-date exceptions for recurring tasks, see §7.3 |
-| `stables/{stableId}/stableExpenses/{expenseId}` | `cexpenses[]` | stable-wide expenses |
-| `stables/{stableId}/sessionAlerts/{alertId}` | `salerts[]` | pending training-report alerts |
-| `stables/{stableId}/taskTemplates/{templateId}` | `templates[]` | reusable task bundles, stamped on demand — orthogonal to recurrence, see §7.3 |
-| `stables/{stableId}/absences/{absenceId}` | `absences[]` | team member absence-calendar entries |
-| `stables/{stableId}/expenseSettlements/{settlementId}` | `expenseSettlements[]` | recorded owner-to-owner settlement transfers |
-| `stables/{stableId}/weeklyPlans/{planId}` | `weeklyPlans[]` | Boards weekly grid rows |
-| `stables/{stableId}/periodicBoardDates/{recordId}` | `periodicBoardDates[]` | Boards due-date tracker rows |
-| `stables/{stableId}/boardAssignments/{assignmentId}` | `boardAssignments[]` | Boards walker/paddock resource bookings |
-| `stables/{stableId}/boardConfig/main` | `boardConfig` | Boards settings — stays a single small document; it's config, not per-record data, so it doesn't need splitting |
-
-Boards data (`weeklyPlans`, `periodicBoardDates`, `boardAssignments`) stays scoped to the
-*stable*, not nested under each horse — board views are inherently "every horse for this
-day/week" queries, and nesting under `horses` would make that the awkward cross-subcollection
-query instead of the easy one.
-
-### 7.2 Horse subcollection fields
+### Horse subcollection fields
 
 | Collection | Holds |
 |---|---|
-| `horses/{horseId}` | name, breed, dob, `owners[]` (name + % split), pedigree, sale info, `sortOrder` — photo moves to Storage, see §7.5 |
+| `horses/{horseId}` | name, breed, dob, `owners[]` (name + % split), pedigree, sale info, `sortOrder`, `photo: {path, url}` |
 | `trainings/{trainingId}` | date, duration, work type, rating, notes |
 | `health/{healthId}` | type, date, next-due date (`nxt`), amount, payee, payment status |
-| `healthDocs/{docId}` | title, category, date, notes, Storage path + URL, optional `healthId` link |
+| `healthDocs/{docId}` | title, category, date, notes, Storage `path` + `url`, optional `healthId` link |
 | `expenses/{expenseId}` | concept, amount, date, category, payer/payee, status, optional `healthId` link, settlement fields |
 
-### 7.3 Unified tasks
+Every document in `trainings`, `health`, `healthDocs`, and `expenses` also carries a
+`stableId` field, even though it's already implied by the document's path — that's what lets
+`collectionGroup()` queries filter to one stable without walking each doc's ancestor path (see
+§4).
 
-`tasks[]` (per-horse) and `ctasks[]` (stable-wide) collapse into one
-`stables/{stableId}/tasks/{taskId}` collection. A task is horse-specific or a general chore,
-assigned or unassigned, one-off or recurring — independently, via nullable fields rather than
-which array it lived in:
+## 2. Unified tasks
+
+`tasks/{taskId}` replaced the old split between per-horse tasks and stable-wide "cuadra"
+chores: a task is horse-specific or a general chore, assigned or unassigned, one-off or
+recurring — independently, via nullable fields rather than which collection it lived in.
 
 | Field | Type | Notes |
 |---|---|---|
-| `stableId` | string (FK) | |
-| `horseId` | string (FK), nullable | `null` = a general stable chore, not tied to a horse |
-| `assignedTo` | string (FK), nullable | `null` = shows on every team member's to-do list |
-| `activity` | string | |
+| `id`, `stableId` | string | |
+| `horseId` | string, nullable | `null` = a general stable chore, not tied to a horse |
+| `assignedTo` | string, nullable | `null` = shows on every team member's to-do list, computed at read time (`assignedTo == null OR assignedTo == me`) — never fanned out as a write per member |
+| `activity` | string | an `AK` activity id when horse-linked, or free text for a general chore (`activityById()` falls back to a generic icon for unrecognized strings) |
 | `startDate` | date | the due date for a one-off task; the series' anchor date for a recurring one |
-| `recurrenceRule` | map, nullable | embedded, not a separate collection — see below |
-| `createdBy` | string (FK) | |
+| `time`, `dur`, `notes`, `status` | — | unchanged from the pre-unification shape; `status` is only meaningful for a **non-recurring** task (see below) |
+| `recurrenceRule` | map, nullable | embedded on the task itself, not its own collection — see below |
+| `createdBy` | string, nullable | |
 
-`recurrenceRule` is embedded on the task document itself rather than its own collection,
-because Firestore has no server-side RRULE engine — there's no query that returns "every
-Thursday between date A and B." The rule instead has to be a small vocabulary the client can
-expand for whatever range it's rendering (today's list, this week's board):
+**`recurrenceRule`** has to be a small vocabulary the client can expand itself, since Firestore
+has no server-side RRULE query — there's no query that returns "every Thursday between date A
+and B." `src/lib/recurrence.js` (`expandOccurrences`, `matchesRule`) does that expansion for
+whatever date a screen is rendering:
 
 | Field | Type | Example |
 |---|---|---|
@@ -278,34 +114,125 @@ expand for whatever range it's rendering (today's list, this week's board):
 | `until` | date, nullable | series end date |
 | `count` | number, nullable | series ends after *N* occurrences |
 
-`stables/{stableId}/tasks/{taskId}/occurrences/{date}` holds **only exceptions** — it's
-sparse by design. If no occurrence document exists for a given date, that occurrence is
-implicitly pending with the series' default `assignedTo`. A document is written only when a
-specific date needs to diverge: marked `done`/`skipped`, or handed to someone else just that
-once via `overrideAssignedTo`. This mirrors how Google Calendar itself handles editing a
-single instance of a recurring event, and avoids ever having to materialize occurrences into
-the far future.
+**`tasks/{taskId}/occurrences/{date}`** holds only exceptions — it's sparse by design. If no
+occurrence document exists for a date, that occurrence is implicitly pending with the series'
+default `assignedTo`. A document (`{taskId, stableId, date, status}`) is written only when a
+specific date's status diverges from pending — `cycleOccurrenceStatus` in
+`StableDataContext.jsx` is the only thing that writes one today. The schema also allows an
+`overrideAssignedTo` field for handing a single occurrence to someone else without touching
+the series (mirroring how Google Calendar handles editing one instance of a recurring event),
+but no UI currently writes it — reassigning a single occurrence isn't built yet, only marking
+one done/pending is.
 
-Two consequences worth being explicit about:
-- **"Everyone's to-do list" is computed at read time** (`assignedTo == null OR assignedTo ==
-  me`), not fanned out as a write per member — an unassigned chore stays one document
-  regardless of team size.
-- **`taskTemplates` is unaffected by this and stays a separate concept**: a template is a
-  bundle of one-off tasks a user stamps on demand (e.g. "morning routine" → 5 tasks for a
-  chosen date); a `recurrenceRule` is a single task that repeats on its own schedule. They
-  don't compete with each other.
+`useTaskOccurrences(stableId, tasks, date)` (`src/hooks/`) is the read-side counterpart: for
+one visible date, it returns one task-shaped view model per task occurring that day, with a
+recurring task's `status`/`assignedTo` substituted from that date's occurrence doc (or
+defaults). It's currently wired into every screen that shows "tasks for today" (`DayBoardPage`,
+`MemberDayPage`, `HomePage`) but not into any multi-day view — `StatsPage`'s date-range task
+stats still read the raw `tasks` collection, so a recurring task's individual occurrences don't
+roll up into historical stats correctly yet.
 
-### 7.4 Storage changes
+`taskTemplates` is unaffected by any of this and stays a separate concept: a template is a
+bundle of one-off tasks a user stamps onto a chosen date (`applyTemplate`); a `recurrenceRule`
+is a single task that repeats on its own schedule. They don't compete with each other.
 
-Horse photos and team-member photos move out of Firestore entirely, uploaded the same way
-`healthDocs` already are (§4) — only a Storage path + download URL stored on the `horses`/
-`team` document, not a base64 data URL inline. This removes the other document-size-growth
-path alongside the horses/health/expenses split above.
+## 3. Firebase Storage usage
 
-### 7.5 What doesn't change
+Every file attachment in the app — health-record documents (`healthDocs`), horse photos, and
+team-member photos — is uploaded to Storage, with only a `{path, url}` pair stored on the
+owning Firestore document, never file content inline:
+- Health docs: `stables/{stableId}/horses/{hid}/health_docs/{timestamp}_{id}_{safeName}`.
+- Horse photos: `stables/{stableId}/horses/{hid}/photo/{timestamp}_{safeName}`.
+- Team-member photos: `stables/{stableId}/team/{mid}/photo/{timestamp}_{safeName}`.
 
-`users/{uid}`, `stables/{stableId}`, and `inviteCodes/{code}` keep their current shape —
-they're already right-sized documents, not arrays-in-a-blob. `boardConfig` stays a single
-document under the stable for the same reason: it's small, admin-edited configuration, not
-data that grows with usage. Not everything needs to be split — only the collections that
-actually hit the problems in §5.
+All three go through the same `uploadFileWithProgress` helper in `StableDataContext.jsx`
+(`uploadHealthDocs`, `uploadHorsePhoto`, `uploadTeamMemberPhoto`). For a brand-new horse or
+team member, its id is generated client-side (`uid()`) before the photo is even picked, so the
+upload has a final Storage path to target immediately rather than waiting for the record's
+first save.
+
+**Profile photos** (`users/{uid}.photo`) are the one exception to "everything goes to
+Storage" — they're resized/recompressed client-side (`src/lib/imageResize.js`) into a small
+data URL and written inline, since a single small per-user field never approaches Firestore's
+document-size ceiling the way a per-stable collection of horse/team photos could.
+
+## 4. Read path
+
+Each collection above gets its own listener in `StableDataContext.jsx`, keyed on the active
+`stableId`, aggregated into one context value so most components read the same flat
+`{id, ...fields}` array shape they always have — only the collections whose *fields* changed
+during the migration (`tasks`, and the `cexpenses`→`stableExpenses` rename) required call-site
+updates; everything else was a pure data-layer change.
+
+- **Direct collection listeners** (`subscribeToCollection`, `src/lib/firestoreCollections.js`)
+  for `horses`, `team`, `tasks`, `sessionAlerts`, `taskTemplates`, `stableExpenses`,
+  `absences`, `expenseSettlements`, `weeklyPlans`, `periodicBoardDates`, and
+  `boardAssignments` — each already scoped to the stable by its path.
+- **`collectionGroup` listeners** (`subscribeToCollectionGroup`) for `trainings`, `health`,
+  `healthDocs`, and `expenses` — the four collections nested under each horse. This keeps the
+  listener count constant regardless of how many horses a stable has, instead of opening one
+  listener per horse; it's what the `stableId` field on every one of those docs is for (a
+  `collectionGroup` query can't filter by ancestor path, only by a field).
+- **One document listener** (`subscribeToDoc`) for `boardConfig/main`.
+- **`tasks/{id}/occurrences` is deliberately never subscribed globally** — it's queried
+  per-visible-date instead (`useTaskOccurrences`, §2), since a sparse exceptions collection
+  could still grow large across many recurring tasks over years.
+
+A stable with every feature in use ends up with around 16 active listeners — the "handful of
+subcollections with a few collection-level listeners" middle ground, not one listener per
+document and not the single listener the old model used.
+
+The first time a new `collectionGroup` or compound query runs against a given Firestore
+project, the console throws a one-time "this query requires an index" error with a link to
+create it — a manual step in Firebase console, not something this codebase configures.
+
+## 5. Write path
+
+`src/lib/firestoreCollections.js` provides the shared per-document primitives every mutator in
+`StableDataContext.jsx` is built on: `writeDoc` (full-document `setDoc`), `patchDoc`
+(field-level `updateDoc`), `deleteDocRef`, and `batchDeleteQuery` (chunked `writeBatch`
+deletes, ≤500 per batch, for cascades like deleting a horse's subcollections). Every write
+also runs through `cleanForFirestore()` (`src/lib/cleanForFirestore.js`), which recursively
+replaces `undefined` with `null` since Firestore rejects `undefined`.
+
+Several mutators need more than one document to change atomically and use `writeBatch()`
+directly for that: adding a health record with a cost (writes the health doc + its linked
+expense together), settling expenses (writes the settlement doc + patches every settled
+expense), applying a template or confirming a Smart Order draft (writes N new task/health/
+expense docs in one batch), and weekly-board copy/repeat actions (writes every target cell in
+one batch).
+
+There is **no debouncing** on any of these writes. The earlier single-document model debounced
+(`useDebouncedSave`, now deleted) because every keystroke or toggle re-sent the *entire*
+stable's data; once each mutator targets only the one small document it actually changed,
+almost every write site is now form-submit-based and there's no equivalent cost to coalesce —
+one save button press is already just one small write. A keyed-debounce utility
+(`src/lib/keyedDebounce.js`) was built early in this migration in case some mutator still
+needed to coalesce rapid writes to the same document; in practice none did, so it was deleted
+as dead code once the migration was complete.
+
+**One known exception**: `SaleTab` (`docs/components/horses.md`) writes on every field change,
+not on submit — `updateHorseSale` now fires an immediate Firestore write per keystroke where
+it previously debounced at 250ms as part of the old shared blob write path. This is a real,
+if minor, write-volume regression from before the migration, not a deliberate design choice;
+it's tracked in `docs/BACKLOG.md` rather than fixed here, since restoring per-field debouncing
+is a small, separable follow-up.
+
+Optimistic UI still works the same as before: the Firestore SDK applies a local write to its
+cache and fires the relevant `onSnapshot` callback immediately, before the server round-trip
+completes, so listeners don't need to filter on `snap.metadata.hasPendingWrites` the way the
+old single-listener model did (that gating existed specifically because the old code kept its
+own duplicate local copy of the whole document and needed to avoid re-applying its own pending
+write).
+
+## 6. What this replaced
+
+Until this migration, every operational record for a stable — horses, tasks, health records,
+boards, everything except `users`/`stables`/`inviteCodes` — lived as arrays inside one
+`stables/{stableId}/data/main` document, read and written as a whole on every change. That
+model hit a real 1 MiB per-document ceiling, had no field-level conflict resolution (two people
+editing different things raced to overwrite each other's entire document), and had no way to
+scope Firestore security rules or queries below "the whole stable." None of those problems were
+forced by how Firestore works — see this file's git history (the migration branch's earlier
+commits) for the fuller argument, still useful context for anyone evaluating a future schema
+change the same way. `docs/BACKLOG.md` #3 tracks this migration as complete.

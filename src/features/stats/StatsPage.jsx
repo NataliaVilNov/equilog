@@ -249,7 +249,7 @@ function HorsesTab({ horses, tr, health, navigate }) {
 export function StatsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { horses: allHorses, trainings, expenses, cexpenses, tasks, team, health } = useStableData();
+  const { horses: allHorses, trainings, expenses, stableExpenses, tasks, team, health } = useStableData();
 
   const fH = searchParams.get("horse") || "";
   const fO = searchParams.get("owner") || "";
@@ -282,7 +282,7 @@ export function StatsPage() {
   const pendOut = ex
     .filter((e) => expenseCategoryById(e.cat).d === "out" && e.status !== "pagado")
     .reduce((s, e) => s + Number(e.amount || 0), 0);
-  const cEx = cexpenses.filter((e) => inRange(e.date)).reduce((s, e) => s + Number(e.amount || 0), 0);
+  const cEx = stableExpenses.filter((e) => inRange(e.date)).reduce((s, e) => s + Number(e.amount || 0), 0);
 
   const allOwners = [];
   allHorses.forEach((h) => {

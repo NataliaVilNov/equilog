@@ -22,12 +22,12 @@ const STATUSES = [
 // Ports rNCE (public/legacy-app.js:2313-2342).
 export function StableExpenseFormPage() {
   const { eid } = useParams();
-  const { cexpenses, addStableExpense, updateStableExpense, deleteStableExpense } = useStableData();
+  const { stableExpenses, addStableExpense, updateStableExpense, deleteStableExpense } = useStableData();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
   const editing = !!eid;
-  const expense = editing ? cexpenses.find((e) => e.id === eid) : null;
+  const expense = editing ? stableExpenses.find((e) => e.id === eid) : null;
 
   const [cat, setCat] = useState(expense ? expense.cat : CATEGORIES[0].id);
   const [concept, setConcept] = useState(expense ? expense.concept || "" : "");

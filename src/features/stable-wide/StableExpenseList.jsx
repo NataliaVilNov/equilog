@@ -10,10 +10,10 @@ function capitalize(s) {
 
 // Ports the "gastos" tab of rCuadra (public/legacy-app.js:2259-2277).
 export function StableExpenseList() {
-  const { cexpenses, deleteStableExpense } = useStableData();
+  const { stableExpenses, deleteStableExpense } = useStableData();
   const navigate = useNavigate();
 
-  const sorted = [...cexpenses].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const sorted = [...stableExpenses].sort((a, b) => (a.date < b.date ? 1 : -1));
   const totEx = sorted.reduce((s, e) => s + Number(e.amount || 0), 0);
   const pendEx = sorted.filter((e) => e.status !== "pagado").reduce((s, e) => s + Number(e.amount || 0), 0);
 

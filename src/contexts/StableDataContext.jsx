@@ -76,7 +76,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "cexpenses",
   "absences",
   "expenseSettlements",
   "weeklyPlans",
@@ -141,6 +140,7 @@ export function StableDataProvider({ stableId, children }) {
   const [tasks, setTasks] = useState([]);
   const [sessionAlerts, setSessionAlerts] = useState([]);
   const [taskTemplates, setTaskTemplates] = useState([]);
+  const [stableExpenses, setStableExpenses] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -243,6 +243,14 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "taskTemplates"), setTaskTemplates);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setStableExpenses([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "stableExpenses"), setStableExpenses);
   }, [stableId]);
 
   useEffect(() => {
@@ -848,26 +856,23 @@ export function StableDataProvider({ stableId, children }) {
   // Ports save-ce-btn (public/legacy-app.js:3697-3704) — stable-wide expenses.
   const addStableExpense = useCallback(
     (expense) => {
-      updateData((prev) => ({ ...prev, cexpenses: [...prev.cexpenses, expense] }));
+      writeDoc(stableDoc(stableId, "stableExpenses", expense.id), { ...expense, stableId });
     },
-    [updateData]
+    [stableId]
   );
 
   const updateStableExpense = useCallback(
     (expense) => {
-      updateData((prev) => ({
-        ...prev,
-        cexpenses: prev.cexpenses.map((e) => (e.id === expense.id ? expense : e)),
-      }));
+      writeDoc(stableDoc(stableId, "stableExpenses", expense.id), { ...expense, stableId });
     },
-    [updateData]
+    [stableId]
   );
 
   const deleteStableExpense = useCallback(
     (id) => {
-      updateData((prev) => ({ ...prev, cexpenses: prev.cexpenses.filter((e) => e.id !== id) }));
+      deleteDocRef(stableDoc(stableId, "stableExpenses", id));
     },
-    [updateData]
+    [stableId]
   );
 
   // Ports saveBoardCell (public/legacy-app.js:1323-1328): full-array replace of a horse's
@@ -1417,6 +1422,7 @@ export function StableDataProvider({ stableId, children }) {
       tasks,
       sessionAlerts,
       taskTemplates,
+      stableExpenses,
       loading,
       error,
       updateData,
@@ -1491,6 +1497,7 @@ export function StableDataProvider({ stableId, children }) {
       tasks,
       sessionAlerts,
       taskTemplates,
+      stableExpenses,
       loading,
       error,
       updateData,

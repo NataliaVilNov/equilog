@@ -14,10 +14,12 @@ src/features/auth/
   AuthScreen.jsx      — tab switcher (Entrar / Registrarse), the /login route's element
   LoginForm.jsx        — email + password, calls authActions.login()
   RegisterForm.jsx     — name + email + password, calls authActions.register()
-  authActions.js        — login(), register(), logout() — thin wrappers over firebase/auth
+  authActions.js        — login(), register(), logout(), updateUserProfile() — thin
+                          wrappers over firebase/auth + the users/{uid} profile doc
   authErrorMessage.js    — Firebase auth error code -> Spanish message map
 src/contexts/AuthContext.jsx  — AuthProvider, wraps onAuthStateChanged
 src/lib/firebaseClient.js      — standalone Firebase app instance for the React app
+src/routes/GuestRoute.jsx       — redirects an already-authenticated user away from /login
 ```
 
 **State & data**
@@ -34,7 +36,14 @@ src/lib/firebaseClient.js      — standalone Firebase app instance for the Reac
   (`public/legacy-app.js:34-51`).
 
 **Routing**
-- `AuthScreen` is mounted at `/login` (`src/routes/routes.jsx`).
+- `AuthScreen` is mounted at `/login` (`src/routes/routes.jsx`), wrapped in `GuestRoute`
+  (`src/routes/GuestRoute.jsx`), which redirects an already-authenticated user to `/home`
+  instead of rendering the login screen — the counterpart to `ProtectedRoute`. Without this,
+  a successful login left the user stranded on `/login` with no code path forward; nothing
+  else in the React port reacted to `user` becoming truthy the way legacy's global
+  `onAuthStateChanged` handler did. See `docs/components/stables.md` for the matching fix on
+  the `/stables` side (auto-selecting `profile.lastStable`, and leaving `/stables` once a
+  stable becomes active).
 - `ProtectedRoute` (`src/routes/ProtectedRoute.jsx`) redirects to `/login` whenever
   `AuthContext`'s `user` is null.
 
@@ -54,8 +63,4 @@ None — authentication is a prerequisite for every permission check, not gated 
   instance pointed at the same project via the same env vars.
 
 **Known gaps / follow-ups**
-- `authActions.logout()` ports `doLogout`, but the only place it's currently wired up is
-  `StableListScreen`'s "Salir" button (see `docs/components/stables.md`) — there's no
-  logout entry point from inside an active stable yet, because `UserPanel` (profile editing,
-  where legacy puts its logout button) hasn't been ported.
 - No "forgot password" flow — matches the legacy app, which doesn't have one either.

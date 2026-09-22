@@ -41,10 +41,24 @@ src/contexts/StableSelectionContext.jsx — all state and mutators for this feat
   `StableDataScope` in `src/App.jsx` passes it to `StableDataProvider` as a prop, which
   starts that stable's realtime data subscription — this feature only manages *which* stable
   is active, not its operational data.
+- `StableSelectionProvider` also runs a one-shot effect (`autoSelectedForUid` ref, keyed by
+  `user.uid`) that calls `switchStable(profile.lastStable)` the first time a signed-in user
+  with a `profile.lastStable` is seen — porting the `if(profile.lastStable)
+  _fbSwitchStable(profile.lastStable)` branch of legacy's `onAuthStateChanged`. Without this,
+  a returning user always landed on the empty stable list instead of resuming their last
+  stable. The ref resets on logout so a later login (even by the same user) re-attempts it.
 
 **Routing**
-- `StableListScreen` is mounted at `/stables` (`src/routes/routes.jsx`).
+- `StableListScreen` is mounted at `/stables` (`src/routes/routes.jsx`), wrapped in
+  `<ProtectedRoute requireStable={false}>` — signed in required, active stable not.
 - `ProtectedRoute` redirects here whenever a user is signed in but has no `activeStableId`.
+- `StableListScreen` itself runs an effect that navigates to `/home` as soon as
+  `activeStableId` becomes non-null, however it got set — picking an existing stable,
+  creating one, or completing a join-by-code/`confirmJoinAs` flow. Legacy's `render()`
+  reacted to this globally; nothing in the initial React port did, so picking or creating a
+  stable silently left the user stuck on `/stables` with the new stable active but invisible
+  until a manual reload. One effect at the screen level covers all of those entry points
+  instead of wiring a `navigate()` call into each handler individually.
 
 **Permissions**
 - `deleteStable` requires `canManageStable(activeStable, user)` — true if the user is the
@@ -68,9 +82,8 @@ src/contexts/StableSelectionContext.jsx — all state and mutators for this feat
   functional gap.
 
 **Known gaps / follow-ups**
-- The header's profile button (`AppHeader`) opens a `"userPanel"` modal key with no
-  consumer yet — `UserPanel` (profile editing) hasn't been ported. Clicking it currently
-  does nothing visible; this is expected until that feature lands.
+- The header's profile button (`AppHeader`) opens a `"userPanel"` modal key —
+  `UserPanel` now consumes it, see `docs/components/profile.md`.
 - `JoinByCodeForm`'s "needs member selection" outcome just shows a text hint
   ("Elige tu integrante de equipo para continuar.") — the actual picker is `JoinTeamModal`,
   which reads the same `pendingJoin` state, so this resolves itself once the modal renders.

@@ -44,10 +44,5 @@ health controls.
 - None — a close, direct port.
 
 **Known gaps / follow-ups**
-- The "Pizarras" (Boards) quick action navigates to `/boards`, which doesn't exist until
-  Phase 6 — falls through the catch-all route to `/home` for now.
-- The "Más opciones" quick action opens the same `"morePanel"` modal key `AppHeader`'s bottom
-  nav already wires up (Phase 1) — still no `MorePanel` component consuming it, so it's
-  currently a no-op click, exactly like the bottom nav's "Más" button.
-- The stats-grid "€ Pagos pendientes" tile navigates to `/stats`, which doesn't exist until
-  Phase 8.
+- None — all forward-links this page pointed at (Boards, the More panel, Stats) now resolve;
+  see `docs/components/boards.md`, `docs/components/profile.md`, `docs/components/stats.md`.

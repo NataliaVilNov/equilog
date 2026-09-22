@@ -25,7 +25,6 @@ export const StableSelectionContext = createContext(null);
 
 const EMPTY_STABLE_DATA = {
   cexpenses: [],
-  templates: [],
   absences: [],
 };
 

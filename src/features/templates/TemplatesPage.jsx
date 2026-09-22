@@ -10,7 +10,7 @@ import { Fab } from "../../components/layout/Fab.jsx";
 // replaces requirePermissionView — matches legacy gating templates on the 'team' permission
 // even though they're reached from the day board, not the team screen.
 export function TemplatesPage() {
-  const { templates, applyTemplate } = useStableData();
+  const { taskTemplates, applyTemplate } = useStableData();
   const { can } = usePermissions();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -34,12 +34,12 @@ export function TemplatesPage() {
       <p style={{ fontSize: ".8rem", color: "var(--gr)", marginBottom: ".85rem" }}>
         Configuraciones habituales para aplicar de un toque.
       </p>
-      {!templates.length ? (
+      {!taskTemplates.length ? (
         <EmptyState icon="📋">
           Sin plantillas. Pulsa <b>+</b>.
         </EmptyState>
       ) : (
-        templates.map((tpl) => (
+        taskTemplates.map((tpl) => (
           <div className="tplc" key={tpl.id}>
             <div style={{ fontSize: "1.3rem" }}>📋</div>
             <div style={{ flex: 1 }}>

@@ -9,12 +9,12 @@ import { AK, activityById } from "../../lib/constants.js";
 // held in local component state replaces legacy's V._tt view-state field.
 export function TemplateFormPage() {
   const { tplid } = useParams();
-  const { horses, team, templates, addTemplate, updateTemplate, deleteTemplate } = useStableData();
+  const { horses, team, taskTemplates, addTemplate, updateTemplate, deleteTemplate } = useStableData();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
   const editing = !!tplid;
-  const tpl = editing ? templates.find((t) => t.id === tplid) : null;
+  const tpl = editing ? taskTemplates.find((t) => t.id === tplid) : null;
 
   const [name, setName] = useState(tpl ? tpl.name : "");
   const [taskList, setTaskList] = useState(tpl ? [...tpl.tasks] : []);
@@ -39,7 +39,7 @@ export function TemplateFormPage() {
     }
     setTaskList((prev) => [
       ...prev,
-      { hid: newHid, activity: newActivity, pid: newPid || null, dur: Number(newDur) || 30 },
+      { horseId: newHid, activity: newActivity, assignedTo: newPid || null, dur: Number(newDur) || 30 },
     ]);
   }
 
@@ -86,8 +86,8 @@ export function TemplateFormPage() {
         {taskList.length ? (
           taskList.map((t, i) => {
             const a = activityById(t.activity);
-            const h = horses.find((x) => x.id === t.hid);
-            const m = team.find((x) => x.id === t.pid);
+            const h = horses.find((x) => x.id === t.horseId);
+            const m = team.find((x) => x.id === t.assignedTo);
             return (
               <div className="tkc" style={{ cursor: "default" }} key={i}>
                 <div className="tkb">

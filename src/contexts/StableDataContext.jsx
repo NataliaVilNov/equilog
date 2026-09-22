@@ -77,7 +77,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // listener always defaults it.
 const COLLECTION_KEYS = [
   "cexpenses",
-  "templates",
   "absences",
   "expenseSettlements",
   "weeklyPlans",
@@ -141,6 +140,7 @@ export function StableDataProvider({ stableId, children }) {
   const [team, setTeam] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [sessionAlerts, setSessionAlerts] = useState([]);
+  const [taskTemplates, setTaskTemplates] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -235,6 +235,14 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "sessionAlerts"), setSessionAlerts);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setTaskTemplates([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "taskTemplates"), setTaskTemplates);
   }, [stableId]);
 
   useEffect(() => {
@@ -742,31 +750,28 @@ export function StableDataProvider({ stableId, children }) {
   // Ports saveTpl/applyTpl (public/legacy-app.js:3503-3551).
   const addTemplate = useCallback(
     (template) => {
-      updateData((prev) => ({ ...prev, templates: [...prev.templates, template] }));
+      writeDoc(stableDoc(stableId, "taskTemplates", template.id), { ...template, stableId });
     },
-    [updateData]
+    [stableId]
   );
 
   const updateTemplate = useCallback(
     (template) => {
-      updateData((prev) => ({
-        ...prev,
-        templates: prev.templates.map((t) => (t.id === template.id ? template : t)),
-      }));
+      writeDoc(stableDoc(stableId, "taskTemplates", template.id), { ...template, stableId });
     },
-    [updateData]
+    [stableId]
   );
 
   const deleteTemplate = useCallback(
     (id) => {
-      updateData((prev) => ({ ...prev, templates: prev.templates.filter((t) => t.id !== id) }));
+      deleteDocRef(stableDoc(stableId, "taskTemplates", id));
     },
-    [updateData]
+    [stableId]
   );
 
   const applyTemplate = useCallback(
     (templateId, date) => {
-      const tpl = data.templates.find((t) => t.id === templateId);
+      const tpl = taskTemplates.find((t) => t.id === templateId);
       if (!tpl) return;
       const batch = writeBatch(db);
       tpl.tasks.forEach((t) => {
@@ -776,20 +781,21 @@ export function StableDataProvider({ stableId, children }) {
           cleanForFirestore({
             id,
             stableId,
-            horseId: t.hid,
+            horseId: t.horseId,
             activity: t.activity,
-            assignedTo: t.pid,
+            assignedTo: t.assignedTo,
             dur: t.dur,
             startDate: date,
             status: "pending",
             notes: "",
             time: null,
+            recurrenceRule: null,
           })
         );
       });
       batch.commit();
     },
-    [data.templates, stableId]
+    [taskTemplates, stableId]
   );
 
   // Ports save-member-btn (public/legacy-app.js:3677-3685) and the inline delete handler
@@ -1410,6 +1416,7 @@ export function StableDataProvider({ stableId, children }) {
       team,
       tasks,
       sessionAlerts,
+      taskTemplates,
       loading,
       error,
       updateData,
@@ -1483,6 +1490,7 @@ export function StableDataProvider({ stableId, children }) {
       team,
       tasks,
       sessionAlerts,
+      taskTemplates,
       loading,
       error,
       updateData,

@@ -729,6 +729,51 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports saveBoardCell (public/legacy-app.js:1323-1328): full-array replace of a horse's
+  // planned activities for one day, deleting the record when it becomes empty. Always
+  // assigns an id (legacy's version only does for records created via the quick-toggle
+  // path, boardQuickCell — harmless normalization since lookup is always by hid+date).
+  const setWeeklyPlanActivities = useCallback(
+    (hid, date, activities) => {
+      updateData((prev) => {
+        const weeklyPlans = prev.weeklyPlans || [];
+        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
+        let next;
+        if (activities.length) {
+          const rec = { id: i >= 0 ? weeklyPlans[i].id || uid() : uid(), hid, date, activities };
+          next = i >= 0 ? weeklyPlans.map((p, idx) => (idx === i ? rec : p)) : [...weeklyPlans, rec];
+        } else {
+          next = i >= 0 ? weeklyPlans.filter((_, idx) => idx !== i) : weeklyPlans;
+        }
+        return { ...prev, weeklyPlans: next };
+      });
+    },
+    [updateData]
+  );
+
+  // Ports the quick-assign toggle inside boardQuickCell (public/legacy-app.js:1387-1396).
+  const toggleWeeklyPlanActivity = useCallback(
+    (hid, date, activityId) => {
+      updateData((prev) => {
+        const weeklyPlans = prev.weeklyPlans || [];
+        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
+        if (i < 0) {
+          return { ...prev, weeklyPlans: [...weeklyPlans, { id: uid(), hid, date, activities: [activityId] }] };
+        }
+        const existing = weeklyPlans[i];
+        const activities = Array.isArray(existing.activities) ? existing.activities : [];
+        const nextActivities = activities.includes(activityId)
+          ? activities.filter((a) => a !== activityId)
+          : [...activities, activityId];
+        return {
+          ...prev,
+          weeklyPlans: weeklyPlans.map((p, pi) => (pi === i ? { ...existing, activities: nextActivities } : p)),
+        };
+      });
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -771,6 +816,8 @@ export function StableDataProvider({ stableId, children }) {
       addStableExpense,
       updateStableExpense,
       deleteStableExpense,
+      setWeeklyPlanActivities,
+      toggleWeeklyPlanActivity,
     }),
     [
       data,
@@ -813,6 +860,8 @@ export function StableDataProvider({ stableId, children }) {
       addStableExpense,
       updateStableExpense,
       deleteStableExpense,
+      setWeeklyPlanActivities,
+      toggleWeeklyPlanActivity,
     ]
   );
 

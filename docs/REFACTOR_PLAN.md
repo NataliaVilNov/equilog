@@ -1,5 +1,29 @@
 # EquiLog — React Migration Plan
 
+## Status: migration complete
+
+All 8 phases below have been implemented and committed on `refactor/react-migration`. The
+Phase 8c cutover repointed `index.html` at the React entry (`src/main.jsx`) and deleted
+`public/legacy-app.js`, `react-app.html`, `src/main.js`, and `src/firebase.js` — the vanilla-JS
+monolith this document was written against no longer exists in this repo.
+
+This document is kept as-is below as the **original planning artifact** — the actual
+implementation diverged in small, expected ways as each phase was built (e.g. the Smart Order
+parser modules ended up named `matching.js`/`personMatching.js`/`horseMatching.js`/
+`extractors.js`/`clauseSplitting.js`/`buildDraft.js` rather than the `splitClauses.js`/
+`matchHorses.js`/`extractFields.js` sketch in §2/§5C below; the Boards feature's drag logic
+lives directly in `ResourceBoardPage.jsx`/`ResourceSlot.jsx` rather than a separate
+`useBoardDnd.js` hook; a `profile/` feature folder was never needed since user-profile editing
+stayed out of scope). For the actual, current shape of each feature, `docs/components/*.md`
+is the authoritative reference — one file per feature, kept up to date as each was ported.
+The remaining backlog after this migration is tracked in `docs/BACKLOG.md`; the three biggest
+open items are unchanged by this migration and carry forward: the Firebase API key still
+needs rotating in the Firebase console (`BACKLOG.md` #1), the AI report features still call
+the Anthropic API directly from the browser with no key (`BACKLOG.md` #2, ported as
+deliberate parity — see `docs/components/reports.md`), and the single-Firestore-document data
+model is unchanged (`BACKLOG.md` #3) — this migration was a component/architecture
+reorganization, not a data-model redesign, by design (see §3 below).
+
 ## Why this document exists
 
 The app is a single 3,741-line vanilla-JS file (`public/legacy-app.js`) that hand-rolls its

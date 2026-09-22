@@ -1,9 +1,11 @@
 # EquiLog — Backlog / Known Problems
 
 Concrete, actionable problems found while documenting the codebase (see `FEATURES.md` and
-`DATABASE.md`), ordered roughly by severity/urgency. None of these are fixed in this pass —
-this is a tracking document. Line numbers refer to the repo state on branch
-`refactor/react-migration` at the time this doc was written.
+`DATABASE.md`), ordered roughly by severity/urgency. Line numbers refer to the repo state on
+branch `refactor/react-migration` at the time this doc was written; most now refer to
+`public/legacy-app.js` as it existed **before** the Phase 8c cutover, which removed that file
+— see `REFACTOR_PLAN.md` for the migration this backlog was originally written alongside.
+Status lines below track what the React migration did and didn't resolve.
 
 ## Security
 
@@ -18,9 +20,11 @@ history on the public/shared remote.
   when Firestore Security Rules + App Check are properly configured) — the real ask here is
   hygiene (get it out of git going forward) plus verifying Firestore Security Rules actually
   restrict access, since there's no rules file visible in this repo to confirm that.
-- **Status**: `.gitignore` added and `src/firebase.js` now reads `import.meta.env.VITE_*`
+- **Status**: `.gitignore` added and the Firebase config now reads `import.meta.env.VITE_*`
   (`.env.example` documents the required vars) as of the Phase 0 housekeeping commits on
-  `refactor/react-migration`. The key is still present in git history on `main`, so **rotating
+  `refactor/react-migration` — first in `src/firebase.js`, and since the Phase 8c cutover in
+  its replacement `src/lib/firebaseClient.js` (the legacy bridge file was deleted along with
+  `public/legacy-app.js`). The key is still present in git history on `main`, so **rotating
   it in the Firebase console remains outstanding** — that's a manual step outside this repo.
 
 ### 2. AI report features call the Anthropic API directly from the browser
@@ -36,6 +40,11 @@ visible in the code**. Two possibilities, both bad:
   a minimal server-side proxy (Cloud Function, or any small backend) that holds the key and
   the client calls that instead. Until that exists, this feature should be explicitly
   descoped/disabled rather than left in an ambiguous broken/vulnerable state.
+- **Status**: not fixed — deliberately. Both call sites (`src/features/reports/
+  TrainingReportPage.jsx`, `src/features/team/TeamReportPage.jsx`) were ported byte-for-byte
+  during the React migration, including this behavior, rather than silently patched or cut.
+  See `docs/components/reports.md` for the reasoning. Still the top actionable item in this
+  backlog now that the component migration itself is done.
 
 ## Data model
 
@@ -53,13 +62,24 @@ every save. See `DATABASE.md` §5 for full detail. Concretely:
   This is a substantial, separate effort from the React component migration — see
   `REFACTOR_PLAN.md`'s note on this — and should be scheduled as its own phase after the
   React port stabilizes.
+- **Status**: not fixed. `StableDataContext` still reads/writes the same single
+  `stables/{id}/data/main` document (`src/lib/firestore.js`) — the React migration
+  deliberately kept the exact same document shape throughout so the legacy app and the React
+  app could run side by side against the same data during the transition. This remains the
+  single biggest architectural item left in the app.
 
 ## Code organization
 
 ### 4. No React / component structure — 3,741-line monolith
-`public/legacy-app.js` is a single file implementing all 21 features, hand-rolled routing, a
-global mutable state object, and a 110-line function that manually rewires every form's event
-handlers after each render. This is the primary subject of `REFACTOR_PLAN.md`.
+`public/legacy-app.js` was a single file implementing all 21 features, hand-rolled routing, a
+global mutable state object, and a 110-line function that manually rewired every form's event
+handlers after each render. This was the primary subject of `REFACTOR_PLAN.md`.
+- **Status**: done. All 21 features now live under `src/features/*` as React components with
+  Context-based state management (`src/contexts/`), `react-router-dom` routing
+  (`src/routes/`), and per-feature documentation (`docs/components/*.md`). The Phase 8c
+  cutover repointed `index.html` at the React entry and deleted `public/legacy-app.js`,
+  `react-app.html`, `src/main.js`, and `src/firebase.js` — the monolith no longer exists in
+  this repo. See `REFACTOR_PLAN.md` for the full phase-by-phase record of how it was ported.
 
 ### 5. Dead duplicate file: `src/legacy-app.js`
 `src/legacy-app.js` (221KB, ~3,443 lines) is ~85% identical to `public/legacy-app.js` but is
@@ -79,6 +99,8 @@ horsetelex.com's CORS policy changes, and there's already a manual-paste fallbac
 suggesting this is a known pain point.
 - **Fix**: either accept manual-paste as the primary path and simplify the UI, or add a small
   server-side proxy endpoint for the fetch.
+- **Status**: not fixed — ported as-is to `src/features/horses/HorsetelexImportButton.jsx`/
+  `horsetelexParser.js`, manual-paste fallback included.
 
 ## Testing & process
 
@@ -90,6 +112,11 @@ deploy workflow (`.github/workflows/deploy.yml`, which just runs `npm run build`
   point to start — e.g. `REFACTOR_PLAN.md` Phase 7 (Smart Order) explicitly calls out
   extracting the `so*` parser functions as pure functions specifically because they're the
   first realistic unit-test target in the app.
+- **Status**: still no test runner configured. The migration did, however, consistently pull
+  business logic out into small pure functions with no DOM/global reads (`src/lib/*.js`,
+  and every feature's non-component helper files, e.g. `expenseSplits.js`,
+  `saleLiquidation.js`, the whole `src/features/smart-order/` parsing pipeline) — these are
+  now realistic unit-test targets whenever a test runner is added, which it still isn't.
 
 ## Documentation
 
@@ -100,16 +127,21 @@ features have no top-level documentation, no setup/install instructions (`npm in
 - **Fix**: `FEATURES.md` and `DATABASE.md` in this same `docs/` folder now cover this gap;
   consider trimming `README.md` down to a short pointer (setup steps + links into `docs/`)
   rather than a feature-specific document.
+- **Status**: `docs/` now also has `REFACTOR_PLAN.md` and a `docs/components/*.md` file per
+  feature (21 of them). `README.md` itself hasn't been touched — still worth trimming down to
+  a pointer, per the fix above.
 
 ## Minor / non-blocking
 
-- **No error boundaries**: the only error handling around rendering is one top-level
-  `try/catch` inside `render()` (`public/legacy-app.js` ~line 1525) that replaces the entire
-  app body with a generic error message on any render exception — a single bug on any screen
-  takes down the whole UI with no recovery path short of reloading.
-- **Heavy inline `style="..."` attributes** throughout `index.html` for static shell markup
-  (auth screen, modals, panels) rather than CSS classes — makes the shell markup hard to
-  scan/maintain even though `src/styles.css` already defines a full class-based design
-  system used elsewhere in the app.
-- **No CI beyond deploy**: no lint step, no build-failure gate other than the deploy workflow
-  itself failing.
+- **No error boundaries**: legacy's only error handling around rendering was one top-level
+  `try/catch` inside `render()` that replaced the entire app body with a generic error
+  message on any render exception. The React app doesn't have an equivalent yet either — no
+  `ErrorBoundary` component exists anywhere under `src/` — so an uncaught render error still
+  takes down the whole UI with no recovery path short of reloading. **Still open.**
+- ~~Heavy inline `style="..."` attributes throughout `index.html` for static shell markup~~
+  — **resolved by the Phase 8c cutover**: `index.html` is now just the React mount point
+  (`<div id="root">` + a `<script type="module">` tag); all the shell markup this item
+  referred to (auth screen, modals, panels) is React components now, most already using
+  `src/styles.css`'s class-based design system rather than inline styles.
+- **No CI beyond deploy**: still true — no lint step, no build-failure gate other than the
+  deploy workflow itself failing.

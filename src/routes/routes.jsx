@@ -28,6 +28,7 @@ import { StableExpenseFormPage } from "../features/stable-wide/StableExpenseForm
 import { BoardsPage } from "../features/boards/BoardsPage.jsx";
 import { BoardCellPage } from "../features/boards/weekly/BoardCellPage.jsx";
 import { SmartOrderPage } from "../features/smart-order/SmartOrderPage.jsx";
+import { StatsPage } from "../features/stats/StatsPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -66,6 +67,9 @@ export function AppRoutes() {
         <Route path="/boards/cell/:hid/:date" element={<BoardCellPage />} />
         <Route element={<PermissionRoute requires={["tasks", "health", "expenses"]} />}>
           <Route path="/smart-order" element={<SmartOrderPage />} />
+        </Route>
+        <Route element={<PermissionRoute requires="stats" />}>
+          <Route path="/stats" element={<StatsPage />} />
         </Route>
         <Route element={<PermissionRoute requires="team" />}>
           <Route path="/templates" element={<TemplatesPage />} />

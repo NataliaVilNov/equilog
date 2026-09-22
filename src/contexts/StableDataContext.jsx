@@ -107,7 +107,21 @@ function withDefaults(raw) {
     ["activities", "periodicColumns", "walkers", "paddocks", "paddockSlots"].forEach((k) => {
       if (!Array.isArray(data.boardConfig[k])) data.boardConfig[k] = defaults[k];
     });
+    // Backfills the "vet" activity onto stables created before the weekly board's VET flow
+    // existed — new stables already get it from boardDefaults() above.
+    if (!data.boardConfig.activities.some((a) => a.id === "vet")) {
+      data.boardConfig.activities = [...data.boardConfig.activities, defaults.activities.find((a) => a.id === "vet")];
+    }
   }
+  // weeklyPlans rows predating the note/completed/vet-link fields default them here rather
+  // than being backfilled in Firestore — read-time defaulting only, same as every other
+  // optional field in this function.
+  data.weeklyPlans = data.weeklyPlans.map((p) => ({
+    completed: [],
+    note: "",
+    vetHealthId: null,
+    ...p,
+  }));
   return data;
 }
 

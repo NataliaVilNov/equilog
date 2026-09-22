@@ -1,5 +1,7 @@
 // Ports boardDefaults() (public/legacy-app.js:1254-1288): the default shape for
-// D.boardConfig the first time a stable has none.
+// D.boardConfig the first time a stable has none. The "vet" activity was added later (not
+// part of the original port) to back the weekly board's VET-flag-then-write-detail flow —
+// see withDefaults() in StableDataContext.jsx for how existing stables get it backfilled.
 export function boardDefaults() {
   return {
     activities: [
@@ -9,6 +11,7 @@ export function boardDefaults() {
       { id: "paddock", code: "P", label: "Paddock", tone: "amber" },
       { id: "caminador", code: "C", label: "Caminador", tone: "teal" },
       { id: "descanso", code: "D", label: "Descanso", tone: "gray" },
+      { id: "vet", code: "VET", label: "Veterinario", tone: "red" },
     ],
     periodicColumns: [
       { id: "herraje", label: "Herraje", tone: "amber" },

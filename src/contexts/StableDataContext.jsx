@@ -20,6 +20,8 @@ import {
   patchDoc,
   deleteDocRef,
   subscribeToCollection,
+  subscribeToCollectionGroup,
+  batchDeleteQuery,
 } from "../lib/firestoreCollections.js";
 import {
   ref as storageRef,
@@ -74,10 +76,7 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "trainings",
-  "health",
   "healthDocs",
-  "expenses",
   "team",
   "tasks",
   "ctasks",
@@ -140,6 +139,9 @@ export function StableDataProvider({ stableId, children }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [horses, setHorses] = useState([]);
+  const [trainings, setTrainings] = useState([]);
+  const [health, setHealth] = useState([]);
+  const [expenses, setExpenses] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -212,6 +214,21 @@ export function StableDataProvider({ stableId, children }) {
     return subscribeToCollection(stableCollection(stableId, "horses"), setHorses);
   }, [stableId]);
 
+  useEffect(() => {
+    if (!stableId) {
+      setTrainings([]);
+      setHealth([]);
+      setExpenses([]);
+      return;
+    }
+    const unsubs = [
+      subscribeToCollectionGroup("trainings", stableId, setTrainings),
+      subscribeToCollectionGroup("health", stableId, setHealth),
+      subscribeToCollectionGroup("expenses", stableId, setExpenses),
+    ];
+    return () => unsubs.forEach((u) => u());
+  }, [stableId]);
+
   // Generic mutation primitive: feature-specific mutators (addHorse, cycleTaskStatus, etc.)
   // are built on top of this as each feature needs them, rather than pre-built here.
   const updateData = useCallback(
@@ -242,18 +259,21 @@ export function StableDataProvider({ stableId, children }) {
     [stableId]
   );
 
-  // Trainings/health/healthDocs/expenses/tasks still live in the shared blob document until
-  // their own migration phase, so their cascade stays on updateData for now.
+  // healthDocs/tasks still live in the shared blob document until their own migration
+  // phase, so their cascade stays on updateData for now; trainings/health/expenses are
+  // already subcollections of the horse doc itself, so deleting it just deletes them too.
   const deleteHorse = useCallback(
     async (id) => {
       updateData((prev) => ({
         ...prev,
-        trainings: prev.trainings.filter((t) => t.hid !== id),
-        health: prev.health.filter((r) => r.hid !== id),
         healthDocs: (prev.healthDocs || []).filter((r) => r.hid !== id),
-        expenses: prev.expenses.filter((e) => e.hid !== id),
         tasks: prev.tasks.filter((t) => t.hid !== id),
       }));
+      await Promise.all([
+        batchDeleteQuery(stableCollection(stableId, "horses", id, "trainings")),
+        batchDeleteQuery(stableCollection(stableId, "horses", id, "health")),
+        batchDeleteQuery(stableCollection(stableId, "horses", id, "expenses")),
+      ]);
       await deleteDocRef(stableDoc(stableId, "horses", id));
     },
     [updateData, stableId]
@@ -282,100 +302,109 @@ export function StableDataProvider({ stableId, children }) {
   // No update mutator — legacy has no training-edit UI.
   const addTraining = useCallback(
     (training) => {
-      updateData((prev) => ({ ...prev, trainings: [...prev.trainings, training] }));
+      writeDoc(stableDoc(stableId, "horses", training.hid, "trainings", training.id), {
+        ...training,
+        stableId,
+      });
     },
-    [updateData]
+    [stableId]
   );
 
   const deleteTraining = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        trainings: prev.trainings.filter((t) => t.id !== id),
-      }));
+      const t = trainings.find((x) => x.id === id);
+      if (!t) return;
+      deleteDocRef(stableDoc(stableId, "horses", t.hid, "trainings", id));
     },
-    [updateData]
+    [trainings, stableId]
   );
 
   // Ports the health portion of save-health-btn (public/legacy-app.js:3644-3665): adding or
-  // editing a health record with amount > 0 auto-creates/updates a linked expense entry.
+  // editing a health record with amount > 0 auto-creates/updates a linked expense entry —
+  // batched so both docs commit together.
   const addHealthRecord = useCallback(
     (record) => {
-      updateData((prev) => {
-        const health = [...prev.health, record];
-        let expenses = prev.expenses;
-        if (Number(record.amount) > 0) {
-          expenses = [
-            ...expenses,
-            {
-              id: uid(),
-              hid: record.hid,
-              concept: record.label || record.type,
-              amount: record.amount,
-              date: record.date,
-              cat: catFromHealthType(record.type),
-              payer: "Cuadra",
-              payee: record.payee,
-              status: record.payStatus,
-              notes: "",
-              healthId: record.id,
-            },
-          ];
-        }
-        return { ...prev, health, expenses };
-      });
+      const batch = writeBatch(db);
+      batch.set(
+        stableDoc(stableId, "horses", record.hid, "health", record.id),
+        cleanForFirestore({ ...record, stableId })
+      );
+      if (Number(record.amount) > 0) {
+        const expenseId = uid();
+        batch.set(
+          stableDoc(stableId, "horses", record.hid, "expenses", expenseId),
+          cleanForFirestore({
+            id: expenseId,
+            stableId,
+            hid: record.hid,
+            concept: record.label || record.type,
+            amount: record.amount,
+            date: record.date,
+            cat: catFromHealthType(record.type),
+            payer: "Cuadra",
+            payee: record.payee,
+            status: record.payStatus,
+            notes: "",
+            healthId: record.id,
+          })
+        );
+      }
+      batch.commit();
     },
-    [updateData]
+    [stableId]
   );
 
   const updateHealthRecord = useCallback(
     (record) => {
-      updateData((prev) => {
-        const health = prev.health.map((r) => (r.id === record.id ? record : r));
-        const linked = prev.expenses.find((e) => e.healthId === record.id);
-        const amount = Number(record.amount) || 0;
-        let expenses = prev.expenses;
-        if (linked && amount > 0) {
-          expenses = prev.expenses.map((e) =>
-            e.id === linked.id
-              ? {
-                  ...e,
-                  amount: record.amount,
-                  status: record.payStatus,
-                  payee: record.payee,
-                  concept: record.label || record.type,
-                }
-              : e
-          );
-        } else if (!linked && amount > 0) {
-          expenses = [
-            ...expenses,
-            {
-              id: uid(),
-              hid: record.hid,
-              concept: record.label || record.type,
-              amount: record.amount,
-              date: record.date,
-              cat: catFromHealthType(record.type),
-              payer: "Cuadra",
-              payee: record.payee,
-              status: record.payStatus,
-              notes: "",
-              healthId: record.id,
-            },
-          ];
-        }
-        return { ...prev, health, expenses };
-      });
+      const batch = writeBatch(db);
+      batch.set(
+        stableDoc(stableId, "horses", record.hid, "health", record.id),
+        cleanForFirestore({ ...record, stableId })
+      );
+      const linked = expenses.find((e) => e.healthId === record.id);
+      const amount = Number(record.amount) || 0;
+      if (linked && amount > 0) {
+        batch.update(
+          stableDoc(stableId, "horses", record.hid, "expenses", linked.id),
+          cleanForFirestore({
+            amount: record.amount,
+            status: record.payStatus,
+            payee: record.payee,
+            concept: record.label || record.type,
+          })
+        );
+      } else if (!linked && amount > 0) {
+        const expenseId = uid();
+        batch.set(
+          stableDoc(stableId, "horses", record.hid, "expenses", expenseId),
+          cleanForFirestore({
+            id: expenseId,
+            stableId,
+            hid: record.hid,
+            concept: record.label || record.type,
+            amount: record.amount,
+            date: record.date,
+            cat: catFromHealthType(record.type),
+            payer: "Cuadra",
+            payee: record.payee,
+            status: record.payStatus,
+            notes: "",
+            healthId: record.id,
+          })
+        );
+      }
+      batch.commit();
     },
-    [updateData]
+    [expenses, stableId]
   );
 
   const deleteHealthRecord = useCallback(
     (id) => {
-      updateData((prev) => ({ ...prev, health: prev.health.filter((r) => r.id !== id) }));
+      const record = health.find((r) => r.id === id);
+      if (!record) return;
+      deleteDocRef(stableDoc(stableId, "horses", record.hid, "health", id));
     },
-    [updateData]
+    [health, stableId]
   );
 
   // Ports addHealthDocLink (public/legacy-app.js:1116-1130).
@@ -470,43 +499,57 @@ export function StableDataProvider({ stableId, children }) {
   // matching the legacy comment there).
   const addExpense = useCallback(
     (expense) => {
-      updateData((prev) => ({ ...prev, expenses: [...prev.expenses, expense] }));
+      writeDoc(stableDoc(stableId, "horses", expense.hid, "expenses", expense.id), {
+        ...expense,
+        stableId,
+      });
     },
-    [updateData]
+    [stableId]
   );
 
   const updateExpense = useCallback(
     (expense) => {
-      updateData((prev) => ({
-        ...prev,
-        expenses: prev.expenses.map((e) => (e.id === expense.id ? expense : e)),
-      }));
+      writeDoc(stableDoc(stableId, "horses", expense.hid, "expenses", expense.id), {
+        ...expense,
+        stableId,
+      });
     },
-    [updateData]
+    [stableId]
   );
 
   const deleteExpense = useCallback(
     (id) => {
-      updateData((prev) => ({ ...prev, expenses: prev.expenses.filter((e) => e.id !== id) }));
+      const expense = expenses.find((e) => e.id === id);
+      if (!expense) return;
+      deleteDocRef(stableDoc(stableId, "horses", expense.hid, "expenses", id));
     },
-    [updateData]
+    [expenses, stableId]
   );
 
   // Ports confirmExpenseSettlement (public/legacy-app.js:969-976): records the settlement
   // and marks every settled expense.
   const addExpenseSettlement = useCallback(
     (settlement) => {
+      const batch = writeBatch(db);
+      expenses
+        .filter((e) => settlement.expenseIds.includes(e.id))
+        .forEach((e) => {
+          batch.update(
+            stableDoc(stableId, "horses", e.hid, "expenses", e.id),
+            cleanForFirestore({
+              settled: true,
+              settlementId: settlement.id,
+              settledDate: settlement.date,
+            })
+          );
+        });
+      batch.commit();
       updateData((prev) => ({
         ...prev,
         expenseSettlements: [...(prev.expenseSettlements || []), settlement],
-        expenses: prev.expenses.map((e) =>
-          settlement.expenseIds.includes(e.id)
-            ? { ...e, settled: true, settlementId: settlement.id, settledDate: settlement.date }
-            : e
-        ),
       }));
     },
-    [updateData]
+    [expenses, updateData, stableId]
   );
 
   // Ports saleUpdate/saleOwnerUpdate/saleAddOwner/saleRemoveOwner
@@ -598,28 +641,29 @@ export function StableDataProvider({ stableId, children }) {
   // answered, in one atomic action (legacy treats it as one user action, not two).
   const answerSessionAlert = useCallback(
     (alertId, sessionData) => {
-      updateData((prev) => {
-        const alert = prev.salerts.find((s) => s.id === alertId);
-        if (!alert) return prev;
-        const training = {
-          id: uid(),
-          hid: alert.hid,
-          date: alert.date,
-          dur: sessionData.dur,
-          wtype: alert.act === "longe" ? "longe" : "doma",
-          state: sessionData.state,
-          feel: sessionData.feel,
-          notes: sessionData.notes,
-          rating: sessionData.rating,
-        };
-        return {
-          ...prev,
-          trainings: [...prev.trainings, training],
-          salerts: prev.salerts.map((s) => (s.id === alertId ? { ...s, ans: true } : s)),
-        };
+      const alert = data.salerts.find((s) => s.id === alertId);
+      if (!alert) return;
+      const training = {
+        id: uid(),
+        hid: alert.hid,
+        date: alert.date,
+        dur: sessionData.dur,
+        wtype: alert.act === "longe" ? "longe" : "doma",
+        state: sessionData.state,
+        feel: sessionData.feel,
+        notes: sessionData.notes,
+        rating: sessionData.rating,
+      };
+      writeDoc(stableDoc(stableId, "horses", alert.hid, "trainings", training.id), {
+        ...training,
+        stableId,
       });
+      updateData((prev) => ({
+        ...prev,
+        salerts: prev.salerts.map((s) => (s.id === alertId ? { ...s, ans: true } : s)),
+      }));
     },
-    [updateData]
+    [data.salerts, updateData, stableId]
   );
 
   // Ports saveTpl/applyTpl (public/legacy-app.js:3503-3551).
@@ -1241,27 +1285,29 @@ export function StableDataProvider({ stableId, children }) {
   const confirmSmartOrderDraft = useCallback(
     (items) => {
       let created = 0;
-      updateData((prev) => {
-        const newTasks = [];
-        const newHealth = [];
-        const newExpenses = [];
-        (items || []).forEach((x) => {
-          if (x.kind === "task") {
-            newTasks.push({
-              id: uid(),
-              hid: x.hid,
-              activity: x.activity,
-              date: x.date,
-              time: null,
-              dur: Number(x.dur) || 30,
-              pid: x.pid || null,
-              notes: x.notes || "",
-              status: "pending",
-            });
-            created++;
-          } else if (x.kind === "health") {
-            newHealth.push({
-              id: uid(),
+      const newTasks = [];
+      const batch = writeBatch(db);
+      (items || []).forEach((x) => {
+        if (x.kind === "task") {
+          newTasks.push({
+            id: uid(),
+            hid: x.hid,
+            activity: x.activity,
+            date: x.date,
+            time: null,
+            dur: Number(x.dur) || 30,
+            pid: x.pid || null,
+            notes: x.notes || "",
+            status: "pending",
+          });
+          created++;
+        } else if (x.kind === "health") {
+          const id = uid();
+          batch.set(
+            stableDoc(stableId, "horses", x.hid, "health", id),
+            cleanForFirestore({
+              id,
+              stableId,
               hid: x.hid,
               type: x.type || "otro",
               label: x.label || "Registro sanitario",
@@ -1271,11 +1317,16 @@ export function StableDataProvider({ stableId, children }) {
               amount: Number(x.amount) || 0,
               payStatus: x.payStatus || "pendiente",
               payee: x.payee || "",
-            });
-            created++;
-          } else if (x.kind === "expense") {
-            newExpenses.push({
-              id: uid(),
+            })
+          );
+          created++;
+        } else if (x.kind === "expense") {
+          const id = uid();
+          batch.set(
+            stableDoc(stableId, "horses", x.hid, "expenses", id),
+            cleanForFirestore({
+              id,
+              stableId,
               hid: x.hid,
               concept: x.concept || "Gasto",
               amount: Number(x.amount) || 0,
@@ -1285,26 +1336,27 @@ export function StableDataProvider({ stableId, children }) {
               payee: x.payee || "",
               status: x.status || "pendiente",
               notes: x.notes || "",
-            });
-            created++;
-          }
-        });
-        return {
-          ...prev,
-          tasks: [...prev.tasks, ...newTasks],
-          health: [...prev.health, ...newHealth],
-          expenses: [...prev.expenses, ...newExpenses],
-        };
+            })
+          );
+          created++;
+        }
       });
+      if (newTasks.length) {
+        updateData((prev) => ({ ...prev, tasks: [...prev.tasks, ...newTasks] }));
+      }
+      batch.commit();
       return created;
     },
-    [updateData]
+    [updateData, stableId]
   );
 
   const value = useMemo(
     () => ({
       ...data,
       horses,
+      trainings,
+      health,
+      expenses,
       loading,
       error,
       updateData,
@@ -1373,6 +1425,9 @@ export function StableDataProvider({ stableId, children }) {
     [
       data,
       horses,
+      trainings,
+      health,
+      expenses,
       loading,
       error,
       updateData,

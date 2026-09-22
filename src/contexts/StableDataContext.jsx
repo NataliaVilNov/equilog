@@ -76,7 +76,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "expenseSettlements",
   "weeklyPlans",
   "periodicBoardDates",
   "boardAssignments",
@@ -141,6 +140,7 @@ export function StableDataProvider({ stableId, children }) {
   const [taskTemplates, setTaskTemplates] = useState([]);
   const [stableExpenses, setStableExpenses] = useState([]);
   const [absences, setAbsences] = useState([]);
+  const [expenseSettlements, setExpenseSettlements] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -259,6 +259,14 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "absences"), setAbsences);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setExpenseSettlements([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "expenseSettlements"), setExpenseSettlements);
   }, [stableId]);
 
   useEffect(() => {
@@ -581,6 +589,7 @@ export function StableDataProvider({ stableId, children }) {
   const addExpenseSettlement = useCallback(
     (settlement) => {
       const batch = writeBatch(db);
+      batch.set(stableDoc(stableId, "expenseSettlements", settlement.id), cleanForFirestore({ ...settlement, stableId }));
       expenses
         .filter((e) => settlement.expenseIds.includes(e.id))
         .forEach((e) => {
@@ -594,12 +603,8 @@ export function StableDataProvider({ stableId, children }) {
           );
         });
       batch.commit();
-      updateData((prev) => ({
-        ...prev,
-        expenseSettlements: [...(prev.expenseSettlements || []), settlement],
-      }));
     },
-    [expenses, updateData, stableId]
+    [expenses, stableId]
   );
 
   // Ports saleUpdate/saleOwnerUpdate/saleAddOwner/saleRemoveOwner
@@ -1429,6 +1434,7 @@ export function StableDataProvider({ stableId, children }) {
       taskTemplates,
       stableExpenses,
       absences,
+      expenseSettlements,
       loading,
       error,
       updateData,
@@ -1505,6 +1511,7 @@ export function StableDataProvider({ stableId, children }) {
       taskTemplates,
       stableExpenses,
       absences,
+      expenseSettlements,
       loading,
       error,
       updateData,

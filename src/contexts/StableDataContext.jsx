@@ -75,7 +75,7 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:437,453) — note this is one key longer than legacy's own load()
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
-const COLLECTION_KEYS = ["periodicBoardDates", "boardAssignments"];
+const COLLECTION_KEYS = [];
 
 // Weekly-plan cells are always looked up by (hid, date), never by an opaque id, so a
 // deterministic id lets every mutator target a cell's doc directly instead of first finding
@@ -136,6 +136,8 @@ export function StableDataProvider({ stableId, children }) {
   const [absences, setAbsences] = useState([]);
   const [expenseSettlements, setExpenseSettlements] = useState([]);
   const [weeklyPlans, setWeeklyPlans] = useState([]);
+  const [periodicBoardDates, setPeriodicBoardDates] = useState([]);
+  const [boardAssignments, setBoardAssignments] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -270,6 +272,22 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "weeklyPlans"), setWeeklyPlans);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setPeriodicBoardDates([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "periodicBoardDates"), setPeriodicBoardDates);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setBoardAssignments([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "boardAssignments"), setBoardAssignments);
   }, [stableId]);
 
   useEffect(() => {
@@ -1094,23 +1112,18 @@ export function StableDataProvider({ stableId, children }) {
     [weeklyPlans, stableId]
   );
 
-  // Ports setBoardPeriodic (public/legacy-app.js:1311-1317).
+  // Ports setBoardPeriodic (public/legacy-app.js:1311-1317). Lookup is always by
+  // (hid, columnId), so it uses a deterministic id, same precedent as weekly-plan cells.
   const setBoardPeriodic = useCallback(
     (hid, columnId, date) => {
-      updateData((prev) => {
-        const periodicBoardDates = prev.periodicBoardDates || [];
-        const i = periodicBoardDates.findIndex((r) => r.hid === hid && r.columnId === columnId);
-        let next;
-        if (date) {
-          const rec = { hid, columnId, date };
-          next = i >= 0 ? periodicBoardDates.map((r, idx) => (idx === i ? rec : r)) : [...periodicBoardDates, rec];
-        } else {
-          next = i >= 0 ? periodicBoardDates.filter((_, idx) => idx !== i) : periodicBoardDates;
-        }
-        return { ...prev, periodicBoardDates: next };
-      });
+      const id = `${hid}__${columnId}`;
+      if (date) {
+        writeDoc(stableDoc(stableId, "periodicBoardDates", id), { id, stableId, hid, columnId, date });
+      } else {
+        deleteDocRef(stableDoc(stableId, "periodicBoardDates", id));
+      }
     },
-    [updateData]
+    [stableId]
   );
 
   // Ports assignBoardHorse (public/legacy-app.js:1416-1423). Validation/occupied/conflict
@@ -1120,20 +1133,24 @@ export function StableDataProvider({ stableId, children }) {
   const assignBoardHorse = useCallback(
     (hid, type, date, resourceId, slotId, position, { force } = {}) => {
       if (!hid) throw new Error("Selecciona un caballo");
-      const occupied = boardAssignment(data.boardAssignments, type, date, resourceId, slotId, position);
+      const occupied = boardAssignment(boardAssignments, type, date, resourceId, slotId, position);
       if (occupied) return { status: "occupied" };
-      const conflict = horseConflict(data.boardConfig, data.boardAssignments, hid, date, type, slotId);
+      const conflict = horseConflict(data.boardConfig, boardAssignments, hid, date, type, slotId);
       if (conflict && !force) return { status: "conflict" };
-      updateData((prev) => ({
-        ...prev,
-        boardAssignments: [
-          ...(prev.boardAssignments || []),
-          { id: uid(), type, date, resourceId, slotId, position: Number(position), hid },
-        ],
-      }));
+      const id = uid();
+      writeDoc(stableDoc(stableId, "boardAssignments", id), {
+        id,
+        stableId,
+        type,
+        date,
+        resourceId,
+        slotId,
+        position: Number(position),
+        hid,
+      });
       return { status: "ok" };
     },
-    [data.boardAssignments, data.boardConfig, updateData]
+    [boardAssignments, data.boardConfig, stableId]
   );
 
   // Ports moveBoardAssignment (public/legacy-app.js:1416-1423). Fix: also runs the same
@@ -1144,33 +1161,33 @@ export function StableDataProvider({ stableId, children }) {
   // itself.
   const moveBoardAssignment = useCallback(
     (id, type, date, resourceId, slotId, position, { force } = {}) => {
-      const a = (data.boardAssignments || []).find((x) => x.id === id);
+      const a = boardAssignments.find((x) => x.id === id);
       if (!a) return { status: "not-found" };
-      const occupied = boardAssignment(data.boardAssignments, type, date, resourceId, slotId, position);
+      const occupied = boardAssignment(boardAssignments, type, date, resourceId, slotId, position);
       if (occupied && occupied.id !== id) return { status: "occupied" };
-      const others = (data.boardAssignments || []).filter((x) => x.id !== id);
+      const others = boardAssignments.filter((x) => x.id !== id);
       const conflict = horseConflict(data.boardConfig, others, a.hid, date, type, slotId);
       if (conflict && !force) return { status: "conflict" };
-      updateData((prev) => ({
-        ...prev,
-        boardAssignments: (prev.boardAssignments || []).map((x) =>
-          x.id === id ? { ...x, type, date, resourceId, slotId, position: Number(position) } : x
-        ),
-      }));
+      writeDoc(stableDoc(stableId, "boardAssignments", id), {
+        ...a,
+        stableId,
+        type,
+        date,
+        resourceId,
+        slotId,
+        position: Number(position),
+      });
       return { status: "ok" };
     },
-    [data.boardAssignments, data.boardConfig, updateData]
+    [boardAssignments, data.boardConfig, stableId]
   );
 
   // Ports removeBoardAssignment (public/legacy-app.js:1416-1423).
   const removeBoardAssignment = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        boardAssignments: (prev.boardAssignments || []).filter((a) => a.id !== id),
-      }));
+      deleteDocRef(stableDoc(stableId, "boardAssignments", id));
     },
-    [updateData]
+    [stableId]
   );
 
   // Ports addBoardActivity/deleteBoardActivity/addPeriodicColumn/deletePeriodicColumn
@@ -1263,10 +1280,10 @@ export function StableDataProvider({ stableId, children }) {
       updateData((prev) => ({
         ...prev,
         boardConfig: { ...prev.boardConfig, walkers: prev.boardConfig.walkers.filter((x) => x.id !== id) },
-        boardAssignments: (prev.boardAssignments || []).filter((a) => a.resourceId !== id),
       }));
+      batchDeleteQuery(query(stableCollection(stableId, "boardAssignments"), where("resourceId", "==", id)));
     },
-    [updateData]
+    [updateData, stableId]
   );
 
   // Ports addPaddock/deletePaddock (public/legacy-app.js:1465-1466).
@@ -1288,10 +1305,10 @@ export function StableDataProvider({ stableId, children }) {
       updateData((prev) => ({
         ...prev,
         boardConfig: { ...prev.boardConfig, paddocks: prev.boardConfig.paddocks.filter((x) => x.id !== id) },
-        boardAssignments: (prev.boardAssignments || []).filter((a) => a.resourceId !== id),
       }));
+      batchDeleteQuery(query(stableCollection(stableId, "boardAssignments"), where("resourceId", "==", id)));
     },
-    [updateData]
+    [updateData, stableId]
   );
 
   // Ports addPaddockSlot/deletePaddockSlot (public/legacy-app.js:1467-1468). Legacy's
@@ -1319,10 +1336,10 @@ export function StableDataProvider({ stableId, children }) {
           ...prev.boardConfig,
           paddockSlots: prev.boardConfig.paddockSlots.filter((x) => x.id !== id),
         },
-        boardAssignments: (prev.boardAssignments || []).filter((a) => a.slotId !== id),
       }));
+      batchDeleteQuery(query(stableCollection(stableId, "boardAssignments"), where("slotId", "==", id)));
     },
-    [updateData]
+    [updateData, stableId]
   );
 
   // Ports the write side of confirmSmartOrder (public/legacy-app.js:3095-3109): builds one
@@ -1420,6 +1437,8 @@ export function StableDataProvider({ stableId, children }) {
       absences,
       expenseSettlements,
       weeklyPlans,
+      periodicBoardDates,
+      boardAssignments,
       loading,
       error,
       updateData,
@@ -1498,6 +1517,8 @@ export function StableDataProvider({ stableId, children }) {
       absences,
       expenseSettlements,
       weeklyPlans,
+      periodicBoardDates,
+      boardAssignments,
       loading,
       error,
       updateData,

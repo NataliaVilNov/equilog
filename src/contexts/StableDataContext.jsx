@@ -76,7 +76,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "healthDocs",
   "team",
   "tasks",
   "ctasks",
@@ -142,6 +141,7 @@ export function StableDataProvider({ stableId, children }) {
   const [trainings, setTrainings] = useState([]);
   const [health, setHealth] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [healthDocs, setHealthDocs] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -219,12 +219,14 @@ export function StableDataProvider({ stableId, children }) {
       setTrainings([]);
       setHealth([]);
       setExpenses([]);
+      setHealthDocs([]);
       return;
     }
     const unsubs = [
       subscribeToCollectionGroup("trainings", stableId, setTrainings),
       subscribeToCollectionGroup("health", stableId, setHealth),
       subscribeToCollectionGroup("expenses", stableId, setExpenses),
+      subscribeToCollectionGroup("healthDocs", stableId, setHealthDocs),
     ];
     return () => unsubs.forEach((u) => u());
   }, [stableId]);
@@ -259,20 +261,20 @@ export function StableDataProvider({ stableId, children }) {
     [stableId]
   );
 
-  // healthDocs/tasks still live in the shared blob document until their own migration
-  // phase, so their cascade stays on updateData for now; trainings/health/expenses are
-  // already subcollections of the horse doc itself, so deleting it just deletes them too.
+  // tasks still lives in the shared blob document until its own migration phase, so its
+  // cascade stays on updateData for now; trainings/health/healthDocs/expenses are already
+  // subcollections of the horse doc itself, so deleting it just deletes them too.
   const deleteHorse = useCallback(
     async (id) => {
       updateData((prev) => ({
         ...prev,
-        healthDocs: (prev.healthDocs || []).filter((r) => r.hid !== id),
         tasks: prev.tasks.filter((t) => t.hid !== id),
       }));
       await Promise.all([
         batchDeleteQuery(stableCollection(stableId, "horses", id, "trainings")),
         batchDeleteQuery(stableCollection(stableId, "horses", id, "health")),
         batchDeleteQuery(stableCollection(stableId, "horses", id, "expenses")),
+        batchDeleteQuery(stableCollection(stableId, "horses", id, "healthDocs")),
       ]);
       await deleteDocRef(stableDoc(stableId, "horses", id));
     },
@@ -411,8 +413,10 @@ export function StableDataProvider({ stableId, children }) {
   const addHealthDocLink = useCallback(
     ({ hid, category, date, notes, title, url, userId }) => {
       const horse = horses.find((x) => x.id === hid);
+      const id = uid();
       const doc = {
-        id: uid(),
+        id,
+        stableId,
         hid,
         horseName: horse ? horse.name : "",
         category: category || "otro",
@@ -425,14 +429,14 @@ export function StableDataProvider({ stableId, children }) {
         createdBy: userId || null,
         createdAt: new Date().toISOString(),
       };
-      updateData((prev) => ({ ...prev, healthDocs: [...(prev.healthDocs || []), doc] }));
+      writeDoc(stableDoc(stableId, "horses", hid, "healthDocs", id), doc);
     },
-    [updateData, horses]
+    [horses, stableId]
   );
 
   // Ports uploadHealthDocs (public/legacy-app.js:1132-1176): uploads every file to Firebase
-  // Storage, then pushes all resulting doc records in one updateData call (matching
-  // legacy's single loop + one save()), reporting progress via onProgress(label, pct).
+  // Storage, then writes all resulting doc records in a single batch (matching legacy's
+  // single loop + one save()), reporting progress via onProgress(label, pct).
   const uploadHealthDocs = useCallback(
     async ({ hid, files, category, date, notes, userId, onProgress }) => {
       const horse = horses.find((x) => x.id === hid);
@@ -453,6 +457,7 @@ export function StableDataProvider({ stableId, children }) {
         );
         added.push({
           id,
+          stableId,
           hid,
           horseName: horse ? horse.name : "",
           category: category || "otro",
@@ -468,16 +473,20 @@ export function StableDataProvider({ stableId, children }) {
           createdAt: new Date().toISOString(),
         });
       }
-      updateData((prev) => ({ ...prev, healthDocs: [...(prev.healthDocs || []), ...added] }));
+      const batch = writeBatch(db);
+      added.forEach((doc) => {
+        batch.set(stableDoc(stableId, "horses", hid, "healthDocs", doc.id), cleanForFirestore(doc));
+      });
+      await batch.commit();
       return added;
     },
-    [updateData, horses, stableId]
+    [horses, stableId]
   );
 
   // Ports deleteHealthDoc (public/legacy-app.js:1177-1188).
   const deleteHealthDoc = useCallback(
     async (id) => {
-      const doc = (data.healthDocs || []).find((x) => x.id === id);
+      const doc = healthDocs.find((x) => x.id === id);
       if (!doc) return;
       if (doc.path) {
         try {
@@ -486,12 +495,9 @@ export function StableDataProvider({ stableId, children }) {
           // non-fatal, mirrors legacy behavior
         }
       }
-      updateData((prev) => ({
-        ...prev,
-        healthDocs: (prev.healthDocs || []).filter((x) => x.id !== id),
-      }));
+      await deleteDocRef(stableDoc(stableId, "horses", doc.hid, "healthDocs", id));
     },
-    [updateData, data.healthDocs]
+    [healthDocs, stableId]
   );
 
   // Ports the expense-save handler (public/legacy-app.js:3713-3730) and deleteExpense
@@ -1357,6 +1363,7 @@ export function StableDataProvider({ stableId, children }) {
       trainings,
       health,
       expenses,
+      healthDocs,
       loading,
       error,
       updateData,
@@ -1428,6 +1435,7 @@ export function StableDataProvider({ stableId, children }) {
       trainings,
       health,
       expenses,
+      healthDocs,
       loading,
       error,
       updateData,

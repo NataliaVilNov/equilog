@@ -21,6 +21,7 @@ import {
   deleteDocRef,
   subscribeToCollection,
   subscribeToCollectionGroup,
+  subscribeToDoc,
   batchDeleteQuery,
 } from "../lib/firestoreCollections.js";
 import {
@@ -85,36 +86,35 @@ function weeklyPlanCellId(hid, date) {
 }
 
 function emptyData() {
-  const data = COLLECTION_KEYS.reduce((acc, key) => {
+  return COLLECTION_KEYS.reduce((acc, key) => {
     acc[key] = [];
     return acc;
   }, {});
-  data.boardConfig = boardDefaults();
-  return data;
 }
 
-// Mirrors ensureBoardData's defensive defaulting (public/legacy-app.js:1289-1299) alongside
-// the array collections' own defaulting from _fbLoadData/_fbSetupListener
-// (public/legacy-app.js:437, :453). `boardConfig` is the only non-array collection here.
 function withDefaults(raw) {
   const data = { ...emptyData(), ...raw };
   COLLECTION_KEYS.forEach((key) => {
     if (!data[key]) data[key] = [];
   });
-  if (!data.boardConfig || typeof data.boardConfig !== "object") {
-    data.boardConfig = boardDefaults();
-  } else {
-    const defaults = boardDefaults();
-    ["activities", "periodicColumns", "walkers", "paddocks", "paddockSlots"].forEach((k) => {
-      if (!Array.isArray(data.boardConfig[k])) data.boardConfig[k] = defaults[k];
-    });
-    // Backfills the "vet" activity onto stables created before the weekly board's VET flow
-    // existed — new stables already get it from boardDefaults() above.
-    if (!data.boardConfig.activities.some((a) => a.id === "vet")) {
-      data.boardConfig.activities = [...data.boardConfig.activities, defaults.activities.find((a) => a.id === "vet")];
-    }
-  }
   return data;
+}
+
+// Mirrors ensureBoardData's defensive defaulting (public/legacy-app.js:1289-1299) applied to
+// the boardConfig doc read from its own collection instead of the shared blob.
+function normalizeBoardConfig(raw) {
+  if (!raw || typeof raw !== "object") return boardDefaults();
+  const defaults = boardDefaults();
+  const cfg = { ...raw };
+  ["activities", "periodicColumns", "walkers", "paddocks", "paddockSlots"].forEach((k) => {
+    if (!Array.isArray(cfg[k])) cfg[k] = defaults[k];
+  });
+  // Backfills the "vet" activity onto stables created before the weekly board's VET flow
+  // existed — new stables already get it from boardDefaults() above.
+  if (!cfg.activities.some((a) => a.id === "vet")) {
+    cfg.activities = [...cfg.activities, defaults.activities.find((a) => a.id === "vet")];
+  }
+  return cfg;
 }
 
 export const StableDataContext = createContext(null);
@@ -138,6 +138,7 @@ export function StableDataProvider({ stableId, children }) {
   const [weeklyPlans, setWeeklyPlans] = useState([]);
   const [periodicBoardDates, setPeriodicBoardDates] = useState([]);
   const [boardAssignments, setBoardAssignments] = useState([]);
+  const [boardConfig, setBoardConfig] = useState(boardDefaults());
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -288,6 +289,14 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "boardAssignments"), setBoardAssignments);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setBoardConfig(boardDefaults());
+      return;
+    }
+    return subscribeToDoc(stableDoc(stableId, "boardConfig", "main"), (raw) => setBoardConfig(normalizeBoardConfig(raw)));
   }, [stableId]);
 
   useEffect(() => {
@@ -1135,7 +1144,7 @@ export function StableDataProvider({ stableId, children }) {
       if (!hid) throw new Error("Selecciona un caballo");
       const occupied = boardAssignment(boardAssignments, type, date, resourceId, slotId, position);
       if (occupied) return { status: "occupied" };
-      const conflict = horseConflict(data.boardConfig, boardAssignments, hid, date, type, slotId);
+      const conflict = horseConflict(boardConfig, boardAssignments, hid, date, type, slotId);
       if (conflict && !force) return { status: "conflict" };
       const id = uid();
       writeDoc(stableDoc(stableId, "boardAssignments", id), {
@@ -1150,7 +1159,7 @@ export function StableDataProvider({ stableId, children }) {
       });
       return { status: "ok" };
     },
-    [boardAssignments, data.boardConfig, stableId]
+    [boardAssignments, boardConfig, stableId]
   );
 
   // Ports moveBoardAssignment (public/legacy-app.js:1416-1423). Fix: also runs the same
@@ -1166,7 +1175,7 @@ export function StableDataProvider({ stableId, children }) {
       const occupied = boardAssignment(boardAssignments, type, date, resourceId, slotId, position);
       if (occupied && occupied.id !== id) return { status: "occupied" };
       const others = boardAssignments.filter((x) => x.id !== id);
-      const conflict = horseConflict(data.boardConfig, others, a.hid, date, type, slotId);
+      const conflict = horseConflict(boardConfig, others, a.hid, date, type, slotId);
       if (conflict && !force) return { status: "conflict" };
       writeDoc(stableDoc(stableId, "boardAssignments", id), {
         ...a,
@@ -1179,7 +1188,7 @@ export function StableDataProvider({ stableId, children }) {
       });
       return { status: "ok" };
     },
-    [boardAssignments, data.boardConfig, stableId]
+    [boardAssignments, boardConfig, stableId]
   );
 
   // Ports removeBoardAssignment (public/legacy-app.js:1416-1423).
@@ -1197,51 +1206,42 @@ export function StableDataProvider({ stableId, children }) {
   // confirmed by its own confirm-dialog text ("Las fechas guardadas dejarán de mostrarse").
   const addBoardActivity = useCallback(
     (code, label) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: {
-          ...prev.boardConfig,
-          activities: [...prev.boardConfig.activities, { id: safeBoardId("act", label), code, label, tone: "blue" }],
-        },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        activities: [...boardConfig.activities, { id: safeBoardId("act", label), code, label, tone: "blue" }],
+      });
     },
-    [updateData]
+    [boardConfig, stableId]
   );
 
   const deleteBoardActivity = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: { ...prev.boardConfig, activities: prev.boardConfig.activities.filter((x) => x.id !== id) },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        activities: boardConfig.activities.filter((x) => x.id !== id),
+      });
     },
-    [updateData]
+    [boardConfig, stableId]
   );
 
   const addPeriodicColumn = useCallback(
     (label) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: {
-          ...prev.boardConfig,
-          periodicColumns: [...prev.boardConfig.periodicColumns, { id: safeBoardId("periodic", label), label, tone: "blue" }],
-        },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        periodicColumns: [...boardConfig.periodicColumns, { id: safeBoardId("periodic", label), label, tone: "blue" }],
+      });
     },
-    [updateData]
+    [boardConfig, stableId]
   );
 
   const deletePeriodicColumn = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: {
-          ...prev.boardConfig,
-          periodicColumns: prev.boardConfig.periodicColumns.filter((x) => x.id !== id),
-        },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        periodicColumns: boardConfig.periodicColumns.filter((x) => x.id !== id),
+      });
     },
-    [updateData]
+    [boardConfig, stableId]
   );
 
   // Ports addWalker/editWalker/deleteWalker (public/legacy-app.js:1462-1464). Fix: slots
@@ -1251,64 +1251,55 @@ export function StableDataProvider({ stableId, children }) {
   // silently orphaning any boardAssignments that referenced the old ids.
   const addWalker = useCallback(
     (name, capacity, slots) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: {
-          ...prev.boardConfig,
-          walkers: [...prev.boardConfig.walkers, { id: safeBoardId("walker", name), name, capacity, slots }],
-        },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        walkers: [...boardConfig.walkers, { id: safeBoardId("walker", name), name, capacity, slots }],
+      });
     },
-    [updateData]
+    [boardConfig, stableId]
   );
 
   const updateWalker = useCallback(
     (id, { name, capacity, slots }) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: {
-          ...prev.boardConfig,
-          walkers: prev.boardConfig.walkers.map((w) => (w.id === id ? { ...w, name, capacity, slots } : w)),
-        },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        walkers: boardConfig.walkers.map((w) => (w.id === id ? { ...w, name, capacity, slots } : w)),
+      });
     },
-    [updateData]
+    [boardConfig, stableId]
   );
 
   const deleteWalker = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: { ...prev.boardConfig, walkers: prev.boardConfig.walkers.filter((x) => x.id !== id) },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        walkers: boardConfig.walkers.filter((x) => x.id !== id),
+      });
       batchDeleteQuery(query(stableCollection(stableId, "boardAssignments"), where("resourceId", "==", id)));
     },
-    [updateData, stableId]
+    [boardConfig, stableId]
   );
 
   // Ports addPaddock/deletePaddock (public/legacy-app.js:1465-1466).
   const addPaddock = useCallback(
     (name) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: {
-          ...prev.boardConfig,
-          paddocks: [...prev.boardConfig.paddocks, { id: safeBoardId("paddock", name), name, capacity: 1 }],
-        },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        paddocks: [...boardConfig.paddocks, { id: safeBoardId("paddock", name), name, capacity: 1 }],
+      });
     },
-    [updateData]
+    [boardConfig, stableId]
   );
 
   const deletePaddock = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: { ...prev.boardConfig, paddocks: prev.boardConfig.paddocks.filter((x) => x.id !== id) },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        paddocks: boardConfig.paddocks.filter((x) => x.id !== id),
+      });
       batchDeleteQuery(query(stableCollection(stableId, "boardAssignments"), where("resourceId", "==", id)));
     },
-    [updateData, stableId]
+    [boardConfig, stableId]
   );
 
   // Ports addPaddockSlot/deletePaddockSlot (public/legacy-app.js:1467-1468). Legacy's
@@ -1318,28 +1309,23 @@ export function StableDataProvider({ stableId, children }) {
   // throughout this migration. The shared list stays sorted by start time either way.
   const addPaddockSlot = useCallback(
     (start, end) => {
-      updateData((prev) => {
-        const paddockSlots = [...prev.boardConfig.paddockSlots, { id: uid(), start, end }].sort((a, b) =>
-          a.start.localeCompare(b.start)
-        );
-        return { ...prev, boardConfig: { ...prev.boardConfig, paddockSlots } };
-      });
+      const paddockSlots = [...boardConfig.paddockSlots, { id: uid(), start, end }].sort((a, b) =>
+        a.start.localeCompare(b.start)
+      );
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), { ...boardConfig, paddockSlots });
     },
-    [updateData]
+    [boardConfig, stableId]
   );
 
   const deletePaddockSlot = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        boardConfig: {
-          ...prev.boardConfig,
-          paddockSlots: prev.boardConfig.paddockSlots.filter((x) => x.id !== id),
-        },
-      }));
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        paddockSlots: boardConfig.paddockSlots.filter((x) => x.id !== id),
+      });
       batchDeleteQuery(query(stableCollection(stableId, "boardAssignments"), where("slotId", "==", id)));
     },
-    [updateData, stableId]
+    [boardConfig, stableId]
   );
 
   // Ports the write side of confirmSmartOrder (public/legacy-app.js:3095-3109): builds one
@@ -1439,6 +1425,7 @@ export function StableDataProvider({ stableId, children }) {
       weeklyPlans,
       periodicBoardDates,
       boardAssignments,
+      boardConfig,
       loading,
       error,
       updateData,
@@ -1519,6 +1506,7 @@ export function StableDataProvider({ stableId, children }) {
       weeklyPlans,
       periodicBoardDates,
       boardAssignments,
+      boardConfig,
       loading,
       error,
       updateData,

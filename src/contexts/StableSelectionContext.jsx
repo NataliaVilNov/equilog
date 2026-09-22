@@ -19,6 +19,7 @@ import {
 import { db } from "../lib/firebaseClient.js";
 import { deleteStableCascade } from "../lib/deleteStableCascade.js";
 import { canManageStable } from "../lib/permissions.js";
+import { boardDefaults } from "../features/boards/boardDefaults.js";
 import { AuthContext } from "./AuthContext.jsx";
 
 export const StableSelectionContext = createContext(null);
@@ -134,6 +135,7 @@ export function StableSelectionProvider({ children }) {
         created: serverTimestamp(),
       });
       await setDoc(doc(db, "stables", stableRef.id, "data", "main"), EMPTY_STABLE_DATA);
+      await setDoc(doc(db, "stables", stableRef.id, "boardConfig", "main"), boardDefaults());
       await setDoc(doc(db, "inviteCodes", inviteCode), {
         stableId: stableRef.id,
         name: name.trim(),

@@ -42,6 +42,12 @@ export function subscribeToCollection(ref, onChange) {
   });
 }
 
+export function subscribeToDoc(ref, onChange) {
+  return onSnapshot(ref, (snap) => {
+    onChange(snap.exists() ? snap.data() : null);
+  });
+}
+
 // Firestore collectionGroup queries can't filter by ancestor path segments, so every doc in
 // a group-queried subcollection carries an explicit stableId field to filter on instead.
 export function subscribeToCollectionGroup(collectionId, stableId, onChange) {

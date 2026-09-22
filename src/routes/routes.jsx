@@ -25,6 +25,8 @@ import { TeamReportPage } from "../features/team/TeamReportPage.jsx";
 import { StableWidePage } from "../features/stable-wide/StableWidePage.jsx";
 import { StableTaskFormPage } from "../features/stable-wide/StableTaskFormPage.jsx";
 import { StableExpenseFormPage } from "../features/stable-wide/StableExpenseFormPage.jsx";
+import { BoardsPage } from "../features/boards/BoardsPage.jsx";
+import { BoardCellPage } from "../features/boards/weekly/BoardCellPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -59,6 +61,8 @@ export function AppRoutes() {
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/alerts/:aid/answer" element={<AnswerSessionPage />} />
         <Route path="/team/:mid/day" element={<MemberDayPage />} />
+        <Route path="/boards" element={<BoardsPage />} />
+        <Route path="/boards/cell/:hid/:date" element={<BoardCellPage />} />
         <Route element={<PermissionRoute requires="team" />}>
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/templates/new" element={<TemplateFormPage />} />

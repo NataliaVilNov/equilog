@@ -22,7 +22,7 @@ import { storage } from "../lib/firebaseClient.js";
 import { catFromHealthType, activityById } from "../lib/constants.js";
 import { taskNeedsReturn } from "../features/tasks/taskHelpers.js";
 import { boardDefaults } from "../features/boards/boardDefaults.js";
-import { boardAssignment, horseConflict } from "../features/boards/boardHelpers.js";
+import { boardAssignment, horseConflict, safeBoardId } from "../features/boards/boardHelpers.js";
 import { uid } from "../lib/id.js";
 import { td } from "../lib/date.js";
 
@@ -854,6 +854,158 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports addBoardActivity/deleteBoardActivity/addPeriodicColumn/deletePeriodicColumn
+  // (public/legacy-app.js:1457-1460). Legacy has no edit for either of these, only add and
+  // delete, so neither gets an update mutator. Deleting one has no cascade cleanup of
+  // weeklyPlans/periodicBoardDates that reference it — matches legacy's intentional design,
+  // confirmed by its own confirm-dialog text ("Las fechas guardadas dejarán de mostrarse").
+  const addBoardActivity = useCallback(
+    (code, label) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: {
+          ...prev.boardConfig,
+          activities: [...prev.boardConfig.activities, { id: safeBoardId("act", label), code, label, tone: "blue" }],
+        },
+      }));
+    },
+    [updateData]
+  );
+
+  const deleteBoardActivity = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: { ...prev.boardConfig, activities: prev.boardConfig.activities.filter((x) => x.id !== id) },
+      }));
+    },
+    [updateData]
+  );
+
+  const addPeriodicColumn = useCallback(
+    (label) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: {
+          ...prev.boardConfig,
+          periodicColumns: [...prev.boardConfig.periodicColumns, { id: safeBoardId("periodic", label), label, tone: "blue" }],
+        },
+      }));
+    },
+    [updateData]
+  );
+
+  const deletePeriodicColumn = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: {
+          ...prev.boardConfig,
+          periodicColumns: prev.boardConfig.periodicColumns.filter((x) => x.id !== id),
+        },
+      }));
+    },
+    [updateData]
+  );
+
+  // Ports addWalker/editWalker/deleteWalker (public/legacy-app.js:1462-1464). Fix: slots
+  // are taken as given from the caller (the per-row array editor built in Phase 6e), which
+  // preserves each existing row's id — unlike legacy's promptSlots, which re-parses a
+  // retyped "HH:MM-HH:MM, ..." string and mints a fresh id for every row on every edit,
+  // silently orphaning any boardAssignments that referenced the old ids.
+  const addWalker = useCallback(
+    (name, capacity, slots) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: {
+          ...prev.boardConfig,
+          walkers: [...prev.boardConfig.walkers, { id: safeBoardId("walker", name), name, capacity, slots }],
+        },
+      }));
+    },
+    [updateData]
+  );
+
+  const updateWalker = useCallback(
+    (id, { name, capacity, slots }) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: {
+          ...prev.boardConfig,
+          walkers: prev.boardConfig.walkers.map((w) => (w.id === id ? { ...w, name, capacity, slots } : w)),
+        },
+      }));
+    },
+    [updateData]
+  );
+
+  const deleteWalker = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: { ...prev.boardConfig, walkers: prev.boardConfig.walkers.filter((x) => x.id !== id) },
+        boardAssignments: (prev.boardAssignments || []).filter((a) => a.resourceId !== id),
+      }));
+    },
+    [updateData]
+  );
+
+  // Ports addPaddock/deletePaddock (public/legacy-app.js:1465-1466).
+  const addPaddock = useCallback(
+    (name) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: {
+          ...prev.boardConfig,
+          paddocks: [...prev.boardConfig.paddocks, { id: safeBoardId("paddock", name), name, capacity: 1 }],
+        },
+      }));
+    },
+    [updateData]
+  );
+
+  const deletePaddock = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: { ...prev.boardConfig, paddocks: prev.boardConfig.paddocks.filter((x) => x.id !== id) },
+        boardAssignments: (prev.boardAssignments || []).filter((a) => a.resourceId !== id),
+      }));
+    },
+    [updateData]
+  );
+
+  // Ports addPaddockSlot/deletePaddockSlot (public/legacy-app.js:1467-1468). Legacy's
+  // addPaddockSlot parses a comma-separated list from promptSlots and can add several at
+  // once; here the caller's form adds one slot at a time, so this takes a single
+  // start/end pair instead of an array — the same prompt()-to-form adaptation used
+  // throughout this migration. The shared list stays sorted by start time either way.
+  const addPaddockSlot = useCallback(
+    (start, end) => {
+      updateData((prev) => {
+        const paddockSlots = [...prev.boardConfig.paddockSlots, { id: uid(), start, end }].sort((a, b) =>
+          a.start.localeCompare(b.start)
+        );
+        return { ...prev, boardConfig: { ...prev.boardConfig, paddockSlots } };
+      });
+    },
+    [updateData]
+  );
+
+  const deletePaddockSlot = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        boardConfig: {
+          ...prev.boardConfig,
+          paddockSlots: prev.boardConfig.paddockSlots.filter((x) => x.id !== id),
+        },
+        boardAssignments: (prev.boardAssignments || []).filter((a) => a.slotId !== id),
+      }));
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -902,6 +1054,17 @@ export function StableDataProvider({ stableId, children }) {
       assignBoardHorse,
       moveBoardAssignment,
       removeBoardAssignment,
+      addBoardActivity,
+      deleteBoardActivity,
+      addPeriodicColumn,
+      deletePeriodicColumn,
+      addWalker,
+      updateWalker,
+      deleteWalker,
+      addPaddock,
+      deletePaddock,
+      addPaddockSlot,
+      deletePaddockSlot,
     }),
     [
       data,
@@ -950,6 +1113,17 @@ export function StableDataProvider({ stableId, children }) {
       assignBoardHorse,
       moveBoardAssignment,
       removeBoardAssignment,
+      addBoardActivity,
+      deleteBoardActivity,
+      addPeriodicColumn,
+      deletePeriodicColumn,
+      addWalker,
+      updateWalker,
+      deleteWalker,
+      addPaddock,
+      deletePaddock,
+      addPaddockSlot,
+      deletePaddockSlot,
     ]
   );
 

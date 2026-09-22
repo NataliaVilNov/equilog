@@ -22,9 +22,15 @@ src/features/team/
 ```
 
 **State & data**
-- `StableDataContext` gained `addTeamMember`/`updateTeamMember`/`deleteTeamMember`
-  (deleting a member also nulls `pid` on any task assigned to them, matching legacy) and
-  `toggleAbsence(pid, date)`.
+- Team members live at `stables/{stableId}/team/{memberId}`, one document per member (moved
+  off the single-document-per-stable model — see `docs/DATABASE.md`). `StableDataContext`
+  gained `addTeamMember`/`updateTeamMember`/`deleteTeamMember` (deleting a member also nulls
+  `pid` on any task assigned to them, matching legacy) and `toggleAbsence(pid, date)`.
+- `StableSelectionContext`'s `linkUserToTeamMember`, `joinByCode`, and `leaveStable` used to
+  read and overwrite the *entire* shared stable document just to touch the `team` array; they
+  now target the specific member doc(s) directly — a single `updateDoc` for linking, a
+  `collection(...).getDocs()` for `joinByCode`'s member picker, and an `or()`-composed query
+  plus per-doc `updateDoc(..., {field: deleteField()})` for unlinking on `leaveStable`.
 - `StableSelectionContext` gained `createMemberInvite(member)` — it writes to the top-level
   `inviteCodes` collection, the same one `joinByCode` (Phase 1) already reads from, so it
   lives there rather than in `StableDataContext`. It takes the full member object (not an

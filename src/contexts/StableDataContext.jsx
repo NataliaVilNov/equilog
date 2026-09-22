@@ -21,6 +21,7 @@ import {
 import { storage } from "../lib/firebaseClient.js";
 import { catFromHealthType, activityById } from "../lib/constants.js";
 import { taskNeedsReturn } from "../features/tasks/taskHelpers.js";
+import { boardDefaults } from "../features/boards/boardDefaults.js";
 import { uid } from "../lib/id.js";
 import { td } from "../lib/date.js";
 
@@ -76,22 +77,36 @@ const COLLECTION_KEYS = [
   "templates",
   "absences",
   "expenseSettlements",
+  "weeklyPlans",
+  "periodicBoardDates",
+  "boardAssignments",
 ];
 
 function emptyData() {
-  return COLLECTION_KEYS.reduce((acc, key) => {
+  const data = COLLECTION_KEYS.reduce((acc, key) => {
     acc[key] = [];
     return acc;
   }, {});
+  data.boardConfig = boardDefaults();
+  return data;
 }
 
-// Mirrors the defensive array-defaulting in _fbLoadData/_fbSetupListener
-// (public/legacy-app.js:437, :453).
+// Mirrors ensureBoardData's defensive defaulting (public/legacy-app.js:1289-1299) alongside
+// the array collections' own defaulting from _fbLoadData/_fbSetupListener
+// (public/legacy-app.js:437, :453). `boardConfig` is the only non-array collection here.
 function withDefaults(raw) {
   const data = { ...emptyData(), ...raw };
   COLLECTION_KEYS.forEach((key) => {
     if (!data[key]) data[key] = [];
   });
+  if (!data.boardConfig || typeof data.boardConfig !== "object") {
+    data.boardConfig = boardDefaults();
+  } else {
+    const defaults = boardDefaults();
+    ["activities", "periodicColumns", "walkers", "paddocks", "paddockSlots"].forEach((k) => {
+      if (!Array.isArray(data.boardConfig[k])) data.boardConfig[k] = defaults[k];
+    });
+  }
   return data;
 }
 

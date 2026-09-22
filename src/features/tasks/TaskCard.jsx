@@ -6,7 +6,7 @@ import { useStableData } from "../../hooks/useStableData.js";
 
 // Ports tcard (public/legacy-app.js:3205-3224). Also reused by HomePage (Phase 4c).
 export function TaskCard({ task }) {
-  const { horses, team, cycleTaskStatus, deleteTask } = useStableData();
+  const { horses, team, cycleTaskStatus, cycleOccurrenceStatus, deleteTask } = useStableData();
   const { can } = usePermissions();
   const navigate = useNavigate();
 
@@ -17,6 +17,11 @@ export function TaskCard({ task }) {
   const label = taskStatusLabel(task);
   const dbl = taskNeedsReturn(task.activity);
 
+  function handleCycle() {
+    if (task.isRecurringOccurrence) cycleOccurrenceStatus(task);
+    else cycleTaskStatus(task.id);
+  }
+
   function handleDelete() {
     if (!window.confirm("¿Eliminar?")) return;
     deleteTask(task.id);
@@ -26,7 +31,7 @@ export function TaskCard({ task }) {
     <div className={"tkc" + (task.status === "done" ? " done" : "")}>
       <button
         className={"ck " + task.status}
-        onClick={() => cycleTaskStatus(task.id)}
+        onClick={handleCycle}
         title={dbl ? "Pendiente → llevado → recogido" : "Pendiente → hecho"}
         style={icon === "✓✓" ? { fontSize: ".68rem" } : undefined}
       >
@@ -58,12 +63,17 @@ export function TaskCard({ task }) {
         {task.time && (
           <span style={{ fontSize: ".7rem", color: "var(--gr)", marginLeft: ".3rem" }}>🕐 {task.time}</span>
         )}
+        {task.recurrenceRule && (
+          <span style={{ fontSize: ".7rem", color: "var(--gr)", marginLeft: ".3rem" }} title="Tarea recurrente">
+            🔁
+          </span>
+        )}
       </div>
       <div style={{ display: "flex", gap: ".25rem" }}>
         <button
           className="ib"
           style={{ width: "27px", height: "27px", fontSize: ".72rem" }}
-          onClick={() => navigate(`/tasks/${task.id}/edit?d=${task.startDate}`)}
+          onClick={() => navigate(`/tasks/${task.id}/edit?d=${task.occurrenceDate || task.startDate}`)}
         >
           ✏️
         </button>

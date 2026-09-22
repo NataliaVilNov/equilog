@@ -615,6 +615,7 @@ export function StableDataProvider({ stableId, children }) {
         .filter((s) => s.tid === id)
         .forEach((s) => batch.delete(stableDoc(stableId, "sessionAlerts", s.id)));
       batch.commit();
+      batchDeleteQuery(stableCollection(stableId, "tasks", id, "occurrences"));
       deleteDocRef(stableDoc(stableId, "tasks", id));
     },
     [sessionAlerts, stableId]
@@ -661,6 +662,54 @@ export function StableDataProvider({ stableId, children }) {
       }
     },
     [tasks, horses, sessionAlerts, stableId]
+  );
+
+  // Cycles one date's occurrence of a recurring task, mirroring cycleTaskStatus but writing
+  // to that date's sparse exception doc (tasks/{id}/occurrences/{date}) instead of the task's
+  // own status field, since a recurring task's status is per-occurrence, not per-task.
+  // `occurrenceTask` is the resolved view-model useTaskOccurrences already produced for this
+  // date (correct `status`, plus the task's own `activity`/`horseId`/`assignedTo`) — this
+  // mutator doesn't need its own occurrence subscription to compute the next status from it.
+  const cycleOccurrenceStatus = useCallback(
+    (occurrenceTask) => {
+      const { id, occurrenceDate: date } = occurrenceTask;
+      let nextStatus;
+      if (taskNeedsReturn(occurrenceTask.activity)) {
+        nextStatus = { pending: "inprogress", inprogress: "done", done: "pending" }[occurrenceTask.status] || "pending";
+      } else {
+        nextStatus = occurrenceTask.status === "done" ? "pending" : "done";
+      }
+      writeDoc(stableDoc(stableId, "tasks", id, "occurrences", date), { taskId: id, stableId, date, status: nextStatus });
+      if (nextStatus === "done") {
+        const activity = activityById(occurrenceTask.activity);
+        if (
+          activity.r &&
+          occurrenceTask.horseId != null &&
+          !sessionAlerts.some((s) => s.tid === id && s.date === date && !s.ans)
+        ) {
+          const horse = horses.find((h) => h.id === occurrenceTask.horseId);
+          const alertId = uid();
+          writeDoc(stableDoc(stableId, "sessionAlerts", alertId), {
+            id: alertId,
+            stableId,
+            tid: id,
+            hid: occurrenceTask.horseId,
+            hn: horse ? horse.name : "",
+            act: occurrenceTask.activity,
+            date,
+            pid: occurrenceTask.assignedTo,
+            ans: false,
+          });
+        }
+      } else {
+        const batch = writeBatch(db);
+        sessionAlerts
+          .filter((s) => s.tid === id && s.date === date && !s.ans)
+          .forEach((s) => batch.delete(stableDoc(stableId, "sessionAlerts", s.id)));
+        batch.commit();
+      }
+    },
+    [horses, sessionAlerts, stableId]
   );
 
   // Ports the save-session-btn handler (public/legacy-app.js:3706-3712): answering a
@@ -1352,6 +1401,7 @@ export function StableDataProvider({ stableId, children }) {
   const value = useMemo(
     () => ({
       ...data,
+      stableId,
       horses,
       trainings,
       health,
@@ -1384,6 +1434,7 @@ export function StableDataProvider({ stableId, children }) {
       updateTask,
       deleteTask,
       cycleTaskStatus,
+      cycleOccurrenceStatus,
       answerSessionAlert,
       addTemplate,
       updateTemplate,
@@ -1423,6 +1474,7 @@ export function StableDataProvider({ stableId, children }) {
     }),
     [
       data,
+      stableId,
       horses,
       trainings,
       health,
@@ -1455,6 +1507,7 @@ export function StableDataProvider({ stableId, children }) {
       updateTask,
       deleteTask,
       cycleTaskStatus,
+      cycleOccurrenceStatus,
       answerSessionAlert,
       addTemplate,
       updateTemplate,

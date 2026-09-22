@@ -1,18 +1,19 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../hooks/useStableData.js";
 import { usePermissions } from "../../hooks/usePermissions.js";
+import { useTaskOccurrences } from "../../hooks/useTaskOccurrences.js";
 import { td, addD, fD, fDL } from "../../lib/date.js";
-import { tasksForDate } from "./taskHelpers.js";
 import { TaskCard } from "./TaskCard.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { Fab } from "../../components/layout/Fab.jsx";
 
-// Ports rDay (public/legacy-app.js:3127-3188). "Orden inteligente" (Phase 7), "Plantilla"
-// (Phase 4d, later in this same phase), "Informe equipo" and the per-member day view
-// (both Phase 5) are forward-links to not-yet-built routes, same deferred-link pattern used
-// elsewhere in this migration.
+// Ports rDay (public/legacy-app.js:3127-3188), now also the merged home for stable-wide
+// chores since the tasks/ctasks split ended (docs/components/tasks.md). "Orden inteligente"
+// (Phase 7), "Plantilla" (Phase 4d, later in this same phase), "Informe equipo" and the
+// per-member day view (both Phase 5) are forward-links to not-yet-built routes, same
+// deferred-link pattern used elsewhere in this migration.
 export function DayBoardPage() {
-  const { tasks, team } = useStableData();
+  const { stableId, tasks, team } = useStableData();
   const { can, myTeamMember } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -20,7 +21,7 @@ export function DayBoardPage() {
   const ds = searchParams.get("d") || td();
   const filter = searchParams.get("person") || "all";
 
-  const tasksAll = tasksForDate(tasks, ds)
+  const tasksAll = useTaskOccurrences(stableId, tasks, ds)
     .slice()
     .sort((a, b) => ((a.time || "99:99") > (b.time || "99:99") ? 1 : -1));
   const filteredTasks =

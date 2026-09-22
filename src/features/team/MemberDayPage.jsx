@@ -1,7 +1,7 @@
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../hooks/useStableData.js";
+import { useTaskOccurrences } from "../../hooks/useTaskOccurrences.js";
 import { td, fDL, addD } from "../../lib/date.js";
-import { tasksForDate } from "../tasks/taskHelpers.js";
 import { TaskCard } from "../tasks/TaskCard.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 
@@ -10,11 +10,13 @@ import { EmptyState } from "../../components/EmptyState.jsx";
 export function MemberDayPage() {
   const { mid } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { team, tasks } = useStableData();
+  const { stableId, team, tasks } = useStableData();
   const navigate = useNavigate();
 
   const ds = searchParams.get("d") || td();
   const member = team.find((x) => x.id === mid);
+
+  const dayOccurrences = useTaskOccurrences(stableId, tasks, ds);
 
   if (!member) {
     return (
@@ -24,7 +26,7 @@ export function MemberDayPage() {
     );
   }
 
-  const memberTasks = tasksForDate(tasks, ds)
+  const memberTasks = dayOccurrences
     .filter((t) => t.assignedTo === mid)
     .sort((a, b) => ((a.time || "99:99") > (b.time || "99:99") ? 1 : -1));
   const dn = memberTasks.filter((t) => t.status === "done").length;

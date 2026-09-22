@@ -5,9 +5,10 @@ import { StableSelectionContext } from "../../contexts/StableSelectionContext.js
 import { ModalContext } from "../../contexts/ModalContext.jsx";
 import { useStableData } from "../../hooks/useStableData.js";
 import { usePermissions } from "../../hooks/usePermissions.js";
+import { useTaskOccurrences } from "../../hooks/useTaskOccurrences.js";
 import { useToast } from "../../hooks/useToast.js";
 import { td, fDL } from "../../lib/date.js";
-import { tasksForDate, visibleTasksForUser } from "../tasks/taskHelpers.js";
+import { visibleTasksForUser } from "../tasks/taskHelpers.js";
 import { upcomingHealthAlerts, pendingSessionAlerts, visibleAlertsForUser } from "../alerts/alertSelectors.js";
 import { TaskCard } from "../tasks/TaskCard.jsx";
 import { AlertCard } from "../alerts/AlertCard.jsx";
@@ -32,7 +33,7 @@ export function HomePage() {
   const { user, profile } = useContext(AuthContext) || {};
   const { activeStable } = useContext(StableSelectionContext) || {};
   const { openModal } = useContext(ModalContext) || {};
-  const { tasks, horses, trainings, expenses, health, sessionAlerts: allSessionAlerts } = useStableData();
+  const { stableId, tasks, horses, trainings, expenses, health, sessionAlerts: allSessionAlerts } = useStableData();
   const { isAdmin, myTeamMember, can } = usePermissions();
   const { showToast } = useToast();
   const navigate = useNavigate();
@@ -41,7 +42,7 @@ export function HomePage() {
   const firstName = ((profile && profile.name) || (user && user.displayName) || "").trim().split(/\s+/)[0];
   const myMid = myTeamMember ? myTeamMember.id : null;
 
-  const allToday = tasksForDate(tasks, today);
+  const allToday = useTaskOccurrences(stableId, tasks, today);
   const visibleToday = visibleTasksForUser(allToday, isAdmin, myMid);
   const done = visibleToday.filter((t) => t.status === "done").length;
   const pending = Math.max(0, visibleToday.length - done);

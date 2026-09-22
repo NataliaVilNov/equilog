@@ -13,6 +13,8 @@ import { BottomNav } from "./components/layout/BottomNav.jsx";
 import { Toast } from "./components/Toast.jsx";
 import { StablePanel } from "./features/stables/StablePanel.jsx";
 import { JoinTeamModal } from "./features/stables/JoinTeamModal.jsx";
+import { MorePanel } from "./features/home/MorePanel.jsx";
+import { UserPanel } from "./features/profile/UserPanel.jsx";
 import { AppRoutes } from "./routes/routes.jsx";
 
 // StableDataProvider takes the active stable id as a prop rather than reading
@@ -39,6 +41,8 @@ function AppShell() {
       </div>
       {showChrome && <BottomNav />}
       {showChrome && isModalOpen && isModalOpen("stablePanel") && <StablePanel />}
+      {showChrome && isModalOpen && isModalOpen("morePanel") && <MorePanel />}
+      {showChrome && isModalOpen && isModalOpen("userPanel") && <UserPanel />}
       <JoinTeamModal />
       <Toast />
     </>

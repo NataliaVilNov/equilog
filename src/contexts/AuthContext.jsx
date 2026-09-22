@@ -1,4 +1,4 @@
-import { createContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "../lib/firebaseClient.js";
@@ -35,9 +35,14 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, []);
 
+  // Lets a caller that just wrote a profile update (UserPanel) apply the merged result
+  // locally without waiting on a Firestore round-trip/listener — AuthContext only loads
+  // the profile once, on auth state change, so nothing else refreshes it after a write.
+  const applyProfileUpdate = useCallback((nextProfile) => setProfile(nextProfile), []);
+
   const value = useMemo(
-    () => ({ user, profile, loading }),
-    [user, profile, loading]
+    () => ({ user, profile, loading, applyProfileUpdate }),
+    [user, profile, loading, applyProfileUpdate]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

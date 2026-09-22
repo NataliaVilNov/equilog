@@ -12,6 +12,8 @@ import { ExpenseFormPage } from "../features/expenses/ExpenseFormPage.jsx";
 import { ExpenseSettlementPage } from "../features/expenses/ExpenseSettlementPage.jsx";
 import { DayBoardPage } from "../features/tasks/DayBoardPage.jsx";
 import { TaskFormPage } from "../features/tasks/TaskFormPage.jsx";
+import { AlertsPage } from "../features/alerts/AlertsPage.jsx";
+import { AnswerSessionPage } from "../features/alerts/AnswerSessionPage.jsx";
 
 // Placeholder — replaced once Phase 4 (home dashboard) exists. Keeping it inline here
 // means this routing skeleton is buildable and testable on its own before that exists.
@@ -49,6 +51,8 @@ export function AppRoutes() {
           <Route path="/tasks/new" element={<TaskFormPage />} />
           <Route path="/tasks/:tid/edit" element={<TaskFormPage />} />
         </Route>
+        <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/alerts/:aid/answer" element={<AnswerSessionPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>

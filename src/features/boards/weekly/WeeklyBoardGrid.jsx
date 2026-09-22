@@ -5,14 +5,20 @@ import { useToast } from "../../../hooks/useToast.js";
 import { td, addD, fD } from "../../../lib/date.js";
 import {
   boardWeekDates,
-  boardPlanActs,
+  boardPlan,
   boardActivity,
-  boardToneClass,
   boardDateLabel,
 } from "../boardHelpers.js";
 import { EmptyState } from "../../../components/EmptyState.jsx";
 import { QuickAssignToolbar } from "./QuickAssignToolbar.jsx";
 import { PeriodicColumnCell } from "./PeriodicColumnCell.jsx";
+import { BoardCell } from "./BoardCell.jsx";
+
+// The VET activity's id is a hardcoded literal, not a generic flag — matches the reference
+// app's own VET-second-tap behavior, which is tied to a literal code string too (see
+// docs/components/boards.md). Renaming/removing the "vet" board activity breaks the badge
+// rendering below, same known limitation as the reference implementation.
+const VET_ACTIVITY_ID = "vet";
 
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
@@ -130,39 +136,18 @@ export function WeeklyBoardGrid({ week }) {
                         <b>{h.name}</b>
                       </div>
                     </th>
-                    {dates.map((d) => {
-                      const acts = boardPlanActs(weeklyPlans, h.id, d);
-                      return (
-                        <td
-                          key={d}
-                          className={"plan-cell" + (d === today ? " is-today" : "") + (quickActivity ? " quick-mode" : "")}
-                          onClick={() => clickCell(h.id, d)}
-                        >
-                          {acts.length ? (
-                            <div className="plan-sequence">
-                              {acts.map((id, i) => {
-                                const a = boardActivity(boardConfig.activities, id);
-                                return (
-                                  <span key={id}>
-                                    <span
-                                      className={
-                                        "plan-code " + boardToneClass(a.tone) + (quickActivity === id ? " quick-hit" : "")
-                                      }
-                                      title={a.label}
-                                    >
-                                      {a.code}
-                                    </span>
-                                    {i < acts.length - 1 && <i>›</i>}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <span className="plan-empty">＋</span>
-                          )}
-                        </td>
-                      );
-                    })}
+                    {dates.map((d) => (
+                      <BoardCell
+                        key={d}
+                        date={d}
+                        isToday={d === today}
+                        activeTool={quickActivity}
+                        plan={boardPlan(weeklyPlans, h.id, d)}
+                        boardActivities={boardConfig.activities}
+                        vetActivityId={VET_ACTIVITY_ID}
+                        onClick={() => clickCell(h.id, d)}
+                      />
+                    ))}
                     {boardConfig.periodicColumns.map((c) => (
                       <PeriodicColumnCell key={c.id} hid={h.id} column={c} />
                     ))}

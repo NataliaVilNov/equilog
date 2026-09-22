@@ -76,7 +76,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "team",
   "tasks",
   "ctasks",
   "cexpenses",
@@ -142,6 +141,7 @@ export function StableDataProvider({ stableId, children }) {
   const [health, setHealth] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [healthDocs, setHealthDocs] = useState([]);
+  const [team, setTeam] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -212,6 +212,14 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "horses"), setHorses);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setTeam([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "team"), setTeam);
   }, [stableId]);
 
   useEffect(() => {
@@ -724,27 +732,27 @@ export function StableDataProvider({ stableId, children }) {
   // the deleted member rather than leaving it dangling.
   const addTeamMember = useCallback(
     (member) => {
-      updateData((prev) => ({ ...prev, team: [...prev.team, member] }));
+      writeDoc(stableDoc(stableId, "team", member.id), member);
     },
-    [updateData]
+    [stableId]
   );
 
   const updateTeamMember = useCallback(
     (member) => {
-      updateData((prev) => ({ ...prev, team: prev.team.map((m) => (m.id === member.id ? member : m)) }));
+      writeDoc(stableDoc(stableId, "team", member.id), member);
     },
-    [updateData]
+    [stableId]
   );
 
   const deleteTeamMember = useCallback(
     (id) => {
       updateData((prev) => ({
         ...prev,
-        team: prev.team.filter((m) => m.id !== id),
         tasks: prev.tasks.map((t) => (t.pid === id ? { ...t, pid: null } : t)),
       }));
+      deleteDocRef(stableDoc(stableId, "team", id));
     },
-    [updateData]
+    [updateData, stableId]
   );
 
   // Ports toggleAbsence (public/legacy-app.js:3314-3321): toggles a single day on/off as a
@@ -1364,6 +1372,7 @@ export function StableDataProvider({ stableId, children }) {
       health,
       expenses,
       healthDocs,
+      team,
       loading,
       error,
       updateData,
@@ -1436,6 +1445,7 @@ export function StableDataProvider({ stableId, children }) {
       health,
       expenses,
       healthDocs,
+      team,
       loading,
       error,
       updateData,

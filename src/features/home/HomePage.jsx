@@ -141,7 +141,7 @@ export function HomePage() {
               <small>Añadir una ficha</small>
             </button>
           )}
-          <button className="quick-action" onClick={() => navigate("/boards")}>
+          <button className="quick-action" onClick={() => navigate("/boards?tab=weekly")}>
             <span>▦</span>
             <b>Pizarras</b>
             <small>Plan semanal e instalaciones</small>

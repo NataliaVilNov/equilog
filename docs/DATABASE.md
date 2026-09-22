@@ -199,3 +199,113 @@ that app's architecture, not a decision driven by how Firestore works.
   single document, though — a handful of subcollections (`horses`, `tasks`, `health`, etc.)
   with a few collection-level `onSnapshot` queries is the idiomatic middle ground, and is what
   the redesign above already proposes.
+
+## 7. Proposed schema redesign (not yet implemented)
+
+This section is the concrete target for the §5/§6 migration — a subcollection layout sized to
+how each piece of data actually grows and gets queried, rather than one document per stable.
+Nothing below is implemented; it's the design to build toward under `docs/BACKLOG.md` #3.
+
+### 7.1 Collection layout
+
+| Path | Replaces | Purpose |
+|---|---|---|
+| `users/{uid}` | *(unchanged)* | see §1 |
+| `stables/{stableId}` | *(unchanged)* | see §1 |
+| `inviteCodes/{code}` | *(unchanged)* | see §1 |
+| `stables/{stableId}/horses/{horseId}` | `horses[]` | one document per horse |
+| `stables/{stableId}/horses/{horseId}/trainings/{trainingId}` | `trainings[]` | one document per training session |
+| `stables/{stableId}/horses/{horseId}/health/{healthId}` | `health[]` | one document per health record |
+| `stables/{stableId}/horses/{horseId}/healthDocs/{docId}` | `healthDocs[]` | one document per uploaded/linked health document |
+| `stables/{stableId}/horses/{horseId}/expenses/{expenseId}` | `expenses[]` | one document per horse-specific expense |
+| `stables/{stableId}/team/{memberId}` | `team[]` | one document per team-roster member |
+| `stables/{stableId}/tasks/{taskId}` | `tasks[]` + `ctasks[]` | unified tasks — horse-specific or general chore, see §7.3 |
+| `stables/{stableId}/tasks/{taskId}/occurrences/{date}` | *(new)* | sparse per-date exceptions for recurring tasks, see §7.3 |
+| `stables/{stableId}/stableExpenses/{expenseId}` | `cexpenses[]` | stable-wide expenses |
+| `stables/{stableId}/sessionAlerts/{alertId}` | `salerts[]` | pending training-report alerts |
+| `stables/{stableId}/taskTemplates/{templateId}` | `templates[]` | reusable task bundles, stamped on demand — orthogonal to recurrence, see §7.3 |
+| `stables/{stableId}/absences/{absenceId}` | `absences[]` | team member absence-calendar entries |
+| `stables/{stableId}/expenseSettlements/{settlementId}` | `expenseSettlements[]` | recorded owner-to-owner settlement transfers |
+| `stables/{stableId}/weeklyPlans/{planId}` | `weeklyPlans[]` | Boards weekly grid rows |
+| `stables/{stableId}/periodicBoardDates/{recordId}` | `periodicBoardDates[]` | Boards due-date tracker rows |
+| `stables/{stableId}/boardAssignments/{assignmentId}` | `boardAssignments[]` | Boards walker/paddock resource bookings |
+| `stables/{stableId}/boardConfig/main` | `boardConfig` | Boards settings — stays a single small document; it's config, not per-record data, so it doesn't need splitting |
+
+Boards data (`weeklyPlans`, `periodicBoardDates`, `boardAssignments`) stays scoped to the
+*stable*, not nested under each horse — board views are inherently "every horse for this
+day/week" queries, and nesting under `horses` would make that the awkward cross-subcollection
+query instead of the easy one.
+
+### 7.2 Horse subcollection fields
+
+| Collection | Holds |
+|---|---|
+| `horses/{horseId}` | name, breed, dob, `owners[]` (name + % split), pedigree, sale info, `sortOrder` — photo moves to Storage, see §7.5 |
+| `trainings/{trainingId}` | date, duration, work type, rating, notes |
+| `health/{healthId}` | type, date, next-due date (`nxt`), amount, payee, payment status |
+| `healthDocs/{docId}` | title, category, date, notes, Storage path + URL, optional `healthId` link |
+| `expenses/{expenseId}` | concept, amount, date, category, payer/payee, status, optional `healthId` link, settlement fields |
+
+### 7.3 Unified tasks
+
+`tasks[]` (per-horse) and `ctasks[]` (stable-wide) collapse into one
+`stables/{stableId}/tasks/{taskId}` collection. A task is horse-specific or a general chore,
+assigned or unassigned, one-off or recurring — independently, via nullable fields rather than
+which array it lived in:
+
+| Field | Type | Notes |
+|---|---|---|
+| `stableId` | string (FK) | |
+| `horseId` | string (FK), nullable | `null` = a general stable chore, not tied to a horse |
+| `assignedTo` | string (FK), nullable | `null` = shows on every team member's to-do list |
+| `activity` | string | |
+| `startDate` | date | the due date for a one-off task; the series' anchor date for a recurring one |
+| `recurrenceRule` | map, nullable | embedded, not a separate collection — see below |
+| `createdBy` | string (FK) | |
+
+`recurrenceRule` is embedded on the task document itself rather than its own collection,
+because Firestore has no server-side RRULE engine — there's no query that returns "every
+Thursday between date A and B." The rule instead has to be a small vocabulary the client can
+expand for whatever range it's rendering (today's list, this week's board):
+
+| Field | Type | Example |
+|---|---|---|
+| `freq` | string | `"daily"`, `"weekly"`, `"monthly"` |
+| `interval` | number | every *N* `freq` — e.g. `2` + `"weekly"` = every 2 weeks |
+| `byWeekday` | array, nullable | `["TH"]` → "every Thursday" |
+| `bySetPos` | number, nullable | `1` + `byWeekday: ["SU"]` → "the 1st Sunday of the month" |
+| `byMonthDay` | number, nullable | `20` → "the 20th of every month" |
+| `until` | date, nullable | series end date |
+| `count` | number, nullable | series ends after *N* occurrences |
+
+`stables/{stableId}/tasks/{taskId}/occurrences/{date}` holds **only exceptions** — it's
+sparse by design. If no occurrence document exists for a given date, that occurrence is
+implicitly pending with the series' default `assignedTo`. A document is written only when a
+specific date needs to diverge: marked `done`/`skipped`, or handed to someone else just that
+once via `overrideAssignedTo`. This mirrors how Google Calendar itself handles editing a
+single instance of a recurring event, and avoids ever having to materialize occurrences into
+the far future.
+
+Two consequences worth being explicit about:
+- **"Everyone's to-do list" is computed at read time** (`assignedTo == null OR assignedTo ==
+  me`), not fanned out as a write per member — an unassigned chore stays one document
+  regardless of team size.
+- **`taskTemplates` is unaffected by this and stays a separate concept**: a template is a
+  bundle of one-off tasks a user stamps on demand (e.g. "morning routine" → 5 tasks for a
+  chosen date); a `recurrenceRule` is a single task that repeats on its own schedule. They
+  don't compete with each other.
+
+### 7.4 Storage changes
+
+Horse photos and team-member photos move out of Firestore entirely, uploaded the same way
+`healthDocs` already are (§4) — only a Storage path + download URL stored on the `horses`/
+`team` document, not a base64 data URL inline. This removes the other document-size-growth
+path alongside the horses/health/expenses split above.
+
+### 7.5 What doesn't change
+
+`users/{uid}`, `stables/{stableId}`, and `inviteCodes/{code}` keep their current shape —
+they're already right-sized documents, not arrays-in-a-blob. `boardConfig` stays a single
+document under the stable for the same reason: it's small, admin-edited configuration, not
+data that grows with usage. Not everything needs to be split — only the collections that
+actually hit the problems in §5.

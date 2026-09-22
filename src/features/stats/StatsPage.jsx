@@ -111,7 +111,7 @@ function FinancialTab({ totIn, totOut, cEx, pendIn, pendOut, horses, ex, navigat
 }
 
 function TeamTab({ team, tasks, fS, fE }) {
-  const at = tasks.filter((t) => (!fS || t.date >= fS) && (!fE || t.date <= fE));
+  const at = tasks.filter((t) => (!fS || t.startDate >= fS) && (!fE || t.startDate <= fE));
   const dn = at.filter((t) => t.status === "done").length;
   const tmin = at.filter((t) => t.status === "done").reduce((s, t) => s + Number(t.dur || 0), 0);
 
@@ -130,7 +130,7 @@ function TeamTab({ team, tasks, fS, fE }) {
             <h2>Por persona</h2>
           </div>
           {team.map((m) => {
-            const mt = at.filter((t) => t.pid === m.id);
+            const mt = at.filter((t) => t.assignedTo === m.id);
             if (!mt.length) return null;
             const md = mt.filter((t) => t.status === "done").length;
             const mh = (mt.filter((t) => t.status === "done").reduce((s, t) => s + Number(t.dur || 0), 0) / 60).toFixed(1);

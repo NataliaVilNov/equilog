@@ -25,7 +25,7 @@ export function MemberDayPage() {
   }
 
   const memberTasks = tasksForDate(tasks, ds)
-    .filter((t) => t.pid === mid)
+    .filter((t) => t.assignedTo === mid)
     .sort((a, b) => ((a.time || "99:99") > (b.time || "99:99") ? 1 : -1));
   const dn = memberTasks.filter((t) => t.status === "done").length;
   const pct = memberTasks.length ? Math.round((dn / memberTasks.length) * 100) : 0;

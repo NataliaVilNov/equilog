@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { AuthContext } from "../../contexts/AuthContext.jsx";
 import { useStableData } from "../../hooks/useStableData.js";
 import { usePermissions } from "../../hooks/usePermissions.js";
 import { useToast } from "../../hooks/useToast.js";
@@ -14,20 +15,21 @@ export function TaskFormPage() {
   const [searchParams] = useSearchParams();
   const { horses, team, tasks, addTask, updateTask, deleteTask } = useStableData();
   const { isAdmin, can, myTeamMember } = usePermissions();
+  const { user } = useContext(AuthContext) || {};
   const { showToast } = useToast();
   const navigate = useNavigate();
 
   const editing = !!tid;
   const task = editing ? tasks.find((t) => t.id === tid) : null;
 
-  const [hid, setHid] = useState(task ? task.hid : "");
+  const [hid, setHid] = useState(task ? task.horseId : "");
   const [activity, setActivity] = useState(task ? task.activity : "monta");
-  const [date, setDate] = useState(task ? task.date : searchParams.get("d") || td());
+  const [date, setDate] = useState(task ? task.startDate : searchParams.get("d") || td());
   const [time, setTime] = useState(task && task.time ? task.time : "");
   const [dur, setDur] = useState(task ? task.dur : 30);
   const [pid, setPid] = useState(() => {
-    if (isAdmin) return task ? task.pid || "" : "";
-    return (task && task.pid) || (myTeamMember ? myTeamMember.id : "") || "";
+    if (isAdmin) return task ? task.assignedTo || "" : "";
+    return (task && task.assignedTo) || (myTeamMember ? myTeamMember.id : "") || "";
   });
   const [notes, setNotes] = useState(task ? task.notes || "" : "");
 
@@ -51,13 +53,13 @@ export function TaskFormPage() {
     const id = editing ? tid : uid();
     const record = {
       id,
-      createdBy: null,
-      hid,
+      createdBy: editing ? task.createdBy || null : (user && user.uid) || null,
+      horseId: hid,
       activity,
-      date,
+      startDate: date,
       time: time || null,
       dur: Number(dur) || 30,
-      pid: pid || null,
+      assignedTo: pid || null,
       notes: notes.trim(),
       status: editing ? task.status || "pending" : "pending",
     };

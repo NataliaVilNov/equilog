@@ -10,9 +10,9 @@ export function TaskCard({ task }) {
   const { can } = usePermissions();
   const navigate = useNavigate();
 
-  const horse = horses.find((h) => h.id === task.hid);
+  const horse = horses.find((h) => h.id === task.horseId);
   const a = activityById(task.activity);
-  const member = task.pid ? team.find((x) => x.id === task.pid) : null;
+  const member = task.assignedTo ? team.find((x) => x.id === task.assignedTo) : null;
   const icon = taskStatusIcon(task);
   const label = taskStatusLabel(task);
   const dbl = taskNeedsReturn(task.activity);
@@ -63,7 +63,7 @@ export function TaskCard({ task }) {
         <button
           className="ib"
           style={{ width: "27px", height: "27px", fontSize: ".72rem" }}
-          onClick={() => navigate(`/tasks/${task.id}/edit?d=${task.date}`)}
+          onClick={() => navigate(`/tasks/${task.id}/edit?d=${task.startDate}`)}
         >
           ✏️
         </button>

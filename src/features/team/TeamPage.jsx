@@ -68,7 +68,7 @@ export function TeamPage() {
         </EmptyState>
       ) : (
         team.map((m) => {
-          const mt = todaysTasks.filter((t) => t.pid === m.id);
+          const mt = todaysTasks.filter((t) => t.assignedTo === m.id);
           const dn = mt.filter((t) => t.status === "done").length;
           const linked = !!(m.uid || m.userId || m.authUid);
           return (

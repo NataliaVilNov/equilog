@@ -20,7 +20,7 @@ export function taskStatusLabel(t) {
 }
 
 export function tasksForDate(tasks, date) {
-  return (tasks || []).filter((t) => t.date === date);
+  return (tasks || []).filter((t) => t.startDate === date);
 }
 
 export function dayProgress(tasks, date) {
@@ -34,5 +34,5 @@ export function dayProgress(tasks, date) {
 // function, same treatment as alertSelectors.js's visibleAlertsForUser.
 export function visibleTasksForUser(tasks, isAdmin, myTeamMemberId) {
   if (isAdmin) return tasks;
-  return (tasks || []).filter((t) => myTeamMemberId && t.pid === myTeamMemberId);
+  return (tasks || []).filter((t) => myTeamMemberId && t.assignedTo === myTeamMemberId);
 }

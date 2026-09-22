@@ -41,13 +41,17 @@ export function TeamReportPage() {
     const lines = [];
     horses.forEach((h) => {
       const tr = trainings.filter((t) => t.hid === h.id && t.date >= start && t.date <= end);
-      const tk = tasks.filter((t) => t.hid === h.id && t.date >= start && t.date <= end && t.status === "done");
+      const tk = tasks.filter(
+        (t) => t.horseId === h.id && t.startDate >= start && t.startDate <= end && t.status === "done"
+      );
       if (!tr.length && !tk.length) return;
       lines.push(`\n=== ${h.name}${h.owner ? " (" + h.owner + ")" : ""} ===`);
       tr.forEach((t) =>
         lines.push(`- ${fD(t.date)} | ${workTypeById(t.wtype).l} | ${t.dur}min | ${t.rating}/10${t.feel ? " | " + t.feel : ""}`)
       );
-      tk.forEach((t) => lines.push(`- ${fD(t.date)} | ${activityById(t.activity).l} ✓${t.notes ? " | " + t.notes : ""}`));
+      tk.forEach((t) =>
+        lines.push(`- ${fD(t.startDate)} | ${activityById(t.activity).l} ✓${t.notes ? " | " + t.notes : ""}`)
+      );
     });
     const typeLabel = { diario: "diario", semanal: "semanal", finde: "del fin de semana" }[reportType] || "del periodo";
     const prompt = `Eres el jefe de cuadra. Genera un informe ${typeLabel} del ${fD(start)} al ${fD(end)}.\n\nActividad:\n${

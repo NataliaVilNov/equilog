@@ -48,7 +48,9 @@ export function UserPanel() {
       : "miembro";
 
   const today = td();
-  const myTasks = myTeamMember ? tasks.filter((t) => t.date === today && t.pid === myTeamMember.id) : [];
+  const myTasks = myTeamMember
+    ? tasks.filter((t) => t.startDate === today && t.assignedTo === myTeamMember.id)
+    : [];
 
   function handleClose() {
     if (closeModal) closeModal("userPanel");
@@ -201,7 +203,7 @@ export function UserPanel() {
             <div style={{ fontSize: ".82rem", color: "var(--gr)" }}>Sin tareas asignadas hoy.</div>
           ) : (
             myTasks.map((t) => {
-              const h = horses.find((x) => x.id === t.hid);
+              const h = horses.find((x) => x.id === t.horseId);
               const a = activityById(t.activity || "monta");
               const isDone = t.status === "done";
               return (

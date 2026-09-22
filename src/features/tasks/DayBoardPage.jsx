@@ -27,8 +27,8 @@ export function DayBoardPage() {
     filter === "all"
       ? tasksAll
       : filter === "unassigned"
-      ? tasksAll.filter((t) => !t.pid)
-      : tasksAll.filter((t) => t.pid === filter);
+      ? tasksAll.filter((t) => !t.assignedTo)
+      : tasksAll.filter((t) => t.assignedTo === filter);
   const done = filteredTasks.filter((t) => t.status === "done").length;
   const p = {
     total: filteredTasks.length,
@@ -39,7 +39,7 @@ export function DayBoardPage() {
   const prev = addD(ds, -1);
   const next = addD(ds, 1);
   const myMid = myTeamMember ? myTeamMember.id : null;
-  const unCount = tasksAll.filter((t) => !t.pid).length;
+  const unCount = tasksAll.filter((t) => !t.assignedTo).length;
 
   function setParam(key, value) {
     const params = new URLSearchParams(searchParams);
@@ -101,14 +101,14 @@ export function DayBoardPage() {
             {myMid && (
               <option value={myMid}>
                 Mis tareas{myTeamMember ? " · " + myTeamMember.name : ""} (
-                {tasksAll.filter((t) => t.pid === myMid).length})
+                {tasksAll.filter((t) => t.assignedTo === myMid).length})
               </option>
             )}
             {team
               .filter((m) => m.id !== myMid)
               .map((m) => (
                 <option key={m.id} value={m.id}>
-                  {m.name} ({tasksAll.filter((t) => t.pid === m.id).length})
+                  {m.name} ({tasksAll.filter((t) => t.assignedTo === m.id).length})
                 </option>
               ))}
             <option value="unassigned">Sin asignar ({unCount})</option>
@@ -137,8 +137,8 @@ export function DayBoardPage() {
         <EmptyState icon="📋">Sin tareas para este filtro.</EmptyState>
       ) : filter === "all" ? (
         <>
-          {team.map((m) => renderGroup(`${m.emoji || "👤"} ${m.name}`, filteredTasks.filter((t) => t.pid === m.id), m.id))}
-          {renderGroup("Sin asignar", filteredTasks.filter((t) => !t.pid), null)}
+          {team.map((m) => renderGroup(`${m.emoji || "👤"} ${m.name}`, filteredTasks.filter((t) => t.assignedTo === m.id), m.id))}
+          {renderGroup("Sin asignar", filteredTasks.filter((t) => !t.assignedTo), null)}
         </>
       ) : filter === "unassigned" ? (
         renderGroup("Sin asignar", filteredTasks, null)

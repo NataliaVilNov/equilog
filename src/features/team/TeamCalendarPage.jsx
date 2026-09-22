@@ -50,13 +50,13 @@ export function TeamCalendarPage() {
   for (let d = 1; d <= daysInMonth; d++) {
     const ds = `${m}-${String(d).padStart(2, "0")}`;
     const dayAbs = absences.filter((a) => a.date === ds && (mode === "all" || a.pid === pid));
-    const dayTasks = tasks.filter((t) => t.date === ds && (mode === "all" || t.pid === pid));
+    const dayTasks = tasks.filter((t) => t.startDate === ds && (mode === "all" || t.assignedTo === pid));
     const isToday = ds === td();
     const border = dayAbs.length ? "#FECACA" : isToday ? "var(--v)" : "var(--li)";
     const bg = dayAbs.length ? "#FFFBFB" : "#fff";
 
     const perMemberTaskCounts = team
-      .map((tm) => ({ tm, n: dayTasks.filter((t) => t.pid === tm.id).length }))
+      .map((tm) => ({ tm, n: dayTasks.filter((t) => t.assignedTo === tm.id).length }))
       .filter((x) => x.n > 0);
     const more = mode === "all" && perMemberTaskCounts.length > 3;
 

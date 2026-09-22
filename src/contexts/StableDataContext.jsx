@@ -12,7 +12,7 @@ import {
 } from "../lib/firestore.js";
 import { cleanForFirestore } from "../lib/cleanForFirestore.js";
 import { useDebouncedSave } from "../hooks/useDebouncedSave.js";
-import { writeBatch } from "firebase/firestore";
+import { writeBatch, query, where } from "firebase/firestore";
 import {
   stableCollection,
   stableDoc,
@@ -76,7 +76,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "tasks",
   "ctasks",
   "cexpenses",
   "salerts",
@@ -142,6 +141,7 @@ export function StableDataProvider({ stableId, children }) {
   const [expenses, setExpenses] = useState([]);
   const [healthDocs, setHealthDocs] = useState([]);
   const [team, setTeam] = useState([]);
+  const [tasks, setTasks] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -224,6 +224,14 @@ export function StableDataProvider({ stableId, children }) {
 
   useEffect(() => {
     if (!stableId) {
+      setTasks([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "tasks"), setTasks);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
       setTrainings([]);
       setHealth([]);
       setExpenses([]);
@@ -269,24 +277,21 @@ export function StableDataProvider({ stableId, children }) {
     [stableId]
   );
 
-  // tasks still lives in the shared blob document until its own migration phase, so its
-  // cascade stays on updateData for now; trainings/health/healthDocs/expenses are already
-  // subcollections of the horse doc itself, so deleting it just deletes them too.
+  // trainings/health/healthDocs/expenses are subcollections of the horse doc itself, so
+  // deleting it just deletes them too; tasks is a stable-level collection, so its cascade
+  // needs its own query.
   const deleteHorse = useCallback(
     async (id) => {
-      updateData((prev) => ({
-        ...prev,
-        tasks: prev.tasks.filter((t) => t.hid !== id),
-      }));
       await Promise.all([
         batchDeleteQuery(stableCollection(stableId, "horses", id, "trainings")),
         batchDeleteQuery(stableCollection(stableId, "horses", id, "health")),
         batchDeleteQuery(stableCollection(stableId, "horses", id, "expenses")),
         batchDeleteQuery(stableCollection(stableId, "horses", id, "healthDocs")),
+        batchDeleteQuery(query(stableCollection(stableId, "tasks"), where("horseId", "==", id))),
       ]);
       await deleteDocRef(stableDoc(stableId, "horses", id));
     },
-    [updateData, stableId]
+    [stableId]
   );
 
   // Sets each horse's sortOrder to its index in orderedIds — the shared order used by both
@@ -584,59 +589,60 @@ export function StableDataProvider({ stableId, children }) {
   // handler (public/legacy-app.js:3274, which also clears any salerts tied to the task).
   const addTask = useCallback(
     (task) => {
-      updateData((prev) => ({ ...prev, tasks: [...prev.tasks, task] }));
+      writeDoc(stableDoc(stableId, "tasks", task.id), { ...task, stableId });
     },
-    [updateData]
+    [stableId]
   );
 
   const updateTask = useCallback(
     (task) => {
-      updateData((prev) => ({ ...prev, tasks: prev.tasks.map((t) => (t.id === task.id ? task : t)) }));
+      writeDoc(stableDoc(stableId, "tasks", task.id), { ...task, stableId });
     },
-    [updateData]
+    [stableId]
   );
 
   const deleteTask = useCallback(
     (id) => {
       updateData((prev) => ({
         ...prev,
-        tasks: prev.tasks.filter((t) => t.id !== id),
         salerts: prev.salerts.filter((s) => s.tid !== id),
       }));
+      deleteDocRef(stableDoc(stableId, "tasks", id));
     },
-    [updateData]
+    [updateData, stableId]
   );
 
   // Ports cycleTask (public/legacy-app.js:3226-3242): cycling a task to "done" auto-creates
-  // a pending session-report alert for activities that require one (AK[].r); cycling away
-  // from "done" removes any unanswered alert it created.
+  // a pending session-report alert for activities that require one (AK[].r) and that are
+  // linked to a horse — a general chore has no horse to attach a training report to; cycling
+  // away from "done" removes any unanswered alert it created.
   const cycleTaskStatus = useCallback(
     (id) => {
+      const task = tasks.find((t) => t.id === id);
+      if (!task) return;
+      let nextStatus;
+      if (taskNeedsReturn(task.activity)) {
+        nextStatus = { pending: "inprogress", inprogress: "done", done: "pending" }[task.status] || "pending";
+      } else {
+        nextStatus = task.status === "done" ? "pending" : "done";
+      }
+      writeDoc(stableDoc(stableId, "tasks", id), { ...task, status: nextStatus, stableId });
       updateData((prev) => {
-        const task = prev.tasks.find((t) => t.id === id);
-        if (!task) return prev;
-        let nextStatus;
-        if (taskNeedsReturn(task.activity)) {
-          nextStatus = { pending: "inprogress", inprogress: "done", done: "pending" }[task.status] || "pending";
-        } else {
-          nextStatus = task.status === "done" ? "pending" : "done";
-        }
-        const tasks = prev.tasks.map((t) => (t.id === id ? { ...t, status: nextStatus } : t));
         let salerts = prev.salerts;
         if (nextStatus === "done") {
           const activity = activityById(task.activity);
-          if (activity.r && !salerts.some((s) => s.tid === id && !s.ans)) {
-            const horse = horses.find((h) => h.id === task.hid);
+          if (activity.r && task.horseId != null && !salerts.some((s) => s.tid === id && !s.ans)) {
+            const horse = horses.find((h) => h.id === task.horseId);
             salerts = [
               ...salerts,
               {
                 id: uid(),
                 tid: id,
-                hid: task.hid,
+                hid: task.horseId,
                 hn: horse ? horse.name : "",
                 act: task.activity,
-                date: task.date,
-                pid: task.pid,
+                date: task.startDate,
+                pid: task.assignedTo,
                 ans: false,
               },
             ];
@@ -644,10 +650,10 @@ export function StableDataProvider({ stableId, children }) {
         } else {
           salerts = salerts.filter((s) => !(s.tid === id && !s.ans));
         }
-        return { ...prev, tasks, salerts };
+        return { ...prev, salerts };
       });
     },
-    [updateData, horses]
+    [tasks, horses, updateData, stableId]
   );
 
   // Ports the save-session-btn handler (public/legacy-app.js:3706-3712): answering a
@@ -707,24 +713,30 @@ export function StableDataProvider({ stableId, children }) {
 
   const applyTemplate = useCallback(
     (templateId, date) => {
-      updateData((prev) => {
-        const tpl = prev.templates.find((t) => t.id === templateId);
-        if (!tpl) return prev;
-        const newTasks = tpl.tasks.map((t) => ({
-          id: uid(),
-          hid: t.hid,
-          activity: t.activity,
-          pid: t.pid,
-          dur: t.dur,
-          date,
-          status: "pending",
-          notes: "",
-          time: null,
-        }));
-        return { ...prev, tasks: [...prev.tasks, ...newTasks] };
+      const tpl = data.templates.find((t) => t.id === templateId);
+      if (!tpl) return;
+      const batch = writeBatch(db);
+      tpl.tasks.forEach((t) => {
+        const id = uid();
+        batch.set(
+          stableDoc(stableId, "tasks", id),
+          cleanForFirestore({
+            id,
+            stableId,
+            horseId: t.hid,
+            activity: t.activity,
+            assignedTo: t.pid,
+            dur: t.dur,
+            startDate: date,
+            status: "pending",
+            notes: "",
+            time: null,
+          })
+        );
       });
+      batch.commit();
     },
-    [updateData]
+    [data.templates, stableId]
   );
 
   // Ports save-member-btn (public/legacy-app.js:3677-3685) and the inline delete handler
@@ -746,13 +758,14 @@ export function StableDataProvider({ stableId, children }) {
 
   const deleteTeamMember = useCallback(
     (id) => {
-      updateData((prev) => ({
-        ...prev,
-        tasks: prev.tasks.map((t) => (t.pid === id ? { ...t, pid: null } : t)),
-      }));
+      const batch = writeBatch(db);
+      tasks
+        .filter((t) => t.assignedTo === id)
+        .forEach((t) => batch.update(stableDoc(stableId, "tasks", t.id), { assignedTo: null }));
+      batch.commit();
       deleteDocRef(stableDoc(stableId, "team", id));
     },
-    [updateData, stableId]
+    [tasks, stableId]
   );
 
   // Ports toggleAbsence (public/legacy-app.js:3314-3321): toggles a single day on/off as a
@@ -1299,21 +1312,25 @@ export function StableDataProvider({ stableId, children }) {
   const confirmSmartOrderDraft = useCallback(
     (items) => {
       let created = 0;
-      const newTasks = [];
       const batch = writeBatch(db);
       (items || []).forEach((x) => {
         if (x.kind === "task") {
-          newTasks.push({
-            id: uid(),
-            hid: x.hid,
-            activity: x.activity,
-            date: x.date,
-            time: null,
-            dur: Number(x.dur) || 30,
-            pid: x.pid || null,
-            notes: x.notes || "",
-            status: "pending",
-          });
+          const id = uid();
+          batch.set(
+            stableDoc(stableId, "tasks", id),
+            cleanForFirestore({
+              id,
+              stableId,
+              horseId: x.hid,
+              activity: x.activity,
+              startDate: x.date,
+              time: null,
+              dur: Number(x.dur) || 30,
+              assignedTo: x.pid || null,
+              notes: x.notes || "",
+              status: "pending",
+            })
+          );
           created++;
         } else if (x.kind === "health") {
           const id = uid();
@@ -1355,13 +1372,10 @@ export function StableDataProvider({ stableId, children }) {
           created++;
         }
       });
-      if (newTasks.length) {
-        updateData((prev) => ({ ...prev, tasks: [...prev.tasks, ...newTasks] }));
-      }
       batch.commit();
       return created;
     },
-    [updateData, stableId]
+    [stableId]
   );
 
   const value = useMemo(
@@ -1373,6 +1387,7 @@ export function StableDataProvider({ stableId, children }) {
       expenses,
       healthDocs,
       team,
+      tasks,
       loading,
       error,
       updateData,
@@ -1446,6 +1461,7 @@ export function StableDataProvider({ stableId, children }) {
       expenses,
       healthDocs,
       team,
+      tasks,
       loading,
       error,
       updateData,

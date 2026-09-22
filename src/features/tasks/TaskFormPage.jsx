@@ -7,9 +7,12 @@ import { useToast } from "../../hooks/useToast.js";
 import { uid } from "../../lib/id.js";
 import { td } from "../../lib/date.js";
 import { AK } from "../../lib/constants.js";
+import { RecurrencePicker } from "./RecurrencePicker.jsx";
 
-// Ports rNTask (public/legacy-app.js:3244-3277). The route-level PermissionRoute("tasks")
-// replaces requirePermissionView.
+// Ports rNTask (public/legacy-app.js:3244-3277) unified with rNCT
+// (public/legacy-app.js:2286-2311) — a task is now either horse-linked or a general chore,
+// and optionally recurring, rather than two separate forms/collections. The route-level
+// PermissionRoute("tasks") replaces requirePermissionView.
 export function TaskFormPage() {
   const { tid } = useParams();
   const [searchParams] = useSearchParams();
@@ -22,7 +25,7 @@ export function TaskFormPage() {
   const editing = !!tid;
   const task = editing ? tasks.find((t) => t.id === tid) : null;
 
-  const [hid, setHid] = useState(task ? task.horseId : "");
+  const [hid, setHid] = useState(task ? task.horseId || "" : "");
   const [activity, setActivity] = useState(task ? task.activity : "monta");
   const [date, setDate] = useState(task ? task.startDate : searchParams.get("d") || td());
   const [time, setTime] = useState(task && task.time ? task.time : "");
@@ -32,6 +35,7 @@ export function TaskFormPage() {
     return (task && task.assignedTo) || (myTeamMember ? myTeamMember.id : "") || "";
   });
   const [notes, setNotes] = useState(task ? task.notes || "" : "");
+  const [recurrenceRule, setRecurrenceRule] = useState(task ? task.recurrenceRule || null : null);
 
   if (editing && !task) {
     return (
@@ -45,22 +49,28 @@ export function TaskFormPage() {
     navigate(`/day?d=${date}`);
   }
 
+  function handleHorseChange(nextHid) {
+    setHid(nextHid);
+    setActivity(nextHid ? AK[0].id : "");
+  }
+
   function handleSubmit() {
-    if (!hid) {
-      showToast("Selecciona un caballo");
+    if (!hid && !activity.trim()) {
+      showToast("Escribe qué tarea es");
       return;
     }
     const id = editing ? tid : uid();
     const record = {
       id,
       createdBy: editing ? task.createdBy || null : (user && user.uid) || null,
-      horseId: hid,
-      activity,
+      horseId: hid || null,
+      activity: hid ? activity : activity.trim(),
       startDate: date,
       time: time || null,
       dur: Number(dur) || 30,
       assignedTo: pid || null,
       notes: notes.trim(),
+      recurrenceRule,
       status: editing ? task.status || "pending" : "pending",
     };
     if (editing) updateTask(record);
@@ -84,9 +94,9 @@ export function TaskFormPage() {
         <h1>{editing ? "Editar" : "Nueva"} tarea</h1>
       </div>
       <div className="f">
-        <label>Caballo *</label>
-        <select value={hid} onChange={(e) => setHid(e.target.value)}>
-          <option value="">Caballo...</option>
+        <label>Caballo</label>
+        <select value={hid} onChange={(e) => handleHorseChange(e.target.value)}>
+          <option value="">Ninguno · tarea general</option>
           {horses.map((h) => (
             <option key={h.id} value={h.id}>
               {h.name}
@@ -94,21 +104,32 @@ export function TaskFormPage() {
           ))}
         </select>
       </div>
-      <div className="f">
-        <label>Actividad</label>
-        <div className="og og3">
-          {AK.map((a) => (
-            <div
-              key={a.id}
-              className={"oo" + (activity === a.id ? " active" : "")}
-              onClick={() => setActivity(a.id)}
-            >
-              <span className="ic">{a.i}</span>
-              {a.l}
-            </div>
-          ))}
+      {hid ? (
+        <div className="f">
+          <label>Actividad</label>
+          <div className="og og3">
+            {AK.map((a) => (
+              <div
+                key={a.id}
+                className={"oo" + (activity === a.id ? " active" : "")}
+                onClick={() => setActivity(a.id)}
+              >
+                <span className="ic">{a.i}</span>
+                {a.l}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="f">
+          <label>Tarea *</label>
+          <input
+            value={activity}
+            onChange={(e) => setActivity(e.target.value)}
+            placeholder="Limpiar telarañas, revisar vallado..."
+          />
+        </div>
+      )}
       <div className="r2">
         <div className="f">
           <label>Fecha</label>
@@ -158,6 +179,7 @@ export function TaskFormPage() {
         <label>Notas</label>
         <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Detalles opcionales..." />
       </div>
+      <RecurrencePicker value={recurrenceRule} onChange={setRecurrenceRule} startDate={date} />
       <div style={{ display: "grid", gap: ".42rem" }}>
         <button type="button" className="btn bts btbl" onClick={handleSubmit}>
           {editing ? "Guardar" : "Añadir tarea"}

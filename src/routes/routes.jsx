@@ -24,7 +24,6 @@ import { TeamCalendarPage } from "../features/team/TeamCalendarPage.jsx";
 import { MemberDayPage } from "../features/team/MemberDayPage.jsx";
 import { TeamReportPage } from "../features/team/TeamReportPage.jsx";
 import { StableWidePage } from "../features/stable-wide/StableWidePage.jsx";
-import { StableTaskFormPage } from "../features/stable-wide/StableTaskFormPage.jsx";
 import { StableExpenseFormPage } from "../features/stable-wide/StableExpenseFormPage.jsx";
 import { BoardsPage } from "../features/boards/BoardsPage.jsx";
 import { BoardCellPage } from "../features/boards/weekly/BoardCellPage.jsx";
@@ -92,8 +91,6 @@ export function AppRoutes() {
         </Route>
         <Route element={<PermissionRoute requires="stable" />}>
           <Route path="/cuadra" element={<StableWidePage />} />
-          <Route path="/cuadra/tasks/new" element={<StableTaskFormPage />} />
-          <Route path="/cuadra/tasks/:eid/edit" element={<StableTaskFormPage />} />
           <Route path="/cuadra/expenses/new" element={<StableExpenseFormPage />} />
           <Route path="/cuadra/expenses/:eid/edit" element={<StableExpenseFormPage />} />
         </Route>

@@ -12,13 +12,22 @@ import {
 } from "../lib/firestore.js";
 import { cleanForFirestore } from "../lib/cleanForFirestore.js";
 import { useDebouncedSave } from "../hooks/useDebouncedSave.js";
+import { writeBatch } from "firebase/firestore";
+import {
+  stableCollection,
+  stableDoc,
+  writeDoc,
+  patchDoc,
+  deleteDocRef,
+  subscribeToCollection,
+} from "../lib/firestoreCollections.js";
 import {
   ref as storageRef,
   uploadBytesResumable,
   getDownloadURL,
   deleteObject,
 } from "firebase/storage";
-import { storage } from "../lib/firebaseClient.js";
+import { storage, db } from "../lib/firebaseClient.js";
 import { catFromHealthType, activityById } from "../lib/constants.js";
 import { taskNeedsReturn } from "../features/tasks/taskHelpers.js";
 import { boardDefaults } from "../features/boards/boardDefaults.js";
@@ -65,7 +74,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "horses",
   "trainings",
   "health",
   "healthDocs",
@@ -131,6 +139,7 @@ export function StableDataProvider({ stableId, children }) {
   const [data, setData] = useState(emptyData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [horses, setHorses] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -195,6 +204,14 @@ export function StableDataProvider({ stableId, children }) {
     };
   }, [stableId]);
 
+  useEffect(() => {
+    if (!stableId) {
+      setHorses([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "horses"), setHorses);
+  }, [stableId]);
+
   // Generic mutation primitive: feature-specific mutators (addHorse, cycleTaskStatus, etc.)
   // are built on top of this as each feature needs them, rather than pre-built here.
   const updateData = useCallback(
@@ -213,34 +230,33 @@ export function StableDataProvider({ stableId, children }) {
   // (public/legacy-app.js:3622-3646) and delHorse (public/legacy-app.js:1644-1653).
   const addHorse = useCallback(
     (horse) => {
-      updateData((prev) => ({ ...prev, horses: [...prev.horses, horse] }));
+      writeDoc(stableDoc(stableId, "horses", horse.id), horse);
     },
-    [updateData]
+    [stableId]
   );
 
   const updateHorse = useCallback(
     (horse) => {
-      updateData((prev) => ({
-        ...prev,
-        horses: prev.horses.map((h) => (h.id === horse.id ? horse : h)),
-      }));
+      writeDoc(stableDoc(stableId, "horses", horse.id), horse);
     },
-    [updateData]
+    [stableId]
   );
 
+  // Trainings/health/healthDocs/expenses/tasks still live in the shared blob document until
+  // their own migration phase, so their cascade stays on updateData for now.
   const deleteHorse = useCallback(
-    (id) => {
+    async (id) => {
       updateData((prev) => ({
         ...prev,
-        horses: prev.horses.filter((h) => h.id !== id),
         trainings: prev.trainings.filter((t) => t.hid !== id),
         health: prev.health.filter((r) => r.hid !== id),
         healthDocs: (prev.healthDocs || []).filter((r) => r.hid !== id),
         expenses: prev.expenses.filter((e) => e.hid !== id),
         tasks: prev.tasks.filter((t) => t.hid !== id),
       }));
+      await deleteDocRef(stableDoc(stableId, "horses", id));
     },
-    [updateData]
+    [updateData, stableId]
   );
 
   // Sets each horse's sortOrder to its index in orderedIds — the shared order used by both
@@ -249,15 +265,16 @@ export function StableDataProvider({ stableId, children }) {
   // sortOrder (defensive — shouldn't happen, the caller always passes every horse id).
   const reorderHorses = useCallback(
     (orderedIds) => {
-      updateData((prev) => ({
-        ...prev,
-        horses: prev.horses.map((h) => {
-          const idx = orderedIds.indexOf(h.id);
-          return idx === -1 ? h : { ...h, sortOrder: idx };
-        }),
-      }));
+      const batch = writeBatch(db);
+      horses.forEach((h) => {
+        const idx = orderedIds.indexOf(h.id);
+        if (idx !== -1 && idx !== h.sortOrder) {
+          batch.update(stableDoc(stableId, "horses", h.id), { sortOrder: idx });
+        }
+      });
+      batch.commit();
     },
-    [updateData]
+    [horses, stableId]
   );
 
   // Ports the training portion of save-training-btn (public/legacy-app.js:3648-3651) and
@@ -364,7 +381,7 @@ export function StableDataProvider({ stableId, children }) {
   // Ports addHealthDocLink (public/legacy-app.js:1116-1130).
   const addHealthDocLink = useCallback(
     ({ hid, category, date, notes, title, url, userId }) => {
-      const horse = data.horses.find((x) => x.id === hid);
+      const horse = horses.find((x) => x.id === hid);
       const doc = {
         id: uid(),
         hid,
@@ -381,7 +398,7 @@ export function StableDataProvider({ stableId, children }) {
       };
       updateData((prev) => ({ ...prev, healthDocs: [...(prev.healthDocs || []), doc] }));
     },
-    [updateData, data.horses]
+    [updateData, horses]
   );
 
   // Ports uploadHealthDocs (public/legacy-app.js:1132-1176): uploads every file to Firebase
@@ -389,7 +406,7 @@ export function StableDataProvider({ stableId, children }) {
   // legacy's single loop + one save()), reporting progress via onProgress(label, pct).
   const uploadHealthDocs = useCallback(
     async ({ hid, files, category, date, notes, userId, onProgress }) => {
-      const horse = data.horses.find((x) => x.id === hid);
+      const horse = horses.find((x) => x.id === hid);
       const added = [];
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -425,7 +442,7 @@ export function StableDataProvider({ stableId, children }) {
       updateData((prev) => ({ ...prev, healthDocs: [...(prev.healthDocs || []), ...added] }));
       return added;
     },
-    [updateData, data.horses, stableId]
+    [updateData, horses, stableId]
   );
 
   // Ports deleteHealthDoc (public/legacy-app.js:1177-1188).
@@ -498,17 +515,12 @@ export function StableDataProvider({ stableId, children }) {
   // everything else.
   const updateHorseSale = useCallback(
     (hid, updater) => {
-      updateData((prev) => ({
-        ...prev,
-        horses: prev.horses.map((h) => {
-          if (h.id !== hid) return h;
-          const currentSale = h.sale || { precio: 0, owners: [{ nombre: "", pct: 100 }] };
-          const nextSale = typeof updater === "function" ? updater(currentSale) : { ...currentSale, ...updater };
-          return { ...h, sale: nextSale };
-        }),
-      }));
+      const h = horses.find((x) => x.id === hid);
+      const currentSale = (h && h.sale) || { precio: 0, owners: [{ nombre: "", pct: 100 }] };
+      const nextSale = typeof updater === "function" ? updater(currentSale) : { ...currentSale, ...updater };
+      patchDoc(stableDoc(stableId, "horses", hid), { sale: nextSale });
     },
-    [updateData]
+    [horses, stableId]
   );
 
   // Ports the task-save handler (public/legacy-app.js:3669-3676) and its inline delete
@@ -557,7 +569,7 @@ export function StableDataProvider({ stableId, children }) {
         if (nextStatus === "done") {
           const activity = activityById(task.activity);
           if (activity.r && !salerts.some((s) => s.tid === id && !s.ans)) {
-            const horse = prev.horses.find((h) => h.id === task.hid);
+            const horse = horses.find((h) => h.id === task.hid);
             salerts = [
               ...salerts,
               {
@@ -578,7 +590,7 @@ export function StableDataProvider({ stableId, children }) {
         return { ...prev, tasks, salerts };
       });
     },
-    [updateData]
+    [updateData, horses]
   );
 
   // Ports the save-session-btn handler (public/legacy-app.js:3706-3712): answering a
@@ -1292,6 +1304,7 @@ export function StableDataProvider({ stableId, children }) {
   const value = useMemo(
     () => ({
       ...data,
+      horses,
       loading,
       error,
       updateData,
@@ -1359,6 +1372,7 @@ export function StableDataProvider({ stableId, children }) {
     }),
     [
       data,
+      horses,
       loading,
       error,
       updateData,

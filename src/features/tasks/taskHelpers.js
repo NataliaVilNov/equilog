@@ -29,3 +29,10 @@ export function dayProgress(tasks, date) {
   const dn = t.filter((x) => x.status === "done").length;
   return { total: t.length, done: dn, pct: Math.round((dn / t.length) * 100) };
 }
+
+// Ports visibleTasksForUser (public/legacy-app.js:690-694) as an explicit-param pure
+// function, same treatment as alertSelectors.js's visibleAlertsForUser.
+export function visibleTasksForUser(tasks, isAdmin, myTeamMemberId) {
+  if (isAdmin) return tasks;
+  return (tasks || []).filter((t) => myTeamMemberId && t.pid === myTeamMemberId);
+}

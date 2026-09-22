@@ -76,7 +76,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "ctasks",
   "cexpenses",
   "templates",
   "absences",
@@ -791,39 +790,6 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
-  // Ports save-ct-btn (public/legacy-app.js:3688-3695) and doneCT
-  // (public/legacy-app.js:2281-2284) — stable-wide recurring tasks ("Cuadra").
-  const addStableTask = useCallback(
-    (task) => {
-      updateData((prev) => ({ ...prev, ctasks: [...prev.ctasks, task] }));
-    },
-    [updateData]
-  );
-
-  const updateStableTask = useCallback(
-    (task) => {
-      updateData((prev) => ({ ...prev, ctasks: prev.ctasks.map((t) => (t.id === task.id ? task : t)) }));
-    },
-    [updateData]
-  );
-
-  const deleteStableTask = useCallback(
-    (id) => {
-      updateData((prev) => ({ ...prev, ctasks: prev.ctasks.filter((t) => t.id !== id) }));
-    },
-    [updateData]
-  );
-
-  const doneStableTask = useCallback(
-    (id) => {
-      updateData((prev) => ({
-        ...prev,
-        ctasks: prev.ctasks.map((t) => (t.id === id ? { ...t, ld: td() } : t)),
-      }));
-    },
-    [updateData]
-  );
-
   // Ports save-ce-btn (public/legacy-app.js:3697-3704) — stable-wide expenses.
   const addStableExpense = useCallback(
     (expense) => {
@@ -1427,10 +1393,6 @@ export function StableDataProvider({ stableId, children }) {
       updateTeamMember,
       deleteTeamMember,
       toggleAbsence,
-      addStableTask,
-      updateStableTask,
-      deleteStableTask,
-      doneStableTask,
       addStableExpense,
       updateStableExpense,
       deleteStableExpense,
@@ -1502,10 +1464,6 @@ export function StableDataProvider({ stableId, children }) {
       updateTeamMember,
       deleteTeamMember,
       toggleAbsence,
-      addStableTask,
-      updateStableTask,
-      deleteStableTask,
-      doneStableTask,
       addStableExpense,
       updateStableExpense,
       deleteStableExpense,

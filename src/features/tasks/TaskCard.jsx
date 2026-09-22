@@ -34,7 +34,7 @@ export function TaskCard({ task }) {
       </button>
       <div className="tkb">
         <div className="tkt">
-          {a.i} {a.l} — {horse ? horse.name : "?"}
+          {a.i} {a.l} — {horse ? horse.name : "Tarea general"}
         </div>
         <div className="tkm">
           {task.dur ? task.dur + "min" : ""}

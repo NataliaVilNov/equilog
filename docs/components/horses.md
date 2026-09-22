@@ -54,6 +54,14 @@ src/components/EmptyState.jsx, src/components/Tabs.jsx, src/components/StatGrid.
 - `StableDataContext` gained (across Phase 2 and Phase 3): `addHorse`/`updateHorse`
   (full-record replace)/`deleteHorse` (cascades to trainings/health/healthDocs/expenses/tasks
   for that horse id), and `updateHorseSale(hid, updater)` for the sale sub-object.
+- `reorderHorses(orderedIds)` (added for the weekly-board rework, not a legacy port — legacy
+  never had horse ordering) sets each horse's `sortOrder` to its index in `orderedIds`.
+  `horses/horseOrder.js`'s `sortHorsesByOrder` applies it — used by both `HorseListPage` and
+  the weekly board's row order, so the order is shared between the two. `HorseListPage`'s
+  "Reordenar" toggle shows plain ↑/↓ buttons (no drag-and-drop, matching how the rest of this
+  app avoids introducing new drag interactions); horses without a `sortOrder` yet tie at the
+  end in their existing order, so every stable's current order is preserved until someone
+  explicitly reorders.
 - `HorseFormPage` holds all form fields in local component state until submit, matching
   legacy's "nothing saved until you press the save button" behavior.
 - `HorsetelexImportButton`/`horsetelexParser.js` are pure — they return `{updates, success}`

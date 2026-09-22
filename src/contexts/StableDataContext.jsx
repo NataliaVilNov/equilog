@@ -774,6 +774,25 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports setBoardPeriodic (public/legacy-app.js:1311-1317).
+  const setBoardPeriodic = useCallback(
+    (hid, columnId, date) => {
+      updateData((prev) => {
+        const periodicBoardDates = prev.periodicBoardDates || [];
+        const i = periodicBoardDates.findIndex((r) => r.hid === hid && r.columnId === columnId);
+        let next;
+        if (date) {
+          const rec = { hid, columnId, date };
+          next = i >= 0 ? periodicBoardDates.map((r, idx) => (idx === i ? rec : r)) : [...periodicBoardDates, rec];
+        } else {
+          next = i >= 0 ? periodicBoardDates.filter((_, idx) => idx !== i) : periodicBoardDates;
+        }
+        return { ...prev, periodicBoardDates: next };
+      });
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -818,6 +837,7 @@ export function StableDataProvider({ stableId, children }) {
       deleteStableExpense,
       setWeeklyPlanActivities,
       toggleWeeklyPlanActivity,
+      setBoardPeriodic,
     }),
     [
       data,
@@ -862,6 +882,7 @@ export function StableDataProvider({ stableId, children }) {
       deleteStableExpense,
       setWeeklyPlanActivities,
       toggleWeeklyPlanActivity,
+      setBoardPeriodic,
     ]
   );
 

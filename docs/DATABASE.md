@@ -5,125 +5,155 @@ Firestore for data storage, and Firebase Storage for file uploads. There is no S
 no ORM, and no migrations folder — this document describes the Firestore/NoSQL data model as
 it exists today, plus the app's read/write patterns.
 
-Connection setup lives in `src/firebase.js`. It initializes the Firebase app, exposes
-`auth`/`db`/`storage` plus every Firestore/Storage function the app uses on `window._FB` (a
-bridge so the non-module `public/legacy-app.js` can call them), and drives the app's boot
-sequence via an `onAuthStateChanged` listener.
+This reflects the current React implementation (`src/contexts/`, `src/lib/`) — the
+pre-migration vanilla-JS app (`public/legacy-app.js`, `src/firebase.js`, the
+`window._FB`/`window._fbLoadUserProfile` bridge this doc originally described) was deleted in
+the Phase 8c cutover. See `docs/REFACTOR_PLAN.md` for that history if you need it.
+
+Connection setup lives in `src/lib/firebaseClient.js` — a standalone Firebase app instance
+initialized from `VITE_FIREBASE_*` env vars (`.env.example`), exporting `auth`/`db`/`storage`
+directly as module exports (no global `window` bridge; nothing else needs one now that the
+legacy script is gone).
 
 ## 1. Firestore collections
 
 ### `users/{uid}`
-One document per authenticated user. Holds profile data: display name, photo/avatar, and
-`lastStable` (the stable id to auto-load on next login). Loaded via
-`window._fbLoadUserProfile()`.
+One document per authenticated user, keyed by their Firebase Auth uid. Written by
+`register()`/`updateUserProfile()` (`src/features/auth/authActions.js`): `name`, `email`,
+`phone`, `bio`, `photo` (a small client-resized data URL — see §4), `role`, `created`/
+`updated` timestamps. `lastStable` (the stable id to auto-load on next login) is written
+separately by `StableSelectionContext`'s `switchStable`/`exitActiveStable`. Loaded once per
+auth-state change by `AuthContext`'s `loadProfile()`, which falls back to
+`{name, email, stables: []}` if the doc doesn't exist yet (e.g. mid-registration).
 
 ### `stables/{stableId}`
-One document per stable ("cuadra"). Holds stable metadata: name, description, invite code,
-and team references. This is what `renderStableList()` reads to show a user's stables and
-what `joinByCode()` looks up when a user enters an invite code.
+One document per stable ("cuadra"). Metadata only, written by `StableSelectionContext`
+(`createStable`/`joinByCode`/`leaveStable`/etc.): `name`, `description`, `ownerId`,
+`memberIds: string[]`, `members` (a map keyed by uid → `{name, email, role, joined}`),
+`inviteCode`, `created`. This is what the `/stables` list page queries
+(`where("memberIds", "array-contains", uid)`) and what `joinByCode()` updates when someone
+joins.
+
+### `inviteCodes/{code}`
+Top-level, short random-code-keyed docs, written by `createStable` (a general stable invite)
+and `createMemberInvite` (a per-team-member invite): `{stableId, name, teamMemberId?,
+teamMemberName?, createdBy?, created}`. `joinByCode()` reads one of these to resolve which
+stable — and optionally which team-member profile to link — an entered code points to.
 
 ### `stables/{stableId}/data/main`
 **The entire operational dataset for a stable lives in this single document.** Everything a
 user does inside a stable — horses, training logs, health records, expenses, tasks, team
-roster, absences, board assignments — is stored as arrays inside this one JSON blob.
+roster, absences, board plans — is stored as arrays inside this one JSON blob, read/written
+as a whole by `StableDataContext` (`src/contexts/StableDataContext.jsx`).
 
-The shape is defined by `load()` (`public/legacy-app.js` ~line 986):
+The shape is defined by `emptyData()`/`withDefaults()` in that file — one array per key in
+`COLLECTION_KEYS`, plus one object field (`boardConfig`):
 
-```js
-function load(){
-  return {
-    horses:[],       // per-horse records: id, name, breed, dob, owners[] (with % splits),
-                      // pedigree (sire/dam/gsire/gdam/mgsire/mgdam), photo (base64 data URL),
-                      // sale info
-    trainings:[],     // training sessions, keyed by horse id: date, duration, work type,
-                      // rating, notes
-    health:[],        // health records, keyed by horse id: type, date, next-due date (nxt),
-                      // amount, payee, payment status
-    healthDocs:[],     // uploaded document/photo references (Firebase Storage refs), linked
-                      // to a health record
-    expenses:[],       // per-horse expenses with owner-split settlement fields
-    team:[],           // team members: name, linked auth uid (if linked), permissions object
-    tasks:[],          // per-horse daily tasks
-    ctasks:[],         // stable-wide ("cuadra") tasks, not tied to a horse
-    cexpenses:[],       // stable-wide expenses
-    salerts:[],         // "session alerts" — pending items needing a response
-    templates:[],       // reusable task templates
-    absences:[]          // team member absence-calendar entries
-  };
-}
-```
+| Field | Shape | Holds |
+|---|---|---|
+| `horses` | array | id, name, breed, dob, `owners[]` (name + % split), pedigree (sire/dam/grandparents), `photo` (inline base64), sale info, `sortOrder` |
+| `trainings` | array | training sessions, keyed by horse id: date, duration, work type, rating, notes |
+| `health` | array | health records, keyed by horse id: type, date, next-due date (`nxt`), amount, payee, payment status |
+| `healthDocs` | array | uploaded document/photo references (Firebase Storage path + URL — see §4), linked to a health record |
+| `expenses` | array | per-horse expenses, with owner-split settlement fields |
+| `team` | array | team members: name, linked auth uid (if linked), per-member permissions object |
+| `tasks` | array | per-horse daily tasks, assignable to a team member |
+| `ctasks` | array | stable-wide ("cuadra") recurring tasks, not tied to a horse |
+| `cexpenses` | array | stable-wide expenses |
+| `salerts` | array | pending "session alerts" needing a training-report response |
+| `templates` | array | reusable task templates |
+| `absences` | array | team member absence-calendar entries |
+| `expenseSettlements` | array | recorded owner-to-owner settlement transfers |
+| `weeklyPlans` | array | the Boards weekly grid: one row per horse+day — `activities[]`, `completed[]`, `note`, `vetHealthId` (links to a `health` record) |
+| `periodicBoardDates` | array | Boards' due-date tracker columns (herraje/desparasitación/etc.), one row per horse+column |
+| `boardAssignments` | array | Boards' walker/paddock resource-slot bookings |
+| `boardConfig` | object | the only non-array field: `{activities[], periodicColumns[], walkers[], paddocks[], paddockSlots[]}` — configurable Boards settings |
 
-Board configuration and weekly/resource-board assignments (the "Boards" feature) are also
-persisted inside this same document, but are not part of the static `load()` shape — they're
-lazily defaulted onto `D` at render time by `ensureBoardData()` rather than initialized
-up front.
+Full field-level detail for any of these lives in that feature's own
+`docs/components/*.md` — this table is the map, not the territory.
 
 ### No other Firestore collections
-There is no separate collection per entity type (no `horses` top-level collection, no
-`trainings` collection, etc.) — everything except `users` and `stables` metadata is nested
-inside the one `data/main` document per stable.
+There is no separate collection per entity type (no top-level `horses` collection, no
+`trainings` collection, etc.) — everything except `users`, `stables` metadata, and
+`inviteCodes` is nested inside the one `data/main` document per stable.
 
 ## 2. Read path
 
-- `_fbLoadData(stableId)` (~line 429): a one-time `getDoc()` on `stables/{stableId}/data/main`,
-  used to get first paint without waiting on the realtime listener.
-- `_fbSetupListener(stableId)` (~line 445): attaches a Firestore `onSnapshot()` listener on
-  the same document. On every remote change, it replaces the global `D` object wholesale and
-  triggers a re-render — this is how multiple team members editing the same stable see each
-  other's changes live. Notably, it checks `snap.metadata.hasPendingWrites === false` before
-  reacting, which prevents the app from redundantly re-rendering from its own optimistic local
-  write before the round-trip to the server completes.
-- On listener/network failure, or before Firebase is ready, the app falls back to reading the
-  same shape from `localStorage`.
+`StableDataContext`'s effect (keyed on the active `stableId`) does two things on every
+stable switch:
+
+1. **`getStableDoc(stableId)`** (`src/lib/firestore.js`) — a one-time `getDoc()`, so first
+   paint doesn't wait on the realtime listener.
+2. **`subscribeToStableDoc(stableId, onChange)`** — an `onSnapshot()` listener on the same
+   document. It only calls `onChange` when `snap.metadata.hasPendingWrites === false` —
+   this is what stops the app from redundantly re-rendering off its own optimistic local
+   write before the round-trip to the server completes, and is how multiple team members
+   editing the same stable see each other's changes live.
+
+Both paths run their result through `withDefaults()`, which back-fills any collection or
+field an older stable's stored document predates (e.g. `weeklyPlans[].note` defaulting to
+`""` for rows written before that field existed, or the `vet` board activity getting
+appended to a stable's `boardConfig.activities` if it's missing). This is how schema changes
+roll out without a migration step — new fields just get a sensible default the first time
+an old document is read.
 
 ## 3. Write path
 
-- `save()` (~line 1007): debounces 250ms (so rapid successive edits, e.g. typing in a form,
-  don't trigger a write per keystroke), then calls `cleanForFirestore(D)` and does a single
-  `setDoc(doc(db, 'stables', stableId, 'data', 'main'), cleanD)`.
-- **This is a full-document overwrite on every save** — there is no partial/field-level
-  update. Toggling the status of one task rewrites the entire stable dataset (every horse,
-  every training record, every health record, everything), because `D` is one JS object saved
-  as one document.
-- `cleanForFirestore()` recursively strips `undefined` values (Firestore rejects `undefined`
-  in writes; the app converts them to `null` or omits them) before every write.
-- If Firebase isn't ready/available, `save()` falls back to writing the same JSON shape into
-  `localStorage` under a fixed key, so the app remains usable offline/degraded — but changes
-  made in this mode do not sync to other devices/team members until Firebase becomes
-  available again and a subsequent save succeeds.
+Every feature-specific mutator (`addHorse`, `cycleTaskStatus`, `toggleWeeklyPlanCompleted`,
+etc.) is built on one shared primitive in `StableDataContext`: `updateData(updater)`.
+
+1. Applies `updater` to local React state immediately (`setData`) — this is why the UI
+   feels instant/optimistic; nothing waits on the network round-trip.
+2. Feeds the new full data object into `useDebouncedSave` (`src/hooks/useDebouncedSave.js`)
+   — a 250ms debounce, so rapid successive edits (typing in a form, a run of board-toolbar
+   taps) collapse into a single write instead of one per change.
+3. That calls `cleanForFirestore()` (`src/lib/cleanForFirestore.js` — recursively replaces
+   `undefined` with `null`, since Firestore rejects `undefined` in writes) and then
+   `setStableDoc()` — a plain `setDoc()`. **This is a full-document overwrite on every
+   save** — there is no partial/field-level update. Toggling one task's status rewrites the
+   entire stable dataset, because the whole thing is one JS object saved as one document.
+4. If the write fails (offline, permissions, etc.), it falls back to writing the same JSON
+   shape into `localStorage` under a fixed key (`equilog_v4`) — write-only, never read back;
+   a safety net against losing the in-progress edit, not an offline cache.
 
 ## 4. Firebase Storage usage
 
-Health-record document/photo attachments (`healthDocs`) are uploaded to Firebase Storage via
-`uploadFileWithProgress()`/`uploadHealthDocs()`; only a reference/URL is stored in the
-Firestore document, not the file content itself. Profile photos are resized client-side
-(`resizeProfileImageFile()`) before being stored — note that **horse photos**, by contrast,
-are stored as base64 data URLs directly inside the `horses` array in the Firestore document
-(not Storage), which contributes directly to document-size growth (see §5).
+Only health-record document/photo attachments (`healthDocs`) go to actual Storage, via
+`uploadHealthDocs()`/`deleteHealthDoc()` in `StableDataContext.jsx`. Files land at
+`stables/{stableId}/horses/{hid}/health_docs/{timestamp}_{id}_{safeName}`; only the
+resulting path + download URL are stored in the Firestore document, not the file content.
+
+Everything else is inline in Firestore, not Storage:
+- **Horse and team-member photos** are stored as base64 data URLs directly inside the
+  `horses`/`team` arrays, with no client-side resizing — this contributes directly to
+  document-size growth (see §5).
+- **Profile photos** (`users/{uid}.photo`) are the one exception: resized/recompressed
+  client-side (`src/lib/imageResize.js`) before being written, specifically to keep the
+  small per-user profile document from ballooning.
 
 ## 5. Known limitations of this model
 
-These are documented here as context, not fixed in this pass — see `BACKLOG.md` for
+These are documented here as context, not fixed in this pass — see `docs/BACKLOG.md` for
 prioritization:
 
-- **Firestore's 1 MiB per-document limit** applies to the entire stable dataset. A stable with
-  enough horses, history, and inline base64 horse photos will eventually hit this ceiling.
+- **Firestore's 1 MiB per-document limit** applies to the entire stable dataset. A stable
+  with enough horses, history, and inline base64 photos will eventually hit this ceiling.
 - **Whole-document last-write-wins**: if two team members edit different things
   simultaneously (e.g. one edits a horse's notes while another marks a task done), both
   writes race to overwrite the *entire* document — the loser's change is silently dropped,
   not merged. There is no field-level conflict resolution.
 - **No per-collection queries or indexes**: because everything is one document, Firestore's
-  querying/indexing features (used to filter/paginate large collections server-side) are
-  unavailable — all filtering happens client-side in JS after loading the entire blob.
+  querying/indexing features (server-side filtering/pagination) are unavailable — all
+  filtering happens client-side in JS after loading the entire blob.
 - **No per-collection Firestore Security Rules**: access control is enforced entirely in the
-  client's `canPerm()` permission logic (see FEATURES.md §3), not by Firestore rules scoped to
-  sub-resources, since there are no sub-resources to scope rules to.
+  client's `usePermissions().can()` logic, not by Firestore rules scoped to sub-resources,
+  since there are no sub-resources to scope rules to.
 - **Write amplification**: every single mutation, however small, re-serializes and re-sends
   the entire dataset.
 
-The recommended long-term direction (see `REFACTOR_PLAN.md`) is splitting this into
+The recommended long-term direction (tracked in `docs/BACKLOG.md` #3) is splitting this into
 per-collection subcollections — e.g. `stables/{id}/horses/{hid}`,
 `stables/{id}/horses/{hid}/trainings/{tid}`, `stables/{id}/tasks/{taskId}`, etc. — with
-per-document `onSnapshot` listeners aggregated client-side, and storing horse photos in
-Storage rather than inline base64. This is a materially larger, separate effort from the
-React component migration and should not be bundled into it.
+per-document `onSnapshot` listeners aggregated client-side, and moving horse/team photos into
+Storage rather than inline base64. This is a materially larger, separate effort from any of
+the feature work done so far and should not be bundled into it.

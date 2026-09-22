@@ -1,4 +1,5 @@
 import { useContext, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../../contexts/AuthContext.jsx";
 import { StableSelectionContext } from "../../contexts/StableSelectionContext.jsx";
 import { logout } from "../auth/authActions.js";
@@ -9,13 +10,23 @@ import { CreateStableModal } from "./CreateStableModal.jsx";
 // (index.html:43-65, public/legacy-app.js:334-365).
 export function StableListScreen() {
   const { user, profile } = useContext(AuthContext) || {};
-  const { stables, loading, error, refreshStables, switchStable } =
+  const { stables, activeStableId, loading, error, refreshStables, switchStable } =
     useContext(StableSelectionContext) || {};
   const [showCreate, setShowCreate] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (refreshStables) refreshStables();
   }, [refreshStables]);
+
+  // Legacy's render() reacted globally the moment _fbSwitchStable set an active stable,
+  // however that happened (picking one, creating one, joining by code). This is the React
+  // equivalent: leave for /home as soon as activeStableId becomes non-null, regardless of
+  // which action in this screen (or a child modal) caused it, rather than wiring a
+  // navigate() call into every individual handler.
+  useEffect(() => {
+    if (activeStableId) navigate("/home");
+  }, [activeStableId, navigate]);
 
   const userName =
     (profile && profile.name) || (user && user.displayName) || (user && user.email) || "";

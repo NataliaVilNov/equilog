@@ -3,11 +3,13 @@ import { td } from "../../lib/date.js";
 import { boardStartOfWeek } from "./boardHelpers.js";
 import { Tabs } from "../../components/Tabs.jsx";
 import { WeeklyBoardGrid } from "./weekly/WeeklyBoardGrid.jsx";
+import { MonthBoardGrid } from "./month/MonthBoardGrid.jsx";
 import { ResourceBoardPage } from "./resource/ResourceBoardPage.jsx";
 import { BoardConfigPage } from "./config/BoardConfigPage.jsx";
 
 const TABS = [
   { key: "weekly", label: "Principal" },
+  { key: "month", label: "Mes" },
   { key: "walker", label: "Caminador" },
   { key: "paddock", label: "Paddocks" },
   { key: "config", label: "Configurar" },
@@ -41,6 +43,7 @@ export function BoardsPage() {
       </div>
       <Tabs tabs={TABS} active={tab} onChange={switchTab} />
       {tab === "weekly" && <WeeklyBoardGrid week={week} />}
+      {tab === "month" && <MonthBoardGrid />}
       {tab === "walker" && <ResourceBoardPage type="walker" date={date} />}
       {tab === "paddock" && <ResourceBoardPage type="paddock" date={date} />}
       {tab === "config" && <BoardConfigPage />}

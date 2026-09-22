@@ -3,6 +3,7 @@ import {
   collection,
   query,
   where,
+  or,
   getDocs,
   doc,
   getDoc,
@@ -155,27 +156,19 @@ export function StableSelectionProvider({ children }) {
     [user, profile, switchStable]
   );
 
-  // Ports linkUserToTeamMember (public/legacy-app.js:595-617).
+  // Ports linkUserToTeamMember (public/legacy-app.js:595-617): now a single targeted field
+  // update on the team member's own doc instead of a read-modify-write of the whole stable.
   const linkUserToTeamMember = useCallback(
     async (stableId, teamMemberId, linkedName) => {
       if (!user || !stableId || !teamMemberId) return;
-      const mainRef = doc(db, "stables", stableId, "data", "main");
-      const mainSnap = await getDoc(mainRef);
-      const mainData = mainSnap.exists() ? mainSnap.data() || {} : {};
-      const team = (mainData.team || []).map((m) =>
-        m.id === teamMemberId
-          ? {
-              ...m,
-              uid: user.uid,
-              userId: user.uid,
-              authUid: user.uid,
-              email: user.email || m.email || "",
-              linkedName,
-              linkedAt: new Date().toISOString(),
-            }
-          : m
-      );
-      await setDoc(mainRef, { ...mainData, team }, { merge: false });
+      await updateDoc(doc(db, "stables", stableId, "team", teamMemberId), {
+        uid: user.uid,
+        userId: user.uid,
+        authUid: user.uid,
+        email: user.email || "",
+        linkedName,
+        linkedAt: new Date().toISOString(),
+      });
     },
     [user]
   );
@@ -215,8 +208,8 @@ export function StableSelectionProvider({ children }) {
         });
       }
 
-      const mainSnap = await getDoc(doc(db, "stables", stableId, "data", "main"));
-      const team = mainSnap.exists() ? (mainSnap.data() || {}).team || [] : [];
+      const teamSnap = await getDocs(collection(db, "stables", stableId, "team"));
+      const team = teamSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
       if (codeData.teamMemberId) {
         await linkUserToTeamMember(stableId, codeData.teamMemberId, memberName);
@@ -323,27 +316,29 @@ export function StableSelectionProvider({ children }) {
       throw new Error("Eres el único miembro. Elimina la cuadra.");
     }
     try {
-      const mainRef = doc(db, "stables", activeStable.id, "data", "main");
-      const mainSnap = await getDoc(mainRef);
-      if (mainSnap.exists()) {
-        const mainData = mainSnap.data() || {};
-        let changed = false;
-        const team = (mainData.team || []).map((m) => {
-          if (m && (m.uid === user.uid || m.userId === user.uid || m.authUid === user.uid)) {
-            changed = true;
-            const clean = { ...m };
-            delete clean.uid;
-            delete clean.userId;
-            delete clean.authUid;
-            delete clean.linkedName;
-            delete clean.linkedAt;
-            delete clean.linkedEmail;
-            return clean;
-          }
-          return m;
-        });
-        if (changed) await setDoc(mainRef, { ...mainData, team }, { merge: false });
-      }
+      const teamRef = collection(db, "stables", activeStable.id, "team");
+      const snap = await getDocs(
+        query(
+          teamRef,
+          or(
+            where("uid", "==", user.uid),
+            where("userId", "==", user.uid),
+            where("authUid", "==", user.uid)
+          )
+        )
+      );
+      await Promise.all(
+        snap.docs.map((d) =>
+          updateDoc(d.ref, {
+            uid: deleteField(),
+            userId: deleteField(),
+            authUid: deleteField(),
+            linkedName: deleteField(),
+            linkedAt: deleteField(),
+            linkedEmail: deleteField(),
+          })
+        )
+      );
     } catch (_e) {
       // non-fatal, mirrors legacy behavior: don't block leaving the stable
     }

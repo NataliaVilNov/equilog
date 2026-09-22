@@ -20,6 +20,8 @@ import { TemplateFormPage } from "../features/templates/TemplateFormPage.jsx";
 import { TeamPage } from "../features/team/TeamPage.jsx";
 import { TeamMemberFormPage } from "../features/team/TeamMemberFormPage.jsx";
 import { TeamCalendarPage } from "../features/team/TeamCalendarPage.jsx";
+import { MemberDayPage } from "../features/team/MemberDayPage.jsx";
+import { TeamReportPage } from "../features/team/TeamReportPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -53,6 +55,7 @@ export function AppRoutes() {
         </Route>
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/alerts/:aid/answer" element={<AnswerSessionPage />} />
+        <Route path="/team/:mid/day" element={<MemberDayPage />} />
         <Route element={<PermissionRoute requires="team" />}>
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/templates/new" element={<TemplateFormPage />} />
@@ -61,6 +64,7 @@ export function AppRoutes() {
           <Route path="/team/new" element={<TeamMemberFormPage />} />
           <Route path="/team/:mid/edit" element={<TeamMemberFormPage />} />
           <Route path="/team/calendar" element={<TeamCalendarPage />} />
+          <Route path="/team/report" element={<TeamReportPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />

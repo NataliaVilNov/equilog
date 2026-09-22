@@ -948,6 +948,27 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Links a weekly-plan cell to the Health record its VET detail was saved into. The
+  // caller (the board's VET detail sheet) calls addHealthRecord/updateHealthRecord itself,
+  // then this, rather than this mutator duplicating that logic — updateData's existing
+  // debounce coalesces the two writes into one Firestore write in practice. Assumes the
+  // cell row already exists (the VET activity must already be assigned before its detail
+  // sheet can open) — a no-op if not.
+  const setWeeklyPlanVetLink = useCallback(
+    (hid, date, healthId) => {
+      updateData((prev) => {
+        const weeklyPlans = prev.weeklyPlans || [];
+        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
+        if (i < 0) return prev;
+        return {
+          ...prev,
+          weeklyPlans: weeklyPlans.map((p, idx) => (idx === i ? { ...p, vetHealthId: healthId } : p)),
+        };
+      });
+    },
+    [updateData]
+  );
+
   // Ports setBoardPeriodic (public/legacy-app.js:1311-1317).
   const setBoardPeriodic = useCallback(
     (hid, columnId, date) => {
@@ -1300,6 +1321,7 @@ export function StableDataProvider({ stableId, children }) {
       pasteWeeklyPlanContent,
       repeatPreviousWeek,
       eraseWeeklyPlanCell,
+      setWeeklyPlanVetLink,
       setBoardPeriodic,
       assignBoardHorse,
       moveBoardAssignment,
@@ -1365,6 +1387,7 @@ export function StableDataProvider({ stableId, children }) {
       pasteWeeklyPlanContent,
       repeatPreviousWeek,
       eraseWeeklyPlanCell,
+      setWeeklyPlanVetLink,
       setBoardPeriodic,
       assignBoardHorse,
       moveBoardAssignment,

@@ -1006,6 +1006,78 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports the write side of confirmSmartOrder (public/legacy-app.js:3095-3109): builds one
+  // tasks/health/expenses record per confirmed draft item and writes them all in a single
+  // updateData call (same batching precedent as applyTemplate). The caller is expected to
+  // have already filtered `items` down to the ones the user checked and is allowed to
+  // create — this mutator just builds records from whatever it's given, same split used
+  // throughout this context. Unlike the regular health form, a health item here never
+  // auto-creates a linked expense: legacy's own smartAnalyzeOrder already emits a separate
+  // sibling 'expense' draft item when an amount was detected, so the two stay independent
+  // records here too.
+  const confirmSmartOrderDraft = useCallback(
+    (items) => {
+      let created = 0;
+      updateData((prev) => {
+        const newTasks = [];
+        const newHealth = [];
+        const newExpenses = [];
+        (items || []).forEach((x) => {
+          if (x.kind === "task") {
+            newTasks.push({
+              id: uid(),
+              hid: x.hid,
+              activity: x.activity,
+              date: x.date,
+              time: null,
+              dur: Number(x.dur) || 30,
+              pid: x.pid || null,
+              notes: x.notes || "",
+              status: "pending",
+            });
+            created++;
+          } else if (x.kind === "health") {
+            newHealth.push({
+              id: uid(),
+              hid: x.hid,
+              type: x.type || "otro",
+              label: x.label || "Registro sanitario",
+              date: x.date,
+              nxt: null,
+              notes: x.notes || "",
+              amount: Number(x.amount) || 0,
+              payStatus: x.payStatus || "pendiente",
+              payee: x.payee || "",
+            });
+            created++;
+          } else if (x.kind === "expense") {
+            newExpenses.push({
+              id: uid(),
+              hid: x.hid,
+              concept: x.concept || "Gasto",
+              amount: Number(x.amount) || 0,
+              date: x.date,
+              cat: x.cat || "vet",
+              payer: x.payer || "Cuadra",
+              payee: x.payee || "",
+              status: x.status || "pendiente",
+              notes: x.notes || "",
+            });
+            created++;
+          }
+        });
+        return {
+          ...prev,
+          tasks: [...prev.tasks, ...newTasks],
+          health: [...prev.health, ...newHealth],
+          expenses: [...prev.expenses, ...newExpenses],
+        };
+      });
+      return created;
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -1065,6 +1137,7 @@ export function StableDataProvider({ stableId, children }) {
       deletePaddock,
       addPaddockSlot,
       deletePaddockSlot,
+      confirmSmartOrderDraft,
     }),
     [
       data,
@@ -1124,6 +1197,7 @@ export function StableDataProvider({ stableId, children }) {
       deletePaddock,
       addPaddockSlot,
       deletePaddockSlot,
+      confirmSmartOrderDraft,
     ]
   );
 

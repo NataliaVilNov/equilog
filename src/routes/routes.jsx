@@ -17,6 +17,8 @@ import { AnswerSessionPage } from "../features/alerts/AnswerSessionPage.jsx";
 import { HomePage } from "../features/home/HomePage.jsx";
 import { TemplatesPage } from "../features/templates/TemplatesPage.jsx";
 import { TemplateFormPage } from "../features/templates/TemplateFormPage.jsx";
+import { TeamPage } from "../features/team/TeamPage.jsx";
+import { TeamMemberFormPage } from "../features/team/TeamMemberFormPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -54,6 +56,9 @@ export function AppRoutes() {
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/templates/new" element={<TemplateFormPage />} />
           <Route path="/templates/:tplid/edit" element={<TemplateFormPage />} />
+          <Route path="/team" element={<TeamPage />} />
+          <Route path="/team/new" element={<TeamMemberFormPage />} />
+          <Route path="/team/:mid/edit" element={<TeamMemberFormPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />

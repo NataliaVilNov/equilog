@@ -5,6 +5,7 @@ import { useToast } from "../../../hooks/useToast.js";
 import { td, addD, fD } from "../../../lib/date.js";
 import { uid } from "../../../lib/id.js";
 import { boardWeekDates, boardPlan, boardActivity, boardDateLabel } from "../boardHelpers.js";
+import { sortHorsesByOrder } from "../../horses/horseOrder.js";
 import { EmptyState } from "../../../components/EmptyState.jsx";
 import { BoardToolbar } from "./BoardToolbar.jsx";
 import { PeriodicColumnCell } from "./PeriodicColumnCell.jsx";
@@ -68,6 +69,7 @@ export function WeeklyBoardGrid({ week }) {
   const [vetTarget, setVetTarget] = useState(null); // {hid, date} | null
   const [copySource, setCopySource] = useState(null); // {hid, date} | null
 
+  const sortedHorses = sortHorsesByOrder(horses);
   const dates = boardWeekDates(week);
   const end = dates[6];
   const today = td();
@@ -126,7 +128,9 @@ export function WeeklyBoardGrid({ week }) {
 
   function pasteToDay(date) {
     if (!copySource) return;
-    const targets = horses.filter((h) => !(h.id === copySource.hid && date === copySource.date)).map((h) => ({ hid: h.id, date }));
+    const targets = sortedHorses
+      .filter((h) => !(h.id === copySource.hid && date === copySource.date))
+      .map((h) => ({ hid: h.id, date }));
     if (!targets.length) return;
     pasteWeeklyPlanContent(copySource.hid, copySource.date, targets);
     showToast(`${targets.length} casillas copiadas · las tareas quedan pendientes`);
@@ -244,7 +248,7 @@ export function WeeklyBoardGrid({ week }) {
         ↻ Repetir anterior
       </button>
 
-      {!horses.length ? (
+      {!sortedHorses.length ? (
         <EmptyState icon="🐴">Añade caballos para utilizar la pizarra.</EmptyState>
       ) : (
         <>
@@ -287,7 +291,7 @@ export function WeeklyBoardGrid({ week }) {
                 </tr>
               </thead>
               <tbody>
-                {horses.map((h) => (
+                {sortedHorses.map((h) => (
                   <tr key={h.id}>
                     <th className="horse-col">
                       {copyMode && copySource ? (

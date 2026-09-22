@@ -6,6 +6,7 @@ import { HorseSearchBar } from "./HorseSearchBar.jsx";
 import { HorseListItem } from "./HorseListItem.jsx";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { Fab } from "../../components/layout/Fab.jsx";
+import { sortHorsesByOrder } from "./horseOrder.js";
 
 // Ports rList (public/legacy-app.js:1539-1574). The session-alerts/health-alerts banner
 // is intentionally left out for now — it depends on the Alerts feature (Phase 4), not yet
@@ -18,7 +19,7 @@ export function HorseListPage() {
   const query = searchParams.get("q") || "";
 
   const filtered = useMemo(
-    () => horses.filter((h) => h.name.toLowerCase().includes(query.toLowerCase())),
+    () => sortHorsesByOrder(horses).filter((h) => h.name.toLowerCase().includes(query.toLowerCase())),
     [horses, query]
   );
 

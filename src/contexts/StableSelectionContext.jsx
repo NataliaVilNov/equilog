@@ -23,9 +23,7 @@ import { AuthContext } from "./AuthContext.jsx";
 
 export const StableSelectionContext = createContext(null);
 
-const EMPTY_STABLE_DATA = {
-  absences: [],
-};
+const EMPTY_STABLE_DATA = {};
 
 export function StableSelectionProvider({ children }) {
   const { user, profile } = useContext(AuthContext) || {};

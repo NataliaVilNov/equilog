@@ -76,7 +76,6 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
 const COLLECTION_KEYS = [
-  "absences",
   "expenseSettlements",
   "weeklyPlans",
   "periodicBoardDates",
@@ -141,6 +140,7 @@ export function StableDataProvider({ stableId, children }) {
   const [sessionAlerts, setSessionAlerts] = useState([]);
   const [taskTemplates, setTaskTemplates] = useState([]);
   const [stableExpenses, setStableExpenses] = useState([]);
+  const [absences, setAbsences] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -251,6 +251,14 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "stableExpenses"), setStableExpenses);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setAbsences([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "absences"), setAbsences);
   }, [stableId]);
 
   useEffect(() => {
@@ -839,18 +847,15 @@ export function StableDataProvider({ stableId, children }) {
   // rest/absence day for a team member.
   const toggleAbsence = useCallback(
     (pid, date) => {
-      updateData((prev) => {
-        const absences = prev.absences || [];
-        const existing = absences.find((a) => a.pid === pid && a.date === date);
-        return {
-          ...prev,
-          absences: existing
-            ? absences.filter((a) => a.id !== existing.id)
-            : [...absences, { id: uid(), pid, date, type: "descanso", note: "" }],
-        };
-      });
+      const existing = absences.find((a) => a.pid === pid && a.date === date);
+      if (existing) {
+        deleteDocRef(stableDoc(stableId, "absences", existing.id));
+      } else {
+        const id = uid();
+        writeDoc(stableDoc(stableId, "absences", id), { id, stableId, pid, date, type: "descanso", note: "" });
+      }
     },
-    [updateData]
+    [absences, stableId]
   );
 
   // Ports save-ce-btn (public/legacy-app.js:3697-3704) — stable-wide expenses.
@@ -1423,6 +1428,7 @@ export function StableDataProvider({ stableId, children }) {
       sessionAlerts,
       taskTemplates,
       stableExpenses,
+      absences,
       loading,
       error,
       updateData,
@@ -1498,6 +1504,7 @@ export function StableDataProvider({ stableId, children }) {
       sessionAlerts,
       taskTemplates,
       stableExpenses,
+      absences,
       loading,
       error,
       updateData,

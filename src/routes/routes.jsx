@@ -29,6 +29,7 @@ import { BoardsPage } from "../features/boards/BoardsPage.jsx";
 import { BoardCellPage } from "../features/boards/weekly/BoardCellPage.jsx";
 import { SmartOrderPage } from "../features/smart-order/SmartOrderPage.jsx";
 import { StatsPage } from "../features/stats/StatsPage.jsx";
+import { TrainingReportPage } from "../features/reports/TrainingReportPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -54,6 +55,9 @@ export function AppRoutes() {
           <Route path="/horses/:hid/expenses/new" element={<ExpenseFormPage />} />
           <Route path="/horses/:hid/expenses/:eid/edit" element={<ExpenseFormPage />} />
           <Route path="/horses/:hid/expenses/settlement" element={<ExpenseSettlementPage />} />
+        </Route>
+        <Route element={<PermissionRoute requires="reports" />}>
+          <Route path="/horses/:hid/report" element={<TrainingReportPage />} />
         </Route>
         <Route path="/day" element={<DayBoardPage />} />
         <Route element={<PermissionRoute requires="tasks" />}>

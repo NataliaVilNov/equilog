@@ -638,6 +638,24 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports toggleAbsence (public/legacy-app.js:3314-3321): toggles a single day on/off as a
+  // rest/absence day for a team member.
+  const toggleAbsence = useCallback(
+    (pid, date) => {
+      updateData((prev) => {
+        const absences = prev.absences || [];
+        const existing = absences.find((a) => a.pid === pid && a.date === date);
+        return {
+          ...prev,
+          absences: existing
+            ? absences.filter((a) => a.id !== existing.id)
+            : [...absences, { id: uid(), pid, date, type: "descanso", note: "" }],
+        };
+      });
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -672,6 +690,7 @@ export function StableDataProvider({ stableId, children }) {
       addTeamMember,
       updateTeamMember,
       deleteTeamMember,
+      toggleAbsence,
     }),
     [
       data,
@@ -706,6 +725,7 @@ export function StableDataProvider({ stableId, children }) {
       addTeamMember,
       updateTeamMember,
       deleteTeamMember,
+      toggleAbsence,
     ]
   );
 

@@ -75,11 +75,14 @@ const LOCAL_STORAGE_KEY = "equilog_v4";
 // (public/legacy-app.js:437,453) — note this is one key longer than legacy's own load()
 // (public/legacy-app.js:986-989), which omits expenseSettlements even though the realtime
 // listener always defaults it.
-const COLLECTION_KEYS = [
-  "weeklyPlans",
-  "periodicBoardDates",
-  "boardAssignments",
-];
+const COLLECTION_KEYS = ["periodicBoardDates", "boardAssignments"];
+
+// Weekly-plan cells are always looked up by (hid, date), never by an opaque id, so a
+// deterministic id lets every mutator target a cell's doc directly instead of first finding
+// its existing random id.
+function weeklyPlanCellId(hid, date) {
+  return `${hid}__${date}`;
+}
 
 function emptyData() {
   const data = COLLECTION_KEYS.reduce((acc, key) => {
@@ -111,15 +114,6 @@ function withDefaults(raw) {
       data.boardConfig.activities = [...data.boardConfig.activities, defaults.activities.find((a) => a.id === "vet")];
     }
   }
-  // weeklyPlans rows predating the note/completed/vet-link fields default them here rather
-  // than being backfilled in Firestore — read-time defaulting only, same as every other
-  // optional field in this function.
-  data.weeklyPlans = data.weeklyPlans.map((p) => ({
-    completed: [],
-    note: "",
-    vetHealthId: null,
-    ...p,
-  }));
   return data;
 }
 
@@ -141,6 +135,7 @@ export function StableDataProvider({ stableId, children }) {
   const [stableExpenses, setStableExpenses] = useState([]);
   const [absences, setAbsences] = useState([]);
   const [expenseSettlements, setExpenseSettlements] = useState([]);
+  const [weeklyPlans, setWeeklyPlans] = useState([]);
 
   // Ports the write path of the legacy save() (public/legacy-app.js:1007-1028): write to
   // Firestore, and if that's unavailable, fall back to localStorage (write-only — the
@@ -267,6 +262,14 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "expenseSettlements"), setExpenseSettlements);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setWeeklyPlans([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "weeklyPlans"), setWeeklyPlans);
   }, [stableId]);
 
   useEffect(() => {
@@ -891,97 +894,95 @@ export function StableDataProvider({ stableId, children }) {
   // path, boardQuickCell — harmless normalization since lookup is always by hid+date).
   const setWeeklyPlanActivities = useCallback(
     (hid, date, activities) => {
-      updateData((prev) => {
-        const weeklyPlans = prev.weeklyPlans || [];
-        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
-        const existing = i >= 0 ? weeklyPlans[i] : null;
-        // A row is only deleted when it's fully empty — activities plus the note/vet-link
-        // fields added after this mutator was first written — so clearing the activity
-        // order doesn't silently drop a cell's note or vet link.
-        const hasOtherContent = !!(existing && (existing.note || existing.vetHealthId));
-        let next;
-        if (activities.length || hasOtherContent) {
-          const rec = {
-            id: existing ? existing.id || uid() : uid(),
-            hid,
-            date,
-            activities,
-            note: existing?.note || "",
-            completed: (existing?.completed || []).filter((c) => activities.includes(c)),
-            vetHealthId: existing?.vetHealthId || null,
-          };
-          next = i >= 0 ? weeklyPlans.map((p, idx) => (idx === i ? rec : p)) : [...weeklyPlans, rec];
-        } else {
-          next = i >= 0 ? weeklyPlans.filter((_, idx) => idx !== i) : weeklyPlans;
-        }
-        return { ...prev, weeklyPlans: next };
-      });
+      const id = weeklyPlanCellId(hid, date);
+      const existing = weeklyPlans.find((p) => p.hid === hid && p.date === date);
+      // A cell is only deleted when it's fully empty — activities plus the note/vet-link
+      // fields added after this mutator was first written — so clearing the activity order
+      // doesn't silently drop a cell's note or vet link.
+      const hasOtherContent = !!(existing && (existing.note || existing.vetHealthId));
+      if (activities.length || hasOtherContent) {
+        writeDoc(stableDoc(stableId, "weeklyPlans", id), {
+          id,
+          stableId,
+          hid,
+          date,
+          activities,
+          note: existing?.note || "",
+          completed: (existing?.completed || []).filter((c) => activities.includes(c)),
+          vetHealthId: existing?.vetHealthId || null,
+        });
+      } else if (existing) {
+        deleteDocRef(stableDoc(stableId, "weeklyPlans", id));
+      }
     },
-    [updateData]
+    [weeklyPlans, stableId]
   );
 
   // Ports the quick-assign toggle inside boardQuickCell (public/legacy-app.js:1387-1396).
   const toggleWeeklyPlanActivity = useCallback(
     (hid, date, activityId) => {
-      updateData((prev) => {
-        const weeklyPlans = prev.weeklyPlans || [];
-        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
-        if (i < 0) {
-          return {
-            ...prev,
-            weeklyPlans: [
-              ...weeklyPlans,
-              { id: uid(), hid, date, activities: [activityId], completed: [], note: "", vetHealthId: null },
-            ],
-          };
-        }
-        const existing = weeklyPlans[i];
-        const activities = Array.isArray(existing.activities) ? existing.activities : [];
-        const removing = activities.includes(activityId);
-        const nextActivities = removing ? activities.filter((a) => a !== activityId) : [...activities, activityId];
-        // Removing an activity also drops its completed-state, matching setWeeklyPlanActivities.
-        const nextCompleted = removing
-          ? (existing.completed || []).filter((c) => c !== activityId)
-          : existing.completed || [];
-        return {
-          ...prev,
-          weeklyPlans: weeklyPlans.map((p, pi) =>
-            pi === i ? { ...existing, activities: nextActivities, completed: nextCompleted } : p
-          ),
-        };
+      const id = weeklyPlanCellId(hid, date);
+      const existing = weeklyPlans.find((p) => p.hid === hid && p.date === date);
+      if (!existing) {
+        writeDoc(stableDoc(stableId, "weeklyPlans", id), {
+          id,
+          stableId,
+          hid,
+          date,
+          activities: [activityId],
+          completed: [],
+          note: "",
+          vetHealthId: null,
+        });
+        return;
+      }
+      const activities = Array.isArray(existing.activities) ? existing.activities : [];
+      const removing = activities.includes(activityId);
+      const nextActivities = removing ? activities.filter((a) => a !== activityId) : [...activities, activityId];
+      // Removing an activity also drops its completed-state, matching setWeeklyPlanActivities.
+      const nextCompleted = removing
+        ? (existing.completed || []).filter((c) => c !== activityId)
+        : existing.completed || [];
+      writeDoc(stableDoc(stableId, "weeklyPlans", id), {
+        ...existing,
+        stableId,
+        activities: nextActivities,
+        completed: nextCompleted,
       });
     },
-    [updateData]
+    [weeklyPlans, stableId]
   );
 
-  // Sets or clears a weekly-plan cell's free-text note. Deletes the row entirely if it
+  // Sets or clears a weekly-plan cell's free-text note. Deletes the cell entirely if it
   // becomes fully empty (no activities, no note, no vet link), matching
-  // setWeeklyPlanActivities's existing "empty row is removed" convention.
+  // setWeeklyPlanActivities's existing "empty cell is removed" convention.
   const setWeeklyPlanNote = useCallback(
     (hid, date, note) => {
-      updateData((prev) => {
-        const weeklyPlans = prev.weeklyPlans || [];
-        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
-        const trimmed = (note || "").trim().slice(0, 240);
-        if (i < 0) {
-          if (!trimmed) return prev;
-          return {
-            ...prev,
-            weeklyPlans: [...weeklyPlans, { id: uid(), hid, date, activities: [], completed: [], note: trimmed, vetHealthId: null }],
-          };
-        }
-        const existing = weeklyPlans[i];
-        const hasOtherContent = !!((existing.activities || []).length || existing.vetHealthId);
-        if (!trimmed && !hasOtherContent) {
-          return { ...prev, weeklyPlans: weeklyPlans.filter((_, idx) => idx !== i) };
-        }
-        return {
-          ...prev,
-          weeklyPlans: weeklyPlans.map((p, idx) => (idx === i ? { ...existing, note: trimmed } : p)),
-        };
-      });
+      const id = weeklyPlanCellId(hid, date);
+      const existing = weeklyPlans.find((p) => p.hid === hid && p.date === date);
+      const trimmed = (note || "").trim().slice(0, 240);
+      if (!existing) {
+        if (!trimmed) return;
+        writeDoc(stableDoc(stableId, "weeklyPlans", id), {
+          id,
+          stableId,
+          hid,
+          date,
+          activities: [],
+          completed: [],
+          note: trimmed,
+          vetHealthId: null,
+        });
+        return;
+      }
+      const hasOtherContent = !!((existing.activities || []).length || existing.vetHealthId);
+      if (!trimmed && !hasOtherContent) {
+        deleteDocRef(stableDoc(stableId, "weeklyPlans", id));
+        return;
+      }
+      writeDoc(stableDoc(stableId, "weeklyPlans", id), { ...existing, stableId, note: trimmed });
     },
-    [updateData]
+    [weeklyPlans, stableId]
   );
 
   // Toggles one activity id in/out of a weekly-plan cell's completed set. No-ops if the id
@@ -989,57 +990,45 @@ export function StableDataProvider({ stableId, children }) {
   // activities, so this is a defensive guard, not an expected path).
   const toggleWeeklyPlanCompleted = useCallback(
     (hid, date, activityId) => {
-      updateData((prev) => {
-        const weeklyPlans = prev.weeklyPlans || [];
-        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
-        if (i < 0) return prev;
-        const existing = weeklyPlans[i];
-        if (!(existing.activities || []).includes(activityId)) return prev;
-        const completed = existing.completed || [];
-        const nextCompleted = completed.includes(activityId)
-          ? completed.filter((c) => c !== activityId)
-          : [...completed, activityId];
-        return {
-          ...prev,
-          weeklyPlans: weeklyPlans.map((p, idx) => (idx === i ? { ...existing, completed: nextCompleted } : p)),
-        };
+      const existing = weeklyPlans.find((p) => p.hid === hid && p.date === date);
+      if (!existing) return;
+      if (!(existing.activities || []).includes(activityId)) return;
+      const completed = existing.completed || [];
+      const nextCompleted = completed.includes(activityId)
+        ? completed.filter((c) => c !== activityId)
+        : [...completed, activityId];
+      writeDoc(stableDoc(stableId, "weeklyPlans", weeklyPlanCellId(hid, date)), {
+        ...existing,
+        stableId,
+        completed: nextCompleted,
       });
     },
-    [updateData]
+    [weeklyPlans, stableId]
   );
 
   // Copies one weekly-plan cell's activities + note into one or more target cells.
   // Deliberately does not copy completed-state (always starts un-done, matching the
   // reference behavior this ports the interaction from) or vetHealthId (a pasted VET flag
   // needs its own fresh detail, not a duplicate reference to the source's health record).
-  // One updateData call handles a single-cell paste, a whole-day paste, and a whole-
-  // horse-row paste — the caller just passes more/fewer targets.
+  // One writeBatch handles a single-cell paste, a whole-day paste, and a whole-horse-row
+  // paste — the caller just passes more/fewer targets.
   const pasteWeeklyPlanContent = useCallback(
     (sourceHid, sourceDate, targets) => {
-      updateData((prev) => {
-        const weeklyPlans = prev.weeklyPlans || [];
-        const source = weeklyPlans.find((p) => p.hid === sourceHid && p.date === sourceDate);
-        const activities = source ? [...(source.activities || [])] : [];
-        const note = source ? source.note || "" : "";
-        if (!activities.length && !note) return prev;
-        let next = weeklyPlans;
-        (targets || []).forEach(({ hid, date }) => {
-          const i = next.findIndex((p) => p.hid === hid && p.date === date);
-          const rec = {
-            id: i >= 0 ? next[i].id || uid() : uid(),
-            hid,
-            date,
-            activities: [...activities],
-            completed: [],
-            note,
-            vetHealthId: null,
-          };
-          next = i >= 0 ? next.map((p, idx) => (idx === i ? rec : p)) : [...next, rec];
-        });
-        return { ...prev, weeklyPlans: next };
+      const source = weeklyPlans.find((p) => p.hid === sourceHid && p.date === sourceDate);
+      const activities = source ? [...(source.activities || [])] : [];
+      const note = source ? source.note || "" : "";
+      if (!activities.length && !note) return;
+      const batch = writeBatch(db);
+      (targets || []).forEach(({ hid, date }) => {
+        const id = weeklyPlanCellId(hid, date);
+        batch.set(
+          stableDoc(stableId, "weeklyPlans", id),
+          cleanForFirestore({ id, stableId, hid, date, activities: [...activities], completed: [], note, vetHealthId: null })
+        );
       });
+      batch.commit();
     },
-    [updateData]
+    [weeklyPlans, stableId]
   );
 
   // For every weekly-plan cell in the 7 days before weekStart that had content, writes that
@@ -1048,32 +1037,33 @@ export function StableDataProvider({ stableId, children }) {
   // day was empty, even if that cell already has different content today.
   const repeatPreviousWeek = useCallback(
     (weekStart) => {
-      updateData((prev) => {
-        const weeklyPlans = prev.weeklyPlans || [];
-        const prevWeekStart = addD(weekStart, -7);
-        const prevWeekDates = new Set(Array.from({ length: 7 }, (_, i) => addD(prevWeekStart, i)));
-        const sourceRows = weeklyPlans.filter(
-          (p) => prevWeekDates.has(p.date) && ((p.activities || []).length || p.note)
-        );
-        let next = weeklyPlans;
-        sourceRows.forEach((source) => {
-          const targetDate = addD(source.date, 7);
-          const i = next.findIndex((p) => p.hid === source.hid && p.date === targetDate);
-          const rec = {
-            id: i >= 0 ? next[i].id || uid() : uid(),
+      const prevWeekStart = addD(weekStart, -7);
+      const prevWeekDates = new Set(Array.from({ length: 7 }, (_, i) => addD(prevWeekStart, i)));
+      const sourceRows = weeklyPlans.filter(
+        (p) => prevWeekDates.has(p.date) && ((p.activities || []).length || p.note)
+      );
+      if (!sourceRows.length) return;
+      const batch = writeBatch(db);
+      sourceRows.forEach((source) => {
+        const targetDate = addD(source.date, 7);
+        const id = weeklyPlanCellId(source.hid, targetDate);
+        batch.set(
+          stableDoc(stableId, "weeklyPlans", id),
+          cleanForFirestore({
+            id,
+            stableId,
             hid: source.hid,
             date: targetDate,
             activities: [...(source.activities || [])],
             completed: [],
             note: source.note || "",
             vetHealthId: null,
-          };
-          next = i >= 0 ? next.map((p, idx) => (idx === i ? rec : p)) : [...next, rec];
-        });
-        return { ...prev, weeklyPlans: next };
+          })
+        );
       });
+      batch.commit();
     },
-    [updateData]
+    [weeklyPlans, stableId]
   );
 
   // Fully wipes one weekly-plan cell (activities, completed, note, vet link). Does NOT
@@ -1081,33 +1071,27 @@ export function StableDataProvider({ stableId, children }) {
   // real health history, only the board's reference to it.
   const eraseWeeklyPlanCell = useCallback(
     (hid, date) => {
-      updateData((prev) => ({
-        ...prev,
-        weeklyPlans: (prev.weeklyPlans || []).filter((p) => !(p.hid === hid && p.date === date)),
-      }));
+      deleteDocRef(stableDoc(stableId, "weeklyPlans", weeklyPlanCellId(hid, date)));
     },
-    [updateData]
+    [stableId]
   );
 
   // Links a weekly-plan cell to the Health record its VET detail was saved into. The
   // caller (the board's VET detail sheet) calls addHealthRecord/updateHealthRecord itself,
-  // then this, rather than this mutator duplicating that logic — updateData's existing
-  // debounce coalesces the two writes into one Firestore write in practice. Assumes the
-  // cell row already exists (the VET activity must already be assigned before its detail
-  // sheet can open) — a no-op if not.
+  // then this, rather than this mutator duplicating that logic. Assumes the cell already
+  // exists (the VET activity must already be assigned before its detail sheet can open) —
+  // a no-op if not.
   const setWeeklyPlanVetLink = useCallback(
     (hid, date, healthId) => {
-      updateData((prev) => {
-        const weeklyPlans = prev.weeklyPlans || [];
-        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
-        if (i < 0) return prev;
-        return {
-          ...prev,
-          weeklyPlans: weeklyPlans.map((p, idx) => (idx === i ? { ...p, vetHealthId: healthId } : p)),
-        };
+      const existing = weeklyPlans.find((p) => p.hid === hid && p.date === date);
+      if (!existing) return;
+      writeDoc(stableDoc(stableId, "weeklyPlans", weeklyPlanCellId(hid, date)), {
+        ...existing,
+        stableId,
+        vetHealthId: healthId,
       });
     },
-    [updateData]
+    [weeklyPlans, stableId]
   );
 
   // Ports setBoardPeriodic (public/legacy-app.js:1311-1317).
@@ -1435,6 +1419,7 @@ export function StableDataProvider({ stableId, children }) {
       stableExpenses,
       absences,
       expenseSettlements,
+      weeklyPlans,
       loading,
       error,
       updateData,
@@ -1512,6 +1497,7 @@ export function StableDataProvider({ stableId, children }) {
       stableExpenses,
       absences,
       expenseSettlements,
+      weeklyPlans,
       loading,
       error,
       updateData,

@@ -19,6 +19,7 @@ import { TemplatesPage } from "../features/templates/TemplatesPage.jsx";
 import { TemplateFormPage } from "../features/templates/TemplateFormPage.jsx";
 import { TeamPage } from "../features/team/TeamPage.jsx";
 import { TeamMemberFormPage } from "../features/team/TeamMemberFormPage.jsx";
+import { TeamCalendarPage } from "../features/team/TeamCalendarPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -59,6 +60,7 @@ export function AppRoutes() {
           <Route path="/team" element={<TeamPage />} />
           <Route path="/team/new" element={<TeamMemberFormPage />} />
           <Route path="/team/:mid/edit" element={<TeamMemberFormPage />} />
+          <Route path="/team/calendar" element={<TeamCalendarPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />

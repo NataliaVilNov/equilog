@@ -55,14 +55,18 @@ function fieldsFromHorse(horse) {
 export function HorseFormPage() {
   const { hid } = useParams();
   const editing = !!hid;
-  const { horses, addHorse, updateHorse, deleteHorse } = useStableData();
+  const { horses, addHorse, updateHorse, deleteHorse, uploadHorsePhoto } = useStableData();
   const { can } = usePermissions();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
   const horse = editing ? horses.find((h) => h.id === hid) : null;
+  // Generated up front (not just at submit) so a photo picked before saving can upload
+  // straight to its final Storage path under this horse's own id.
+  const [id] = useState(() => (editing ? hid : uid()));
   const [fields, setFields] = useState(() => fieldsFromHorse(horse));
   const [owners, setOwners] = useState(() => ownersFromHorse(horse));
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   const pedigree = useMemo(() => {
     const p = {};
@@ -86,12 +90,18 @@ export function HorseFormPage() {
     setFields((prev) => ({ ...prev, ...updates }));
   }
 
-  function handlePhotoChange(e) {
+  async function handlePhotoChange(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setField("photo", reader.result);
-    reader.readAsDataURL(file);
+    setUploadingPhoto(true);
+    try {
+      const photo = await uploadHorsePhoto(id, file, () => {});
+      setField("photo", photo);
+    } catch (_err) {
+      showToast("Error subiendo la foto");
+    } finally {
+      setUploadingPhoto(false);
+    }
   }
 
   function handleSubmit() {
@@ -108,7 +118,6 @@ export function HorseFormPage() {
       showToast("Los porcentajes deben sumar 100%");
       return;
     }
-    const id = editing ? hid : uid();
     const record = {
       id,
       name,
@@ -154,10 +163,12 @@ export function HorseFormPage() {
       <div className="f">
         <label>Foto</label>
         <div className="pu">
-          <div className="pp">{fields.photo ? <img src={fields.photo} alt="" /> : "🐴"}</div>
+          <div className="pp">
+            {uploadingPhoto ? "…" : fields.photo ? <img src={fields.photo.url} alt="" /> : "🐴"}
+          </div>
           <label className="fl">
             Elegir foto
-            <input type="file" accept="image/*" onChange={handlePhotoChange} />
+            <input type="file" accept="image/*" onChange={handlePhotoChange} disabled={uploadingPhoto} />
           </label>
         </div>
       </div>

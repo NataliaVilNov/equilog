@@ -301,12 +301,12 @@ export function WeeklyBoardGrid({ week }) {
                           onClick={() => pasteToHorseRow(h.id)}
                           style={{ background: "none", border: "none", width: "100%", textAlign: "left", cursor: "copy" }}
                         >
-                          {h.photo ? <img src={h.photo} alt="" /> : <span>🐴</span>}
+                          {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
                           <b>{h.name}</b>
                         </button>
                       ) : (
                         <div className="board-horse-name">
-                          {h.photo ? <img src={h.photo} alt="" /> : <span>🐴</span>}
+                          {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
                           <b>{h.name}</b>
                         </div>
                       )}

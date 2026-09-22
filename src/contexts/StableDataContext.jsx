@@ -565,6 +565,21 @@ export function StableDataProvider({ stableId, children }) {
     [horses, stableId]
   );
 
+  // Uploads a horse's photo to Storage, mirroring uploadHealthDocs's pattern. Returns
+  // {path, url} for the caller to store on the horse record (via addHorse/updateHorse) —
+  // this mutator doesn't touch the horse doc itself, since the form already writes the full
+  // record on submit.
+  const uploadHorsePhoto = useCallback(
+    async (hid, file, onProgress) => {
+      const path = `stables/${stableId}/horses/${hid}/photo/${Date.now()}_${safeStorageName(file.name)}`;
+      const ref = storageRef(storage, path);
+      const metadata = { contentType: file.type || "application/octet-stream" };
+      const url = await uploadFileWithProgress(ref, file, metadata, onProgress);
+      return { path, url };
+    },
+    [stableId]
+  );
+
   // Ports deleteHealthDoc (public/legacy-app.js:1177-1188).
   const deleteHealthDoc = useCallback(
     async (id) => {
@@ -1440,6 +1455,7 @@ export function StableDataProvider({ stableId, children }) {
       deleteHealthRecord,
       addHealthDocLink,
       uploadHealthDocs,
+      uploadHorsePhoto,
       deleteHealthDoc,
       addExpense,
       updateExpense,
@@ -1521,6 +1537,7 @@ export function StableDataProvider({ stableId, children }) {
       deleteHealthRecord,
       addHealthDocLink,
       uploadHealthDocs,
+      uploadHorsePhoto,
       deleteHealthDoc,
       addExpense,
       updateExpense,

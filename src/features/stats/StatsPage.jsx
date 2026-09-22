@@ -58,7 +58,7 @@ function FinancialTab({ totIn, totOut, cEx, pendIn, pendOut, horses, ex, navigat
             return (
               <div className="xc" style={{ cursor: "pointer" }} key={h.id} onClick={() => navigate(`/horses/${h.id}?tab=gastos`)}>
                 <div className="hp" style={{ width: "34px", height: "34px", fontSize: "1.1rem" }}>
-                  {h.photo ? <img src={h.photo} alt="" /> : "🐴"}
+                  {h.photo ? <img src={h.photo.url} alt="" /> : "🐴"}
                 </div>
                 <div className="xinf">
                   <div className="xl">{h.name}</div>
@@ -221,7 +221,7 @@ function HorsesTab({ horses, tr, health, navigate }) {
             return (
               <div className="xc" style={{ cursor: "pointer" }} key={h.id} onClick={() => navigate(`/horses/${h.id}?tab=entrenos`)}>
                 <div className="hp" style={{ width: "34px", height: "34px", fontSize: "1.1rem" }}>
-                  {h.photo ? <img src={h.photo} alt="" /> : "🐴"}
+                  {h.photo ? <img src={h.photo.url} alt="" /> : "🐴"}
                 </div>
                 <div className="xinf">
                   <div className="xl">{h.name}</div>

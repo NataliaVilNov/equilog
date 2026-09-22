@@ -24,7 +24,7 @@ export function PendingHorseTray({ horses, picked, onPick }) {
               }}
               onClick={() => onPick(h.id)}
             >
-              <span>{h.photo ? <img src={h.photo} alt="" /> : "🐴"}</span>
+              <span>{h.photo ? <img src={h.photo.url} alt="" /> : "🐴"}</span>
               {h.name}
             </button>
           ))

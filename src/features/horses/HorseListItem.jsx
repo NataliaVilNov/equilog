@@ -17,7 +17,7 @@ export function HorseListItem({ horse, trainingCount }) {
 
   return (
     <button className="hc" onClick={() => navigate(`/horses/${horse.id}?tab=entrenos`)}>
-      <div className="hp">{horse.photo ? <img src={horse.photo} alt="" /> : "🐴"}</div>
+      <div className="hp">{horse.photo ? <img src={horse.photo.url} alt="" /> : "🐴"}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{

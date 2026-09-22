@@ -62,7 +62,7 @@ export function HorseListPage() {
             <div className="config-row" key={h.id}>
               <span className="config-code" style={{ background: "var(--vl)", color: "var(--vd)", overflow: "hidden" }}>
                 {h.photo ? (
-                  <img src={h.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <img src={h.photo.url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 ) : (
                   "🐴"
                 )}

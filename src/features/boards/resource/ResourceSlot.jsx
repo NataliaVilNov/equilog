@@ -48,7 +48,7 @@ export function ResourceSlot({ type, date, resourceId, slotId, position, onDropC
           onClickCell(resourceId, slotId, position, assignment);
         }}
       >
-        <span>{horse && horse.photo ? <img src={horse.photo} alt="" /> : "🐴"}</span>
+        <span>{horse && horse.photo ? <img src={horse.photo.url} alt="" /> : "🐴"}</span>
         <b>{horse ? horse.name : "Caballo"}</b>
         <small>{conflict ? "⚠ Coincidencia" : "Arrastra para mover"}</small>
       </div>

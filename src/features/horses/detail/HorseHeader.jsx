@@ -34,7 +34,7 @@ export function HorseHeader({ horse }) {
         </div>
       </div>
       <div className="hh">
-        <div className="pl">{horse.photo ? <img src={horse.photo} alt="" /> : "🐴"}</div>
+        <div className="pl">{horse.photo ? <img src={horse.photo.url} alt="" /> : "🐴"}</div>
         <div style={{ minWidth: 0 }}>
           {owners.length > 0 && (
             <div className="ml2">

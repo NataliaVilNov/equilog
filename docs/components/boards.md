@@ -15,7 +15,9 @@ implementation the team built, `EquiLog_pizarra_semanal_codigo` — a single alw
 toolbar of activities plus 4 fixed utility tools (Nota/Hecho/Copiar/Borrar), one active at a
 time, governs what tapping a cell does. The resource boards, periodic columns, and the rest
 of the config screen were explicitly out of scope for that rework — the reference app has no
-equivalent for any of them — and remain exactly as described below.
+equivalent for any of them — and remain exactly as described below. A **Month tab** was added
+after that rework, purely as an EquiLog addition — the reference app has no month view at
+all, only weekly.
 
 ## Implementation
 
@@ -24,7 +26,7 @@ equivalent for any of them — and remain exactly as described below.
 src/features/boards/
   boardDefaults.js              — pure default boardConfig shape (includes the "vet" activity)
   boardHelpers.js                 — pure selectors/matching helpers, explicit-param
-  BoardsPage.jsx                    — /boards, tab shell (weekly/walker/paddock/config)
+  BoardsPage.jsx                    — /boards, tab shell (weekly/month/walker/paddock/config)
   weekly/
     BoardToolbar.jsx                  — activities + Nota/Hecho/Copiar/Borrar, one tool armed
     BoardCell.jsx                      — one grid cell: codes, done state, note, VET badge
@@ -36,6 +38,8 @@ src/features/boards/
     BoardCellPage.jsx                       — /boards/cell/:hid/:date, secondary full
                                                chronological-order editor (linked from the
                                                Done sheet)
+  month/
+    MonthBoardGrid.jsx                — month-at-a-glance, "Mes" tab (?tab=month)
   resource/
     PendingHorseTray.jsx              — unplaced-horses tray (drag source + tap-to-pick)
     ResourceSlot.jsx                    — one droppable/clickable slot cell
@@ -89,11 +93,20 @@ src/components/SlideUpSheet.jsx   — the bottom-sheet backdrop/panel chrome the
   is a from-scratch reimplementation of the reference app's VET flow, which instead synced
   to an external Notion database; EquiLog has no Notion integration, so it writes directly
   to its own Health feature instead.
+- The Month tab is read-derived only — it reads the same `weeklyPlans[]`/`boardConfig` data
+  the weekly grid does and adds no mutators or fields of its own. Its "Todos los
+  caballos"/"Un caballo" mode toggle and `?month=`/`?horse=` search params mirror
+  `TeamCalendarPage`'s existing `?month=`/`?pid=` pattern (`features/team/
+  TeamCalendarPage.jsx`) rather than inventing a new one. Tapping a day drills into
+  `BoardCellPage` for that horse+day in "one horse" mode, or into the Weekly tab for that
+  day's week in "all horses" mode (there's no single cell to jump to when viewing every
+  horse at once).
 
 **Routing**
-- `/boards` (reads `?tab=weekly|walker|paddock|config`, `?week=` for the weekly tab,
-  `?date=` for the walker/paddock tabs) and `/boards/cell/:hid/:date` (reads `?week=` for
-  its back-link) — **no permission gate**, matches legacy exactly (see below).
+- `/boards` (reads `?tab=weekly|month|walker|paddock|config`, `?week=` for the weekly tab,
+  `?month=`/`?mode=`/`?horse=` for the month tab, `?date=` for the walker/paddock tabs) and
+  `/boards/cell/:hid/:date` (reads `?week=` for its back-link) — **no permission gate**,
+  matches legacy exactly (see below).
 
 **Permissions**
 - None. Legacy's own permission-gate block (`public/legacy-app.js:1497-1507`) never

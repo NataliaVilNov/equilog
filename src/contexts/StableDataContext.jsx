@@ -610,6 +610,34 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Ports save-member-btn (public/legacy-app.js:3677-3685) and the inline delete handler
+  // in rMF (public/legacy-app.js:3416), which also nulls out `pid` on any task assigned to
+  // the deleted member rather than leaving it dangling.
+  const addTeamMember = useCallback(
+    (member) => {
+      updateData((prev) => ({ ...prev, team: [...prev.team, member] }));
+    },
+    [updateData]
+  );
+
+  const updateTeamMember = useCallback(
+    (member) => {
+      updateData((prev) => ({ ...prev, team: prev.team.map((m) => (m.id === member.id ? member : m)) }));
+    },
+    [updateData]
+  );
+
+  const deleteTeamMember = useCallback(
+    (id) => {
+      updateData((prev) => ({
+        ...prev,
+        team: prev.team.filter((m) => m.id !== id),
+        tasks: prev.tasks.map((t) => (t.pid === id ? { ...t, pid: null } : t)),
+      }));
+    },
+    [updateData]
+  );
+
   const value = useMemo(
     () => ({
       ...data,
@@ -641,6 +669,9 @@ export function StableDataProvider({ stableId, children }) {
       updateTemplate,
       deleteTemplate,
       applyTemplate,
+      addTeamMember,
+      updateTeamMember,
+      deleteTeamMember,
     }),
     [
       data,
@@ -672,6 +703,9 @@ export function StableDataProvider({ stableId, children }) {
       updateTemplate,
       deleteTemplate,
       applyTemplate,
+      addTeamMember,
+      updateTeamMember,
+      deleteTeamMember,
     ]
   );
 

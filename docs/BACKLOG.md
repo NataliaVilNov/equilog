@@ -50,23 +50,45 @@ visible in the code**. Two possibilities, both bad:
 
 ### 3. Single Firestore document per stable (scalability + concurrency risk)
 The entire stable dataset (every horse, every training/health/expense record, tasks, team,
-etc.) lives in one Firestore document (`stables/{id}/data/main`), overwritten wholesale on
-every save. See `DATABASE.md` §5 for full detail. Concretely:
-- Any two team members editing different things at the same time can silently clobber each
+etc.) used to live in one Firestore document (`stables/{id}/data/main`), overwritten wholesale
+on every save. Concretely, that meant:
+- Any two team members editing different things at the same time could silently clobber each
   other's changes (whole-document last-write-wins, no field-level merge).
-- The document will eventually hit Firestore's 1 MiB size limit, especially since horse
-  photos are stored as inline base64 rather than in Firebase Storage.
-- No server-side querying, pagination, or per-resource security rules are possible.
+- The document would eventually hit Firestore's 1 MiB size limit, especially since horse
+  photos were stored as inline base64 rather than in Firebase Storage.
+- No server-side querying, pagination, or per-resource security rules were possible.
 - **Fix**: migrate to per-collection subcollections (`stables/{id}/horses/{hid}`, `.../tasks/{id}`,
-  etc.) with per-document listeners aggregated client-side, and move horse photos to Storage.
-  This is a substantial, separate effort from the React component migration — see
-  `REFACTOR_PLAN.md`'s note on this — and should be scheduled as its own phase after the
-  React port stabilizes.
-- **Status**: not fixed. `StableDataContext` still reads/writes the same single
-  `stables/{id}/data/main` document (`src/lib/firestore.js`) — the React migration
-  deliberately kept the exact same document shape throughout so the legacy app and the React
-  app could run side by side against the same data during the transition. This remains the
-  single biggest architectural item left in the app.
+  etc.) with per-document listeners aggregated client-side, and move horse/team photos to
+  Storage.
+- **Status**: done. `refactor/firestore-schema-migration` replaced the single blob document
+  with the subcollection layout documented in `docs/DATABASE.md` §1 — every horse, training,
+  health record, expense, task, team member, and Boards record is now its own small Firestore
+  document, aggregated client-side via per-collection listeners
+  (`docs/DATABASE.md` §4). Horse and team-member photos moved to Firebase Storage alongside
+  the existing health-doc uploads (`docs/DATABASE.md` §3). Tasks were also unified across this
+  same migration — see item below and `docs/components/tasks.md`.
+  - **Explicitly not bundled into this migration**: real per-collection Firestore Security
+    Rules. Access control still lives entirely in the client's `usePermissions().can()` logic,
+    exactly as before — the subcollection layout makes real rules *possible* now in a way the
+    old single-document model never did (`docs/DATABASE.md` §6), but authoring them was a
+    deliberate scope cut for this pass, not an oversight. Worth its own follow-up item.
+
+### 3b. Unified tasks + recurrence (feature added alongside the schema migration)
+The previous split between per-horse `tasks` and stable-wide "cuadra" recurring `ctasks` was
+collapsed into one `tasks` collection with nullable `horseId` (null = general chore) and
+`assignedTo` (null = shows on everyone's day) fields, plus Google-Calendar-style recurrence
+(`recurrenceRule`, daily/weekly/monthly with by-weekday/nth-weekday/day-of-month/until/count)
+and a sparse per-date `occurrences` exceptions subcollection so a recurring task never needs
+its future occurrences materialized in advance. See `docs/DATABASE.md` §2 and
+`docs/components/tasks.md`.
+- **Known gap**: `useTaskOccurrences` (the recurrence-expansion read hook) is only wired into
+  single-date screens (`DayBoardPage`, `MemberDayPage`, `HomePage`). `StatsPage`'s date-range
+  task stats still read the raw `tasks` collection, so a recurring task's individual
+  occurrences don't roll up into historical stats correctly — needs a ranged version of the
+  hook, not built in this pass.
+- **Known gap**: there's no UI to reassign or skip a single occurrence of a recurring task
+  (only mark one done/pending) — the schema supports it (`overrideAssignedTo` on an occurrence
+  doc) but nothing writes that field yet.
 
 ## Code organization
 
@@ -145,3 +167,10 @@ features have no top-level documentation, no setup/install instructions (`npm in
   `src/styles.css`'s class-based design system rather than inline styles.
 - **No CI beyond deploy**: still true — no lint step, no build-failure gate other than the
   deploy workflow itself failing.
+- **`SaleTab` writes one Firestore document per keystroke**: it has no local draft state and
+  writes straight through `updateHorseSale` on every change (matching legacy's own
+  no-separate-save-button venta tab), which previously got coalesced by the old shared
+  250ms debounce. The Firestore schema migration removed that debounce entirely (nothing else
+  needed it — see `docs/DATABASE.md` §5), so this one screen now fires a write per keystroke
+  instead of one per pause. Not a correctness issue, just unnecessary write volume; fixing it
+  means reintroducing a small per-field debounce scoped to just this mutator.

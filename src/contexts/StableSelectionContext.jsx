@@ -236,6 +236,31 @@ export function StableSelectionProvider({ children }) {
 
   const cancelJoin = useCallback(() => setPendingJoin(null), []);
 
+  // Ports createMemberInvite (public/legacy-app.js:737-767), minus the "already linked?"
+  // confirm dialog and the clipboard/toast UI, which are the caller's job (same split as
+  // deleteStable/leaveStable leaving window.confirm() to StablePanel). Takes the full
+  // member object rather than an id, since StableSelectionContext has no access to
+  // StableDataContext's `team` slice to look one up itself.
+  const createMemberInvite = useCallback(
+    async (member) => {
+      if (!user || !activeStable) throw new Error("No hay cuadra activa");
+      if (!canManageStable(activeStable, user)) {
+        throw new Error("Solo el administrador puede crear invitaciones vinculadas");
+      }
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+      await setDoc(doc(db, "inviteCodes", code), {
+        stableId: activeStable.id,
+        name: activeStable.name || "",
+        teamMemberId: member.id,
+        teamMemberName: member.name || "",
+        createdBy: user.uid,
+        created: new Date().toISOString(),
+      });
+      return code;
+    },
+    [user, activeStable]
+  );
+
   // Ports goAfterStableExit (public/legacy-app.js:770-781).
   const exitActiveStable = useCallback(async () => {
     setActiveStableId(null);
@@ -329,6 +354,7 @@ export function StableSelectionProvider({ children }) {
       deleteStable,
       leaveStable,
       exitActiveStable,
+      createMemberInvite,
     }),
     [
       stables,
@@ -346,6 +372,7 @@ export function StableSelectionProvider({ children }) {
       deleteStable,
       leaveStable,
       exitActiveStable,
+      createMemberInvite,
     ]
   );
 

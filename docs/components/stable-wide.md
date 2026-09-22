@@ -20,8 +20,10 @@ src/features/stable-wide/
 ```
 
 **State & data**
-- `StableDataContext` gained `addStableExpense`/`updateStableExpense`/`deleteStableExpense`
-  for the `cexpenses` collection.
+- Stable-wide expenses live at `stables/{stableId}/stableExpenses/{expenseId}` (moved off
+  the single-document-per-stable model, and renamed from `cexpenses` for clarity against the
+  per-horse `expenses` subcollection — see `docs/DATABASE.md`). `StableDataContext` gained
+  `addStableExpense`/`updateStableExpense`/`deleteStableExpense` for it.
 
 **Routing**
 - `/cuadra`, `/cuadra/expenses/new`, `/cuadra/expenses/:eid/edit` — all under

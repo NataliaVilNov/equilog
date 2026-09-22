@@ -25,7 +25,9 @@ src/features/team/
 - Team members live at `stables/{stableId}/team/{memberId}`, one document per member (moved
   off the single-document-per-stable model — see `docs/DATABASE.md`). `StableDataContext`
   gained `addTeamMember`/`updateTeamMember`/`deleteTeamMember` (deleting a member also nulls
-  `pid` on any task assigned to them, matching legacy) and `toggleAbsence(pid, date)`.
+  `assignedTo` on any task assigned to them, matching legacy) and `toggleAbsence(pid, date)`,
+  now writing/deleting individual documents at `stables/{stableId}/absences/{absenceId}`
+  instead of splicing an array.
 - `StableSelectionContext`'s `linkUserToTeamMember`, `joinByCode`, and `leaveStable` used to
   read and overwrite the *entire* shared stable document just to touch the `team` array; they
   now target the specific member doc(s) directly — a single `updateDoc` for linking, a

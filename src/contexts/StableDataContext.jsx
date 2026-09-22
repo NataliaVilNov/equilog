@@ -935,6 +935,19 @@ export function StableDataProvider({ stableId, children }) {
     [updateData]
   );
 
+  // Fully wipes one weekly-plan cell (activities, completed, note, vet link). Does NOT
+  // delete the linked Health record if one exists — clearing a board cell shouldn't erase
+  // real health history, only the board's reference to it.
+  const eraseWeeklyPlanCell = useCallback(
+    (hid, date) => {
+      updateData((prev) => ({
+        ...prev,
+        weeklyPlans: (prev.weeklyPlans || []).filter((p) => !(p.hid === hid && p.date === date)),
+      }));
+    },
+    [updateData]
+  );
+
   // Ports setBoardPeriodic (public/legacy-app.js:1311-1317).
   const setBoardPeriodic = useCallback(
     (hid, columnId, date) => {
@@ -1286,6 +1299,7 @@ export function StableDataProvider({ stableId, children }) {
       toggleWeeklyPlanCompleted,
       pasteWeeklyPlanContent,
       repeatPreviousWeek,
+      eraseWeeklyPlanCell,
       setBoardPeriodic,
       assignBoardHorse,
       moveBoardAssignment,
@@ -1350,6 +1364,7 @@ export function StableDataProvider({ stableId, children }) {
       toggleWeeklyPlanCompleted,
       pasteWeeklyPlanContent,
       repeatPreviousWeek,
+      eraseWeeklyPlanCell,
       setBoardPeriodic,
       assignBoardHorse,
       moveBoardAssignment,

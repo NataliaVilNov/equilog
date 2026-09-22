@@ -15,6 +15,8 @@ import { TaskFormPage } from "../features/tasks/TaskFormPage.jsx";
 import { AlertsPage } from "../features/alerts/AlertsPage.jsx";
 import { AnswerSessionPage } from "../features/alerts/AnswerSessionPage.jsx";
 import { HomePage } from "../features/home/HomePage.jsx";
+import { TemplatesPage } from "../features/templates/TemplatesPage.jsx";
+import { TemplateFormPage } from "../features/templates/TemplateFormPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -48,6 +50,11 @@ export function AppRoutes() {
         </Route>
         <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/alerts/:aid/answer" element={<AnswerSessionPage />} />
+        <Route element={<PermissionRoute requires="team" />}>
+          <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/templates/new" element={<TemplateFormPage />} />
+          <Route path="/templates/:tplid/edit" element={<TemplateFormPage />} />
+        </Route>
       </Route>
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>

@@ -157,3 +157,45 @@ per-collection subcollections — e.g. `stables/{id}/horses/{hid}`,
 per-document `onSnapshot` listeners aggregated client-side, and moving horse/team photos into
 Storage rather than inline base64. This is a materially larger, separate effort from any of
 the feature work done so far and should not be bundled into it.
+
+## 6. Firestore capabilities this design isn't using
+
+None of the limitations in §5 are forced by Firestore itself — Firestore's actual feature set
+argues for the opposite structure. This section exists so a future subcollection redesign
+doesn't have to rediscover why. The single-blob shape is best understood as a straight port
+of the pre-migration vanilla-JS app's single in-memory `D` object (see the legacy-app note at
+the top of this doc) — persisting one JS object wholesale was the path of least resistance for
+that app's architecture, not a decision driven by how Firestore works.
+
+- **Field-level writes exist.** `updateDoc()` supports dot-path field updates,
+  `arrayUnion()`/`arrayRemove()`, and `FieldValue.increment()`. None of these require reading
+  or rewriting a whole document. The current `setDoc()` full-document overwrite on every save
+  (§3) is a code choice, not a Firestore requirement — toggling one task's status doesn't need
+  to re-serialize every horse and health record.
+- **Multi-document atomicity exists via batched writes and transactions** (`writeBatch()`,
+  `runTransaction()`), covering up to 500 documents per batch. If the motivation for one
+  document per stable was "these related changes must land together," that guarantee is
+  available across separate documents too — it doesn't require them to be one document.
+- **Security rules are meant to be scoped per collection/document**, with rule expressions
+  over `request.auth.uid`, `resource.data`, etc. A single document holding every sub-resource
+  is exactly the case where per-resource rules become impossible, which is why this app pushes
+  all access control into client-side `usePermissions().can()` logic instead (§5). That logic
+  is a workaround for the schema's shape, not something Firestore requires — a subcollection
+  layout (e.g. `stables/{id}/tasks/{taskId}`) would let rules restrict writes per-resource
+  (e.g. only an assigned team member or admin can write a given task) directly at the database
+  layer.
+- **Querying, filtering, and pagination only work on top-level fields of documents inside a
+  collection** — not on values nested inside an array field of one document. The "no
+  per-collection queries or indexes" limitation in §5 isn't a Firestore ceiling; it's the
+  direct consequence of storing `tasks`, `health`, etc. as arrays-in-a-blob instead of as
+  documents in their own collections, which is what unlocks Firestore's query/index/paginate
+  features in the first place.
+- **The 1 MiB per-document limit (§5) is the one hard constraint here, and it cuts against the
+  current design**, not in favor of it. Subcollections have no equivalent ceiling — each
+  horse, training, or health record would be its own small document, so dataset growth scales
+  without a per-stable cap.
+- **The one real (if minor) argument for fewer documents**: many small `onSnapshot` listeners
+  are somewhat fussier to wire up and aggregate client-side than one. This doesn't justify a
+  single document, though — a handful of subcollections (`horses`, `tasks`, `health`, etc.)
+  with a few collection-level `onSnapshot` queries is the idiomatic middle ground, and is what
+  the redesign above already proposes.

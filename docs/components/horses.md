@@ -54,10 +54,15 @@ src/components/EmptyState.jsx, src/components/Tabs.jsx, src/components/StatGrid.
 - Horses live at `stables/{stableId}/horses/{horseId}`, one document per horse (moved off the
   single-document-per-stable model — see `docs/DATABASE.md`). `StableDataContext` gained
   `addHorse`/`updateHorse` (full-record `setDoc`)/`deleteHorse` (deletes the horse doc plus
-  its `trainings`/`health`/`healthDocs`/`expenses` subcollections; the `tasks` cascade still
-  runs against the shared document until tasks migrate in a later phase), and
-  `updateHorseSale(hid, updater)`, which now patches just the horse doc's `sale` field instead
-  of rewriting the whole document.
+  its `trainings`/`health`/`healthDocs`/`expenses` subcollections and any `tasks` docs
+  referencing it), and `updateHorseSale(hid, updater)`, which now patches just the horse doc's
+  `sale` field instead of rewriting the whole document.
+- **Photos are uploaded to Storage, not inlined as base64.** `uploadHorsePhoto(hid, file,
+  onProgress)` uploads to `stables/{stableId}/horses/{hid}/photo/...` and returns `{path,
+  url}`, which `HorseFormPage` stores as the horse's `photo` field (an object, not a raw data
+  URL string — every read site does `horse.photo.url`, not `horse.photo`). A new horse's id
+  is generated up front (`uid()`, before the photo is even picked) so the upload has a final
+  path to target immediately, the same trick `uploadHealthDocs` already used.
 - `reorderHorses(orderedIds)` (added for the weekly-board rework, not a legacy port — legacy
   never had horse ordering) sets each horse's `sortOrder` to its index in `orderedIds`.
   `horses/horseOrder.js`'s `sortHorsesByOrder` applies it — used by both `HorseListPage` and

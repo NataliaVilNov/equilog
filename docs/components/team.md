@@ -41,6 +41,10 @@ src/features/team/
   linked to a user, create another code anyway?" confirmation and the clipboard/toast
   feedback are `TeamPage`'s job, not the mutator's — same split used for `deleteStable`/
   `leaveStable` (Phase 1).
+- **Photos are uploaded to Storage, not inlined as base64** — same treatment as horse photos
+  (`docs/components/horses.md`). `uploadTeamMemberPhoto(mid, file, onProgress)` uploads to
+  `stables/{stableId}/team/{mid}/photo/...` and returns `{path, url}`, stored as the member's
+  `photo` field; every read site does `member.photo.url`, not `member.photo`.
 - `TeamMemberFormPage` preserves the link-status fields (`uid`/`userId`/`authUid`/
   `linkedAt`/`linkedName`/`linkedEmail`) from the existing record when editing — these are
   set by the join/link flow (Phase 1's `StableSelectionContext.confirmJoinAs`), not by this

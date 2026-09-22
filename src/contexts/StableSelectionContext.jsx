@@ -17,17 +17,13 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../lib/firebaseClient.js";
+import { deleteStableCascade } from "../lib/deleteStableCascade.js";
 import { canManageStable } from "../lib/permissions.js";
 import { AuthContext } from "./AuthContext.jsx";
 
 export const StableSelectionContext = createContext(null);
 
 const EMPTY_STABLE_DATA = {
-  horses: [],
-  trainings: [],
-  health: [],
-  expenses: [],
-  team: [],
   tasks: [],
   ctasks: [],
   cexpenses: [],
@@ -292,7 +288,7 @@ export function StableSelectionProvider({ children }) {
     if (!canManageStable(activeStable, user)) {
       throw new Error("No tienes permiso para eliminar esta cuadra");
     }
-    await deleteDoc(doc(db, "stables", activeStable.id, "data", "main"));
+    await deleteStableCascade(activeStable.id);
     await deleteDoc(doc(db, "stables", activeStable.id));
     if (activeStable.inviteCode) {
       try {

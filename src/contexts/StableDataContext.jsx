@@ -753,9 +753,22 @@ export function StableDataProvider({ stableId, children }) {
       updateData((prev) => {
         const weeklyPlans = prev.weeklyPlans || [];
         const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
+        const existing = i >= 0 ? weeklyPlans[i] : null;
+        // A row is only deleted when it's fully empty — activities plus the note/vet-link
+        // fields added after this mutator was first written — so clearing the activity
+        // order doesn't silently drop a cell's note or vet link.
+        const hasOtherContent = !!(existing && (existing.note || existing.vetHealthId));
         let next;
-        if (activities.length) {
-          const rec = { id: i >= 0 ? weeklyPlans[i].id || uid() : uid(), hid, date, activities };
+        if (activities.length || hasOtherContent) {
+          const rec = {
+            id: existing ? existing.id || uid() : uid(),
+            hid,
+            date,
+            activities,
+            note: existing?.note || "",
+            completed: (existing?.completed || []).filter((c) => activities.includes(c)),
+            vetHealthId: existing?.vetHealthId || null,
+          };
           next = i >= 0 ? weeklyPlans.map((p, idx) => (idx === i ? rec : p)) : [...weeklyPlans, rec];
         } else {
           next = i >= 0 ? weeklyPlans.filter((_, idx) => idx !== i) : weeklyPlans;
@@ -773,16 +786,81 @@ export function StableDataProvider({ stableId, children }) {
         const weeklyPlans = prev.weeklyPlans || [];
         const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
         if (i < 0) {
-          return { ...prev, weeklyPlans: [...weeklyPlans, { id: uid(), hid, date, activities: [activityId] }] };
+          return {
+            ...prev,
+            weeklyPlans: [
+              ...weeklyPlans,
+              { id: uid(), hid, date, activities: [activityId], completed: [], note: "", vetHealthId: null },
+            ],
+          };
         }
         const existing = weeklyPlans[i];
         const activities = Array.isArray(existing.activities) ? existing.activities : [];
-        const nextActivities = activities.includes(activityId)
-          ? activities.filter((a) => a !== activityId)
-          : [...activities, activityId];
+        const removing = activities.includes(activityId);
+        const nextActivities = removing ? activities.filter((a) => a !== activityId) : [...activities, activityId];
+        // Removing an activity also drops its completed-state, matching setWeeklyPlanActivities.
+        const nextCompleted = removing
+          ? (existing.completed || []).filter((c) => c !== activityId)
+          : existing.completed || [];
         return {
           ...prev,
-          weeklyPlans: weeklyPlans.map((p, pi) => (pi === i ? { ...existing, activities: nextActivities } : p)),
+          weeklyPlans: weeklyPlans.map((p, pi) =>
+            pi === i ? { ...existing, activities: nextActivities, completed: nextCompleted } : p
+          ),
+        };
+      });
+    },
+    [updateData]
+  );
+
+  // Sets or clears a weekly-plan cell's free-text note. Deletes the row entirely if it
+  // becomes fully empty (no activities, no note, no vet link), matching
+  // setWeeklyPlanActivities's existing "empty row is removed" convention.
+  const setWeeklyPlanNote = useCallback(
+    (hid, date, note) => {
+      updateData((prev) => {
+        const weeklyPlans = prev.weeklyPlans || [];
+        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
+        const trimmed = (note || "").trim().slice(0, 240);
+        if (i < 0) {
+          if (!trimmed) return prev;
+          return {
+            ...prev,
+            weeklyPlans: [...weeklyPlans, { id: uid(), hid, date, activities: [], completed: [], note: trimmed, vetHealthId: null }],
+          };
+        }
+        const existing = weeklyPlans[i];
+        const hasOtherContent = !!((existing.activities || []).length || existing.vetHealthId);
+        if (!trimmed && !hasOtherContent) {
+          return { ...prev, weeklyPlans: weeklyPlans.filter((_, idx) => idx !== i) };
+        }
+        return {
+          ...prev,
+          weeklyPlans: weeklyPlans.map((p, idx) => (idx === i ? { ...existing, note: trimmed } : p)),
+        };
+      });
+    },
+    [updateData]
+  );
+
+  // Toggles one activity id in/out of a weekly-plan cell's completed set. No-ops if the id
+  // isn't currently assigned to that cell (the UI only ever offers currently-assigned
+  // activities, so this is a defensive guard, not an expected path).
+  const toggleWeeklyPlanCompleted = useCallback(
+    (hid, date, activityId) => {
+      updateData((prev) => {
+        const weeklyPlans = prev.weeklyPlans || [];
+        const i = weeklyPlans.findIndex((p) => p.hid === hid && p.date === date);
+        if (i < 0) return prev;
+        const existing = weeklyPlans[i];
+        if (!(existing.activities || []).includes(activityId)) return prev;
+        const completed = existing.completed || [];
+        const nextCompleted = completed.includes(activityId)
+          ? completed.filter((c) => c !== activityId)
+          : [...completed, activityId];
+        return {
+          ...prev,
+          weeklyPlans: weeklyPlans.map((p, idx) => (idx === i ? { ...existing, completed: nextCompleted } : p)),
         };
       });
     },
@@ -1136,6 +1214,8 @@ export function StableDataProvider({ stableId, children }) {
       deleteStableExpense,
       setWeeklyPlanActivities,
       toggleWeeklyPlanActivity,
+      setWeeklyPlanNote,
+      toggleWeeklyPlanCompleted,
       setBoardPeriodic,
       assignBoardHorse,
       moveBoardAssignment,
@@ -1196,6 +1276,8 @@ export function StableDataProvider({ stableId, children }) {
       deleteStableExpense,
       setWeeklyPlanActivities,
       toggleWeeklyPlanActivity,
+      setWeeklyPlanNote,
+      toggleWeeklyPlanCompleted,
       setBoardPeriodic,
       assignBoardHorse,
       moveBoardAssignment,

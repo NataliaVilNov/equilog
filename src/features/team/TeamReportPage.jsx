@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useStableData } from "../../hooks/useStableData.js";
 import { useToast } from "../../hooks/useToast.js";
+import { useTaskOccurrences } from "../../hooks/useTaskOccurrences.js";
 import { td, fD } from "../../lib/date.js";
 import { workTypeById, activityById } from "../../lib/constants.js";
 
@@ -22,7 +23,7 @@ function defaultRange() {
 // fetch call is ported exactly as legacy has it (no API key, same request shape) — see
 // docs/components/reports.md for why this isn't silently "fixed" here.
 export function TeamReportPage() {
-  const { horses, trainings, tasks } = useStableData();
+  const { stableId, horses, trainings, tasks } = useStableData();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -34,6 +35,8 @@ export function TeamReportPage() {
   const [reportText, setReportText] = useState(null);
   const [error, setError] = useState(false);
 
+  const occRows = useTaskOccurrences(stableId, tasks, start, end);
+
   async function handleGenerate() {
     setGenerating(true);
     setError(false);
@@ -41,16 +44,14 @@ export function TeamReportPage() {
     const lines = [];
     horses.forEach((h) => {
       const tr = trainings.filter((t) => t.hid === h.id && t.date >= start && t.date <= end);
-      const tk = tasks.filter(
-        (t) => t.horseId === h.id && t.startDate >= start && t.startDate <= end && t.status === "done"
-      );
+      const tk = occRows.filter((t) => t.horseId === h.id && t.status === "done");
       if (!tr.length && !tk.length) return;
       lines.push(`\n=== ${h.name}${h.owner ? " (" + h.owner + ")" : ""} ===`);
       tr.forEach((t) =>
         lines.push(`- ${fD(t.date)} | ${workTypeById(t.wtype).l} | ${t.dur}min | ${t.rating}/10${t.feel ? " | " + t.feel : ""}`)
       );
       tk.forEach((t) =>
-        lines.push(`- ${fD(t.startDate)} | ${activityById(t.activity).l} ✓${t.notes ? " | " + t.notes : ""}`)
+        lines.push(`- ${fD(t.occurrenceDate || t.startDate)} | ${activityById(t.activity).l} ✓${t.notes ? " | " + t.notes : ""}`)
       );
     });
     const typeLabel = { diario: "diario", semanal: "semanal", finde: "del fin de semana" }[reportType] || "del periodo";

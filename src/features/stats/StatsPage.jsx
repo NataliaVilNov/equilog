@@ -1,6 +1,7 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../hooks/useStableData.js";
-import { fD, dU } from "../../lib/date.js";
+import { useTaskOccurrences } from "../../hooks/useTaskOccurrences.js";
+import { td, addD, fD, dU } from "../../lib/date.js";
 import { expenseCategoryById } from "../../lib/constants.js";
 import { ownerListForHorse } from "../expenses/expenseSplits.js";
 import { StatGrid } from "../../components/StatGrid.jsx";
@@ -110,8 +111,14 @@ function FinancialTab({ totIn, totOut, cEx, pendIn, pendOut, horses, ex, navigat
   );
 }
 
-function TeamTab({ team, tasks, fS, fE }) {
-  const at = tasks.filter((t) => (!fS || t.startDate >= fS) && (!fE || t.startDate <= fE));
+// fS/fE can both be blank (no date filter set) — the occurrence hook needs concrete bounds for
+// its range query, so an unset bound falls back to a generous fixed window (2 years back to
+// today) scoped to just this tab; the Financial/Horses tabs keep their own literally-unbounded
+// filtering untouched.
+function TeamTab({ team, stableId, tasks, fS, fE }) {
+  const rangeStart = fS || addD(td(), -730);
+  const rangeEnd = fE || td();
+  const at = useTaskOccurrences(stableId, tasks, rangeStart, rangeEnd);
   const dn = at.filter((t) => t.status === "done").length;
   const tmin = at.filter((t) => t.status === "done").reduce((s, t) => s + Number(t.dur || 0), 0);
 
@@ -249,7 +256,7 @@ function HorsesTab({ horses, tr, health, navigate }) {
 export function StatsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { horses: allHorses, trainings, expenses, stableExpenses, tasks, team, health } = useStableData();
+  const { stableId, horses: allHorses, trainings, expenses, stableExpenses, tasks, team, health } = useStableData();
 
   const fH = searchParams.get("horse") || "";
   const fO = searchParams.get("owner") || "";
@@ -350,7 +357,7 @@ export function StatsPage() {
       {tab === "financiero" && (
         <FinancialTab totIn={totIn} totOut={totOut} cEx={cEx} pendIn={pendIn} pendOut={pendOut} horses={horses} ex={ex} navigate={navigate} />
       )}
-      {tab === "equipo" && <TeamTab team={team} tasks={tasks} fS={fS} fE={fE} />}
+      {tab === "equipo" && <TeamTab team={team} stableId={stableId} tasks={tasks} fS={fS} fE={fE} />}
       {tab === "caballos" && <HorsesTab horses={horses} tr={tr} health={health} navigate={navigate} />}
     </div>
   );

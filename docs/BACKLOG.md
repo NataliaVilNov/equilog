@@ -83,11 +83,15 @@ collapsed into one `tasks` collection with nullable `horseId` (null = general ch
 and a sparse per-date `occurrences` exceptions subcollection so a recurring task never needs
 its future occurrences materialized in advance. See `docs/DATABASE.md` §2 and
 `docs/components/tasks.md`.
-- **Known gap**: `useTaskOccurrences` (the recurrence-expansion read hook) is only wired into
-  single-date screens (`DayBoardPage`, `MemberDayPage`, `HomePage`). `StatsPage`'s date-range
-  task stats still read the raw `tasks` collection, so a recurring task's individual
-  occurrences don't roll up into historical stats correctly — needs a ranged version of the
-  hook, not built in this pass.
+- ~~**Known gap**: `useTaskOccurrences` ... only wired into single-date screens~~ — **fixed**:
+  `useTaskOccurrences(stableId, tasks, rangeStart, rangeEnd)` now accepts a date range
+  (`rangeEnd` defaults to `rangeStart`, so the three single-date call sites — `DayBoardPage`,
+  `MemberDayPage`, `HomePage` — needed no changes) and returns one row per matching
+  occurrence date, not one per task. `StatsPage`'s "Equipo" tab and `TeamReportPage` both now
+  read through it instead of the raw `tasks` collection, so recurring-task completions roll up
+  correctly per occurrence. `StatsPage` falls back to a fixed 2-years-back-to-today window for
+  this tab specifically when no date filter is set, since the range query needs concrete
+  bounds (the Financial/Horses tabs are unaffected, still literally unbounded).
 - **Known gap**: there's no UI to reassign or skip a single occurrence of a recurring task
   (only mark one done/pending) — the schema supports it (`overrideAssignedTo` on an occurrence
   doc) but nothing writes that field yet.

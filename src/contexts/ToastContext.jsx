@@ -1,4 +1,5 @@
-import { createContext, useCallback, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { registerErrorReporter } from "../lib/errorReporter.js";
 
 export const ToastContext = createContext(null);
 
@@ -16,6 +17,13 @@ export function ToastProvider({ children }) {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => setVisible(false), TOAST_DURATION_MS);
   }, []);
+
+  // Lets non-React modules (e.g. src/lib/firestoreCollections.js) surface a write failure as
+  // a toast without importing React context machinery.
+  useEffect(() => {
+    registerErrorReporter(showToast);
+    return () => registerErrorReporter(null);
+  }, [showToast]);
 
   const value = useMemo(() => ({ message, visible, showToast }), [message, visible, showToast]);
 

@@ -17,6 +17,7 @@ import {
   subscribeToCollectionGroup,
   subscribeToDoc,
   batchDeleteQuery,
+  commitBatch,
 } from "../lib/firestoreCollections.js";
 import {
   ref as storageRef,
@@ -265,7 +266,7 @@ export function StableDataProvider({ stableId, children }) {
           batch.update(stableDoc(stableId, "horses", h.id), { sortOrder: idx });
         }
       });
-      batch.commit();
+      commitBatch(batch);
     },
     [horses, stableId]
   );
@@ -322,7 +323,7 @@ export function StableDataProvider({ stableId, children }) {
           })
         );
       }
-      batch.commit();
+      commitBatch(batch);
     },
     [stableId]
   );
@@ -366,7 +367,7 @@ export function StableDataProvider({ stableId, children }) {
           })
         );
       }
-      batch.commit();
+      commitBatch(batch);
     },
     [expenses, stableId]
   );
@@ -448,7 +449,7 @@ export function StableDataProvider({ stableId, children }) {
       added.forEach((doc) => {
         batch.set(stableDoc(stableId, "horses", hid, "healthDocs", doc.id), cleanForFirestore(doc));
       });
-      await batch.commit();
+      await commitBatch(batch);
       return added;
     },
     [horses, stableId]
@@ -548,7 +549,7 @@ export function StableDataProvider({ stableId, children }) {
             })
           );
         });
-      batch.commit();
+      commitBatch(batch);
     },
     [expenses, stableId]
   );
@@ -589,7 +590,7 @@ export function StableDataProvider({ stableId, children }) {
       sessionAlerts
         .filter((s) => s.tid === id)
         .forEach((s) => batch.delete(stableDoc(stableId, "sessionAlerts", s.id)));
-      batch.commit();
+      commitBatch(batch);
       batchDeleteQuery(stableCollection(stableId, "tasks", id, "occurrences"));
       deleteDocRef(stableDoc(stableId, "tasks", id));
     },
@@ -633,7 +634,7 @@ export function StableDataProvider({ stableId, children }) {
         sessionAlerts
           .filter((s) => s.tid === id && !s.ans)
           .forEach((s) => batch.delete(stableDoc(stableId, "sessionAlerts", s.id)));
-        batch.commit();
+        commitBatch(batch);
       }
     },
     [tasks, horses, sessionAlerts, stableId]
@@ -681,7 +682,7 @@ export function StableDataProvider({ stableId, children }) {
         sessionAlerts
           .filter((s) => s.tid === id && s.date === date && !s.ans)
           .forEach((s) => batch.delete(stableDoc(stableId, "sessionAlerts", s.id)));
-        batch.commit();
+        commitBatch(batch);
       }
     },
     [horses, sessionAlerts, stableId]
@@ -760,7 +761,7 @@ export function StableDataProvider({ stableId, children }) {
           })
         );
       });
-      batch.commit();
+      commitBatch(batch);
     },
     [taskTemplates, stableId]
   );
@@ -788,7 +789,7 @@ export function StableDataProvider({ stableId, children }) {
       tasks
         .filter((t) => t.assignedTo === id)
         .forEach((t) => batch.update(stableDoc(stableId, "tasks", t.id), { assignedTo: null }));
-      batch.commit();
+      commitBatch(batch);
       deleteDocRef(stableDoc(stableId, "team", id));
     },
     [tasks, stableId]
@@ -969,7 +970,7 @@ export function StableDataProvider({ stableId, children }) {
           cleanForFirestore({ id, stableId, hid, date, activities: [...activities], completed: [], note, vetHealthId: null })
         );
       });
-      batch.commit();
+      commitBatch(batch);
     },
     [weeklyPlans, stableId]
   );
@@ -1004,7 +1005,7 @@ export function StableDataProvider({ stableId, children }) {
           })
         );
       });
-      batch.commit();
+      commitBatch(batch);
     },
     [weeklyPlans, stableId]
   );
@@ -1316,7 +1317,7 @@ export function StableDataProvider({ stableId, children }) {
           created++;
         }
       });
-      batch.commit();
+      commitBatch(batch);
       return created;
     },
     [stableId]

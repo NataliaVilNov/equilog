@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { activityById } from "../../lib/constants.js";
 import { taskStatusIcon, taskStatusLabel, taskNeedsReturn } from "./taskHelpers.js";
@@ -6,9 +7,10 @@ import { useStableData } from "../../hooks/useStableData.js";
 
 // Ports tcard (public/legacy-app.js:3205-3224). Also reused by HomePage (Phase 4c).
 export function TaskCard({ task }) {
-  const { horses, team, cycleTaskStatus, cycleOccurrenceStatus, deleteTask } = useStableData();
+  const { horses, team, cycleTaskStatus, cycleOccurrenceStatus, setOccurrenceAssignee, deleteTask } = useStableData();
   const { can } = usePermissions();
   const navigate = useNavigate();
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const horse = horses.find((h) => h.id === task.horseId);
   const a = activityById(task.activity);
@@ -16,6 +18,9 @@ export function TaskCard({ task }) {
   const icon = taskStatusIcon(task);
   const label = taskStatusLabel(task);
   const dbl = taskNeedsReturn(task.activity);
+  // Reassigning a single occurrence writes to the same doc/collection the new rules gate on
+  // the `tasks` permission — keep the UI gate matching what the rules would allow.
+  const canReassign = task.isRecurringOccurrence && can("tasks");
 
   function handleCycle() {
     if (task.isRecurringOccurrence) cycleOccurrenceStatus(task);
@@ -25,6 +30,11 @@ export function TaskCard({ task }) {
   function handleDelete() {
     if (!window.confirm("¿Eliminar?")) return;
     deleteTask(task.id);
+  }
+
+  function handleReassign(memberId) {
+    setOccurrenceAssignee(task, memberId);
+    setPickerOpen(false);
   }
 
   return (
@@ -45,10 +55,16 @@ export function TaskCard({ task }) {
           {task.dur ? task.dur + "min" : ""}
           {task.notes ? " · " + task.notes : ""}
         </div>
-        {member && (
-          <span className="tka">
-            {member.emoji || "👤"} {member.name}
-          </span>
+        {canReassign ? (
+          <button type="button" className="tka" onClick={() => setPickerOpen((o) => !o)}>
+            {member ? `${member.emoji || "👤"} ${member.name}` : "Sin asignar"}
+          </button>
+        ) : (
+          member && (
+            <span className="tka">
+              {member.emoji || "👤"} {member.name}
+            </span>
+          )
         )}
         <span
           style={{
@@ -67,6 +83,22 @@ export function TaskCard({ task }) {
           <span style={{ fontSize: ".7rem", color: "var(--gr)", marginLeft: ".3rem" }} title="Tarea recurrente">
             🔁
           </span>
+        )}
+        {pickerOpen && canReassign && (
+          <div className="pch">
+            <div className={"pc" + (!task.assignedTo ? " active" : "")} onClick={() => handleReassign(null)}>
+              Sin asignar
+            </div>
+            {team.map((m) => (
+              <div
+                key={m.id}
+                className={"pc" + (task.assignedTo === m.id ? " active" : "")}
+                onClick={() => handleReassign(m.id)}
+              >
+                {m.emoji || "👤"} {m.name}
+              </div>
+            ))}
+          </div>
         )}
       </div>
       <div style={{ display: "flex", gap: ".25rem" }}>

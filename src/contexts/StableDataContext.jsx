@@ -641,6 +641,22 @@ export function StableDataProvider({ stableId, children }) {
     [tasks, horses, sessionAlerts, stableId]
   );
 
+  // Reassigns one date's occurrence of a recurring task, without touching that date's status
+  // exception (if any) — writeDocMerged, not writeDoc, since occurrence docs are sparse and
+  // this mutator and cycleOccurrenceStatus below are two independent writers of the same doc.
+  const setOccurrenceAssignee = useCallback(
+    (occurrenceTask, memberId) => {
+      const { id, occurrenceDate: date } = occurrenceTask;
+      writeDocMerged(stableDoc(stableId, "tasks", id, "occurrences", date), {
+        taskId: id,
+        stableId,
+        date,
+        overrideAssignedTo: memberId,
+      });
+    },
+    [stableId]
+  );
+
   // Cycles one date's occurrence of a recurring task, mirroring cycleTaskStatus but writing
   // to that date's sparse exception doc (tasks/{id}/occurrences/{date}) instead of the task's
   // own status field, since a recurring task's status is per-occurrence, not per-task.
@@ -1367,6 +1383,7 @@ export function StableDataProvider({ stableId, children }) {
       deleteTask,
       cycleTaskStatus,
       cycleOccurrenceStatus,
+      setOccurrenceAssignee,
       answerSessionAlert,
       addTemplate,
       updateTemplate,
@@ -1446,6 +1463,7 @@ export function StableDataProvider({ stableId, children }) {
       deleteTask,
       cycleTaskStatus,
       cycleOccurrenceStatus,
+      setOccurrenceAssignee,
       answerSessionAlert,
       addTemplate,
       updateTemplate,

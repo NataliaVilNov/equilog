@@ -92,9 +92,15 @@ its future occurrences materialized in advance. See `docs/DATABASE.md` §2 and
   correctly per occurrence. `StatsPage` falls back to a fixed 2-years-back-to-today window for
   this tab specifically when no date filter is set, since the range query needs concrete
   bounds (the Financial/Horses tabs are unaffected, still literally unbounded).
-- **Known gap**: there's no UI to reassign or skip a single occurrence of a recurring task
-  (only mark one done/pending) — the schema supports it (`overrideAssignedTo` on an occurrence
-  doc) but nothing writes that field yet.
+- ~~**Known gap**: there's no UI to reassign ... a single occurrence~~ — **reassignment fixed**:
+  tapping a recurring occurrence's assignee badge on `TaskCard` (gated on `can("tasks")`) opens
+  an inline pill picker (reusing `TaskFormPage`'s `.pch`/`.pc` pattern) that writes
+  `overrideAssignedTo` via the new `setOccurrenceAssignee` mutator. Fixed a related latent bug
+  in the process: occurrence-doc writes (`cycleOccurrenceStatus` and the new mutator) now use
+  `writeDocMerged` instead of a full `setDoc`, since the two are independent writers of the
+  same sparse doc and would otherwise clobber each other's field. **Skip is still not built** —
+  no such status exists in the app (`pending`/`inprogress`/`done` only); a separate item if
+  wanted.
 
 ## Code organization
 

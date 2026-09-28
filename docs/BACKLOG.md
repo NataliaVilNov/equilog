@@ -169,10 +169,9 @@ features have no top-level documentation, no setup/install instructions (`npm in
   `src/styles.css`'s class-based design system rather than inline styles.
 - **No CI beyond deploy**: still true — no lint step, no build-failure gate other than the
   deploy workflow itself failing.
-- **`SaleTab` writes one Firestore document per keystroke**: it has no local draft state and
-  writes straight through `updateHorseSale` on every change (matching legacy's own
-  no-separate-save-button venta tab), which previously got coalesced by the old shared
-  250ms debounce. The Firestore schema migration removed that debounce entirely (nothing else
-  needed it — see `docs/DATABASE.md` §5), so this one screen now fires a write per keystroke
-  instead of one per pause. Not a correctness issue, just unnecessary write volume; fixing it
-  means reintroducing a small per-field debounce scoped to just this mutator.
+- ~~**`SaleTab` writes one Firestore document per keystroke**~~ — **fixed**: `SaleTab.jsx`'s
+  three hot-path handlers (price, owner name, owner %) now call `updateHorseSale` through
+  `useDebouncedCallback` (`src/lib/useDebouncedCallback.js`, 250ms, matching the old shared
+  debounce's delay), scoped to just this screen rather than reintroducing the deleted
+  general-purpose `keyedDebounce.js`. `handleAddOwner`/`handleRemoveOwner` still write
+  immediately (button clicks, not hot paths).

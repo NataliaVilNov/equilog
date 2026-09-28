@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useStableData } from "../../../hooks/useStableData.js";
+import { useDebouncedCallback } from "../../../lib/useDebouncedCallback.js";
 import { computeSaleLiquidation, SALE_EXPENSE_CATEGORIES, SALE_EXPENSE_CATEGORY_LABELS } from "./saleLiquidation.js";
 import { SaleOwnerRow } from "./SaleOwnerRow.jsx";
 
@@ -49,19 +50,21 @@ export function SaleTab({ horse }) {
     gastosConReparto,
   } = liquidation;
 
+  const debouncedUpdateSale = useDebouncedCallback(updateHorseSale, 250);
+
   function handlePriceChange(value) {
-    updateHorseSale(horse.id, { precio: Number(value) || 0 });
+    debouncedUpdateSale(horse.id, { precio: Number(value) || 0 });
   }
   function handleOwnerName(i, value) {
     if (ownersLocked) return;
-    updateHorseSale(horse.id, (sale) => ({
+    debouncedUpdateSale(horse.id, (sale) => ({
       ...sale,
       owners: sale.owners.map((o, idx) => (idx === i ? { ...o, nombre: value } : o)),
     }));
   }
   function handleOwnerPct(i, value) {
     if (ownersLocked) return;
-    updateHorseSale(horse.id, (sale) => ({
+    debouncedUpdateSale(horse.id, (sale) => ({
       ...sale,
       owners: sale.owners.map((o, idx) => (idx === i ? { ...o, pct: Number(value) || 0 } : o)),
     }));

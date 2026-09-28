@@ -34,6 +34,19 @@ export async function writeDoc(ref, data) {
   }
 }
 
+// Like writeDoc, but merges onto the existing document instead of replacing it wholesale —
+// for sparse docs with more than one independent writer (e.g. tasks/{id}/occurrences/{date},
+// where status and overrideAssignedTo are set by two different mutators and neither should
+// wipe out a field the other one set).
+export async function writeDocMerged(ref, data) {
+  try {
+    await setDoc(ref, cleanForFirestore(data), { merge: true });
+  } catch (err) {
+    reportWriteError(err);
+    throw err;
+  }
+}
+
 export async function patchDoc(ref, partial) {
   try {
     await updateDoc(ref, cleanForFirestore(partial));

@@ -11,6 +11,7 @@ import {
   stableCollection,
   stableDoc,
   writeDoc,
+  writeDocMerged,
   patchDoc,
   deleteDocRef,
   subscribeToCollection,
@@ -655,7 +656,7 @@ export function StableDataProvider({ stableId, children }) {
       } else {
         nextStatus = occurrenceTask.status === "done" ? "pending" : "done";
       }
-      writeDoc(stableDoc(stableId, "tasks", id, "occurrences", date), { taskId: id, stableId, date, status: nextStatus });
+      writeDocMerged(stableDoc(stableId, "tasks", id, "occurrences", date), { taskId: id, stableId, date, status: nextStatus });
       if (nextStatus === "done") {
         const activity = activityById(occurrenceTask.activity);
         if (

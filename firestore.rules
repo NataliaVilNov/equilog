@@ -1,0 +1,99 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function stableDoc(stableId) {
+      return get(/databases/$(database)/documents/stables/$(stableId));
+    }
+
+    function isStableMember(stableId) {
+      return signedIn()
+        && request.auth.uid in stableDoc(stableId).data.memberIds;
+    }
+
+    function isOwner() {
+      return signedIn()
+        && resource.data.ownerId == request.auth.uid;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.uid in resource.data.memberIds
+        && resource.data.members[request.auth.uid].role == "admin";
+    }
+
+    function isOwnerOrAdmin() {
+      return isOwner() || isAdmin();
+    }
+
+    function isJoiningSelf() {
+      return signedIn()
+        && !(request.auth.uid in resource.data.memberIds)
+        && request.auth.uid in request.resource.data.memberIds
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.inviteCode == resource.data.inviteCode
+        && request.resource.data.name == resource.data.name
+        && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1;
+    }
+
+    function isLeavingSelf() {
+      return signedIn()
+        && request.auth.uid in resource.data.memberIds
+        && !(request.auth.uid in request.resource.data.memberIds)
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.inviteCode == resource.data.inviteCode
+        && request.resource.data.name == resource.data.name
+        && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1
+        && resource.data.ownerId != request.auth.uid;
+    }
+
+    match /inviteCodes/{code} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.stableId is string
+        && request.auth.uid in stableDoc(request.resource.data.stableId).data.memberIds
+        && stableDoc(request.resource.data.stableId).data.members[request.auth.uid].role == "admin";
+
+      allow delete: if signedIn();
+
+      allow update: if false;
+    }
+
+    match /stables/{stableId} {
+      allow read: if signedIn();
+
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.auth.uid in request.resource.data.memberIds;
+
+      allow update: if signedIn() && (
+        isOwnerOrAdmin()
+        || isJoiningSelf()
+        || isLeavingSelf()
+      );
+
+      allow delete: if isOwnerOrAdmin();
+
+      // Every horse/task/health/board/etc. document, at any nesting depth under this
+      // stable (horses/{hid}/trainings/{tid}, tasks/{tid}/occurrences/{date}, boardConfig/
+      // main, ...), is gated by membership in this stable. This replaces the old
+      // `match /data/{doc}` rule, which only covered the single legacy blob document —
+      // this recursive match covers that same path too, plus every subcollection the
+      // schema migration split it into (docs/DATABASE.md).
+      match /{document=**} {
+        allow read, write: if isStableMember(stableId);
+      }
+    }
+
+    match /users/{userId} {
+      allow read, write: if signedIn()
+        && request.auth.uid == userId;
+    }
+  }
+}

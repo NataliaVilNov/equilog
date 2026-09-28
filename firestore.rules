@@ -86,9 +86,51 @@ service cloud.firestore {
       // `match /data/{doc}` rule, which only covered the single legacy blob document —
       // this recursive match covers that same path too, plus every subcollection the
       // schema migration split it into (docs/DATABASE.md).
+      //
+      // Exception: this nested match does NOT apply to collectionGroup() queries — Firestore
+      // only recognizes a rule for a collectionGroup query if it's declared as its own
+      // top-level `match /{path=**}/collectionId/{docId}` block, not nested inside an
+      // ancestor's match. trainings/health/healthDocs/expenses/occurrences are all read via
+      // collectionGroup() client-side (docs/DATABASE.md §4), so they get their own rules
+      // below instead of relying on this block.
       match /{document=**} {
         allow read, write: if isStableMember(stableId);
       }
+    }
+
+    // Collection-group rules for the collections nested under a horse (or a task) that the
+    // app queries with collectionGroup() rather than a fixed-ancestor collection() call. Each
+    // such document already carries an explicit `stableId` field for exactly this purpose
+    // (collectionGroup queries can't filter by ancestor path, only by field), so these rules
+    // check that field directly instead of re-deriving the stable from the path.
+    match /{path=**}/trainings/{trainingId} {
+      allow read: if isStableMember(resource.data.stableId);
+      allow create: if isStableMember(request.resource.data.stableId);
+      allow update, delete: if isStableMember(resource.data.stableId);
+    }
+
+    match /{path=**}/health/{healthId} {
+      allow read: if isStableMember(resource.data.stableId);
+      allow create: if isStableMember(request.resource.data.stableId);
+      allow update, delete: if isStableMember(resource.data.stableId);
+    }
+
+    match /{path=**}/healthDocs/{docId} {
+      allow read: if isStableMember(resource.data.stableId);
+      allow create: if isStableMember(request.resource.data.stableId);
+      allow update, delete: if isStableMember(resource.data.stableId);
+    }
+
+    match /{path=**}/expenses/{expenseId} {
+      allow read: if isStableMember(resource.data.stableId);
+      allow create: if isStableMember(request.resource.data.stableId);
+      allow update, delete: if isStableMember(resource.data.stableId);
+    }
+
+    match /{path=**}/occurrences/{date} {
+      allow read: if isStableMember(resource.data.stableId);
+      allow create: if isStableMember(request.resource.data.stableId);
+      allow update, delete: if isStableMember(resource.data.stableId);
     }
 
     match /users/{userId} {

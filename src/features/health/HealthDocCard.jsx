@@ -37,7 +37,7 @@ function fileSizeLabel(n) {
 export function HealthDocCard({ doc }) {
   const { can } = usePermissions();
   const { deleteHealthDoc } = useStableData();
-  const canDel = can("deleteItems") || can("health");
+  const canDel = can("deleteItems");
   const sourceLabel = doc.source === "link" ? "Enlace externo" : "Archivo subido";
   const meta = [
     healthDocCategoryLabel(doc.category),

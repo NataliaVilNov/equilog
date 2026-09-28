@@ -201,6 +201,31 @@ the `stableId` field on the document itself rather than the ancestor path (same 
 the failure mode — a silent, generic "Missing or insufficient permissions" — gives no hint
 that nesting is the specific problem.
 
+**Security rules are permission-key-aware**, not just membership-checked: `firestore.rules`
+mirrors the client's 11-key `usePermissions().can()` matrix (`src/lib/permissions.js`) via a
+`myPerm(stableId, key)` helper that resolves to admin/owner (always allowed), the caller's own
+`team/{uid}.permissions[key]`, or `defaultPermFor(key)` when the caller has no team doc.
+Mapping: `horses`→`horses` (create/update only, `deleteItems` for delete; a `sale:false`
+caller is additionally blocked from writing the `sale` field on an otherwise-permitted
+update), `tasks`→`tasks` + `occurrences` (create/update), `trainings`→`trainings`,
+`health`→`health` + `healthDocs`, `expenses`→`expenses` (also gates its own delete, not
+`deleteItems` — see the comment in `firestore.rules` for why), `team`→`taskTemplates`
+(create/update; delete needs `deleteItems` too), `stable`→`stableExpenses` (same pattern).
+`team` subcollection writes themselves (a member's own doc) are **admin/owner-only
+regardless of the `team` key**, closing a privilege-escalation path the client UI didn't
+guard against. `reports`/`stats` are route-only (no writes to gate). Boards/session-alert/
+weekly-plan/absence/settlement collections stay membership-only (no client-side permission-key
+precedent exists for them).
+
+**Known limitation**: the rules' "is this my own team doc" check (used for `myPerm`'s
+permission lookup) requires the team doc's ID to equal the caller's Firebase Auth uid — rules
+can only `get()` an exact path, not search by field, so they can't replicate the client's more
+flexible `uid`/`userId`/`authUid` matching (`usePermissions.js`). Existing team docs (created
+with a random `uid()` string as their ID) won't match until backfilled to use the linked
+user's auth uid as the doc ID; until then those members fall through to
+`defaultPermFor()`'s defaults instead of their configured permissions (fail-closed, not
+fail-open).
+
 ## 5. Write path
 
 `src/lib/firestoreCollections.js` provides the shared per-document primitives every mutator in

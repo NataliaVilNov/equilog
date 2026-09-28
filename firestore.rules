@@ -52,6 +52,57 @@ service cloud.firestore {
         && resource.data.ownerId != request.auth.uid;
     }
 
+    // Stable-scoped variants of isOwner()/isAdmin(), for use anywhere `resource` is NOT the
+    // stable doc itself (i.e. everywhere below except `match /stables/{stableId}`'s own
+    // create/update/delete rules) — isOwner()/isAdmin() read `resource.data.ownerId`/
+    // `.memberIds`/`.members`, which is only correct when `resource` IS the stable doc.
+    function isStableAdmin(stableId) {
+      return signedIn()
+        && request.auth.uid in stableDoc(stableId).data.memberIds
+        && stableDoc(stableId).data.members[request.auth.uid].role == "admin";
+    }
+
+    function isStableOwner(stableId) {
+      return signedIn() && stableDoc(stableId).data.ownerId == request.auth.uid;
+    }
+
+    function isStableOwnerOrAdmin(stableId) {
+      return isStableOwner(stableId) || isStableAdmin(stableId);
+    }
+
+    // Per-member fine-grained permissions live on stables/{stableId}/team/{memberId}.permissions
+    // (11 boolean keys, mirroring PERMISSION_KEYS in src/lib/permissions.js). A team doc is only
+    // recognized as "mine" here when its own document ID equals the caller's auth uid — the
+    // client additionally matches a doc via uid/userId/authUid fields (usePermissions.js), which
+    // rules can't replicate (get() only resolves an exact path, not a field search). Existing
+    // team docs (random uid()-generated IDs) won't match until backfilled to use the caller's
+    // uid as the doc ID; until then, those members fall through to defaultPermFor()'s defaults
+    // instead of their configured permissions — a fail-closed gap, not a fail-open one.
+    function myTeamDocPath(stableId) {
+      return /databases/$(database)/documents/stables/$(stableId)/team/$(request.auth.uid);
+    }
+
+    function hasTeamDoc(stableId) {
+      return exists(myTeamDocPath(stableId));
+    }
+
+    function myTeamPerms(stableId) {
+      return get(myTeamDocPath(stableId)).data.permissions;
+    }
+
+    // Mirrors defaultTeamPermissions() in src/lib/permissions.js — keep both in sync.
+    function defaultPermFor(key) {
+      return key in ['horses', 'trainings', 'tasks', 'expenses', 'health'];
+    }
+
+    function myPerm(stableId, key) {
+      return isStableMember(stableId) && (
+        isStableOwnerOrAdmin(stableId)
+        || (hasTeamDoc(stableId) && myTeamPerms(stableId)[key] == true)
+        || (!hasTeamDoc(stableId) && defaultPermFor(key))
+      );
+    }
+
     match /inviteCodes/{code} {
       allow read: if signedIn();
 
@@ -80,20 +131,73 @@ service cloud.firestore {
 
       allow delete: if isOwnerOrAdmin();
 
-      // Every horse/task/health/board/etc. document, at any nesting depth under this
-      // stable (horses/{hid}/trainings/{tid}, tasks/{tid}/occurrences/{date}, boardConfig/
-      // main, ...), is gated by membership in this stable. This replaces the old
-      // `match /data/{doc}` rule, which only covered the single legacy blob document —
-      // this recursive match covers that same path too, plus every subcollection the
-      // schema migration split it into (docs/DATABASE.md).
-      //
-      // Exception: this nested match does NOT apply to collectionGroup() queries — Firestore
-      // only recognizes a rule for a collectionGroup query if it's declared as its own
-      // top-level `match /{path=**}/collectionId/{docId}` block, not nested inside an
-      // ancestor's match. trainings/health/healthDocs/expenses/occurrences are all read via
-      // collectionGroup() client-side (docs/DATABASE.md §4), so they get their own rules
-      // below instead of relying on this block.
-      match /{document=**} {
+      // Collections gated by the caller's own permission-key matrix (myPerm). Firestore rules
+      // are OR-across-every-matching-block, so a wildcard "everything else" rule cannot coexist
+      // with these as a looser fallback for the SAME collections — each collection under this
+      // stable gets its own explicit block instead (docs/DATABASE.md §4 has the full writeup).
+      match /horses/{hid} {
+        allow read: if isStableMember(stableId);
+        allow create: if myPerm(stableId, 'horses');
+        allow update: if myPerm(stableId, 'horses')
+          && (request.resource.data.sale == resource.data.sale || myPerm(stableId, 'sale'));
+        allow delete: if myPerm(stableId, 'deleteItems');
+      }
+
+      match /tasks/{tid} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'tasks');
+        allow delete: if myPerm(stableId, 'deleteItems');
+      }
+
+      // Non-admin team-doc writes are blocked entirely (not just privileged fields): today the
+      // client lets ANY member with team:true edit ANY teammate's doc, including .permissions
+      // and .role — a privilege-escalation path. Restricting all writes to owner/admin closes it
+      // without depending on the doc-ID-equals-uid convention above (which most existing team
+      // docs don't satisfy yet).
+      match /team/{memberId} {
+        allow read: if isStableMember(stableId);
+        allow create, update, delete: if isStableOwnerOrAdmin(stableId);
+      }
+
+      match /taskTemplates/{tid} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'team');
+        allow delete: if myPerm(stableId, 'team') && myPerm(stableId, 'deleteItems');
+      }
+
+      match /stableExpenses/{eid} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if myPerm(stableId, 'stable');
+        allow delete: if myPerm(stableId, 'stable') && myPerm(stableId, 'deleteItems');
+      }
+
+      // No client-side permission-key precedent exists for these — membership-only, same as
+      // every collection under this stable was before this rules pass.
+      match /boardConfig/{docId} {
+        allow read, write: if isStableMember(stableId);
+      }
+
+      match /sessionAlerts/{id} {
+        allow read, write: if isStableMember(stableId);
+      }
+
+      match /boardAssignments/{id} {
+        allow read, write: if isStableMember(stableId);
+      }
+
+      match /weeklyPlans/{id} {
+        allow read, write: if isStableMember(stableId);
+      }
+
+      match /periodicBoardDates/{id} {
+        allow read, write: if isStableMember(stableId);
+      }
+
+      match /absences/{id} {
+        allow read, write: if isStableMember(stableId);
+      }
+
+      match /expenseSettlements/{id} {
         allow read, write: if isStableMember(stableId);
       }
     }
@@ -105,32 +209,40 @@ service cloud.firestore {
     // check that field directly instead of re-deriving the stable from the path.
     match /{path=**}/trainings/{trainingId} {
       allow read: if isStableMember(resource.data.stableId);
-      allow create: if isStableMember(request.resource.data.stableId);
-      allow update, delete: if isStableMember(resource.data.stableId);
+      allow create: if myPerm(request.resource.data.stableId, 'trainings');
+      allow update: if myPerm(resource.data.stableId, 'trainings');
+      allow delete: if myPerm(resource.data.stableId, 'deleteItems');
     }
 
     match /{path=**}/health/{healthId} {
       allow read: if isStableMember(resource.data.stableId);
-      allow create: if isStableMember(request.resource.data.stableId);
-      allow update, delete: if isStableMember(resource.data.stableId);
+      allow create: if myPerm(request.resource.data.stableId, 'health');
+      allow update: if myPerm(resource.data.stableId, 'health');
+      allow delete: if myPerm(resource.data.stableId, 'deleteItems');
     }
 
     match /{path=**}/healthDocs/{docId} {
       allow read: if isStableMember(resource.data.stableId);
-      allow create: if isStableMember(request.resource.data.stableId);
-      allow update, delete: if isStableMember(resource.data.stableId);
+      allow create: if myPerm(request.resource.data.stableId, 'health');
+      allow update: if myPerm(resource.data.stableId, 'health');
+      allow delete: if myPerm(resource.data.stableId, 'deleteItems');
     }
 
     match /{path=**}/expenses/{expenseId} {
       allow read: if isStableMember(resource.data.stableId);
-      allow create: if isStableMember(request.resource.data.stableId);
-      allow update, delete: if isStableMember(resource.data.stableId);
+      allow create: if myPerm(request.resource.data.stableId, 'expenses');
+      allow update: if myPerm(resource.data.stableId, 'expenses');
+      // Deliberately gated by 'expenses' alone, not 'deleteItems': 'expenses' is default-true
+      // for new team members, so also requiring deleteItems (default-false) would silently
+      // revoke a capability existing non-admin members already have today. Matches current
+      // client behavior exactly (see docs/BACKLOG.md).
+      allow delete: if myPerm(resource.data.stableId, 'expenses');
     }
 
     match /{path=**}/occurrences/{date} {
       allow read: if isStableMember(resource.data.stableId);
-      allow create: if isStableMember(request.resource.data.stableId);
-      allow update, delete: if isStableMember(resource.data.stableId);
+      allow create, update: if myPerm(request.resource.data.stableId, 'tasks');
+      allow delete: if myPerm(resource.data.stableId, 'deleteItems');
     }
 
     match /users/{userId} {

@@ -67,11 +67,13 @@ on every save. Concretely, that meant:
   (`docs/DATABASE.md` §4). Horse and team-member photos moved to Firebase Storage alongside
   the existing health-doc uploads (`docs/DATABASE.md` §3). Tasks were also unified across this
   same migration — see item below and `docs/components/tasks.md`.
-  - **Explicitly not bundled into this migration**: real per-collection Firestore Security
-    Rules. Access control still lives entirely in the client's `usePermissions().can()` logic,
-    exactly as before — the subcollection layout makes real rules *possible* now in a way the
-    old single-document model never did (`docs/DATABASE.md` §6), but authoring them was a
-    deliberate scope cut for this pass, not an oversight. Worth its own follow-up item.
+  - **Fine-grained Security Rules**: done, as a follow-up on the same branch. `firestore.rules`
+    now checks the caller's own `stables/{id}/team/{memberId}.permissions` (or admin/owner
+    status) per collection, instead of blanket stable-membership — see `docs/DATABASE.md` §4
+    for the exact permission→collection mapping and the two known limitations (existing team
+    docs need their ID backfilled to the linked user's auth uid to be recognized by the rules'
+    lookup; non-admin self-editing of a teammate doc's own non-privileged fields is disabled
+    for now, admin/owner required for all `team` doc writes).
 
 ### 3b. Unified tasks + recurrence (feature added alongside the schema migration)
 The previous split between per-horse `tasks` and stable-wide "cuadra" recurring `ctasks` was

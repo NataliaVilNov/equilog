@@ -184,4 +184,9 @@ features have no top-level documentation, no setup/install instructions (`npm in
   `useDebouncedCallback` (`src/lib/useDebouncedCallback.js`, 250ms, matching the old shared
   debounce's delay), scoped to just this screen rather than reintroducing the deleted
   general-purpose `keyedDebounce.js`. `handleAddOwner`/`handleRemoveOwner` still write
-  immediately (button clicks, not hot paths).
+  immediately (button clicks, not hot paths). Confirmed live-testing was necessary here, not
+  optional: the naive debounce-only version stuttered badly — the price/owner inputs are fully
+  controlled by live Firestore-backed context state, and that context re-renders on almost any
+  of its ~15 listeners firing, snapping the input back to its pre-keystroke value mid-edit. Now
+  fixed with a small local `draftSale` state that's authoritative while editing (cleared when
+  the viewed horse changes), so the debounce only throttles writes, not what's on screen.

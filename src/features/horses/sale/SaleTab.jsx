@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useStableData } from "../../../hooks/useStableData.js";
 import { useDebouncedCallback } from "../../../lib/useDebouncedCallback.js";
 import { computeSaleLiquidation, SALE_EXPENSE_CATEGORIES, SALE_EXPENSE_CATEGORY_LABELS } from "./saleLiquidation.js";
@@ -18,6 +18,14 @@ import { SaleOwnerRow } from "./SaleOwnerRow.jsx";
 export function SaleTab({ horse }) {
   const { expenses, updateHorseSale } = useStableData();
 
+  // Local draft of horse.sale, authoritative over the live Firestore-backed value while the
+  // user is actively editing: the price/name/pct writes below are debounced, but this context
+  // re-renders on every unrelated Firestore listener event (there are ~15 of them), which would
+  // otherwise snap a fully server-controlled input back to its pre-edit value mid-keystroke.
+  // Cleared whenever the horse being viewed changes.
+  const [draftSale, setDraftSale] = useState(null);
+  useEffect(() => setDraftSale(null), [horse.id]);
+
   const ex = useMemo(
     () => expenses.filter((e) => e.hid === horse.id).sort((a, b) => (a.date < b.date ? 1 : -1)),
     [expenses, horse.id]
@@ -26,15 +34,17 @@ export function SaleTab({ horse }) {
     horse.owners && horse.owners.length ? horse.owners : horse.owner ? [{ nombre: horse.owner, pct: 100 }] : [];
   const ownersLocked = horseOwners.length > 0;
 
+  const currentSale = draftSale ?? horse.sale ?? { precio: 0, owners: [{ nombre: "", pct: 100 }] };
+
   const effectiveHorse = ownersLocked
     ? {
         ...horse,
         sale: {
-          ...(horse.sale || { precio: 0 }),
+          ...currentSale,
           owners: horseOwners.map((o) => ({ nombre: o.nombre || "", pct: o.pct || 0 })),
         },
       }
-    : horse;
+    : { ...horse, sale: currentSale };
 
   const liquidation = computeSaleLiquidation(effectiveHorse, ex);
   const {
@@ -52,32 +62,43 @@ export function SaleTab({ horse }) {
 
   const debouncedUpdateSale = useDebouncedCallback(updateHorseSale, 250);
 
+  function updateSale(updater) {
+    const next = typeof updater === "function" ? updater(currentSale) : { ...currentSale, ...updater };
+    setDraftSale(next);
+    return next;
+  }
+
   function handlePriceChange(value) {
-    debouncedUpdateSale(horse.id, { precio: Number(value) || 0 });
+    const next = updateSale({ precio: Number(value) || 0 });
+    debouncedUpdateSale(horse.id, next);
   }
   function handleOwnerName(i, value) {
     if (ownersLocked) return;
-    debouncedUpdateSale(horse.id, (sale) => ({
+    const next = updateSale((sale) => ({
       ...sale,
       owners: sale.owners.map((o, idx) => (idx === i ? { ...o, nombre: value } : o)),
     }));
+    debouncedUpdateSale(horse.id, next);
   }
   function handleOwnerPct(i, value) {
     if (ownersLocked) return;
-    debouncedUpdateSale(horse.id, (sale) => ({
+    const next = updateSale((sale) => ({
       ...sale,
       owners: sale.owners.map((o, idx) => (idx === i ? { ...o, pct: Number(value) || 0 } : o)),
     }));
+    debouncedUpdateSale(horse.id, next);
   }
   function handleAddOwner() {
     if (ownersLocked) return;
-    updateHorseSale(horse.id, (sale) => ({ ...sale, owners: [...(sale.owners || []), { nombre: "", pct: 0 }] }));
+    const next = updateSale((sale) => ({ ...sale, owners: [...(sale.owners || []), { nombre: "", pct: 0 }] }));
+    updateHorseSale(horse.id, next);
   }
   function handleRemoveOwner(i) {
     if (ownersLocked) return;
-    updateHorseSale(horse.id, (sale) =>
+    const next = updateSale((sale) =>
       sale.owners.length <= 1 ? sale : { ...sale, owners: sale.owners.filter((_, idx) => idx !== i) }
     );
+    updateHorseSale(horse.id, next);
   }
 
   const catRows = SALE_EXPENSE_CATEGORIES.filter((c) => catTotals[c] > 0);

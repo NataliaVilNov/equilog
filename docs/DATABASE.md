@@ -185,6 +185,21 @@ document and not the single listener the old model used.
 The first time a new `collectionGroup` or compound query runs against a given Firestore
 project, the console throws a one-time "this query requires an index" error with a link to
 create it — a manual step in Firebase console, not something this codebase configures.
+`useTaskOccurrences` filters by both `stableId` and `date` together, which needs its own
+composite index distinct from the single-field `stableId` index the other four
+`collectionGroup` listeners need — creating one doesn't create the other.
+
+**Security rules for these five `collectionGroup`-queried collections
+(`trainings`/`health`/`healthDocs`/`expenses`/`occurrences`) can't be nested inside the
+`stables/{stableId}` match block the rest of the schema uses** — Firestore only evaluates a
+rule for a `collectionGroup` query if it's declared as its own top-level
+`match /{path=**}/collectionId/{docId}` block, not nested inside an ancestor's match, even
+though the nested form works fine for ordinary path-based reads/writes to the exact same
+documents. `firestore.rules` gives each of the five its own top-level rule, checked against
+the `stableId` field on the document itself rather than the ancestor path (same field the
+`collectionGroup` query itself filters on). This cost real debugging time to track down since
+the failure mode — a silent, generic "Missing or insufficient permissions" — gives no hint
+that nesting is the specific problem.
 
 ## 5. Write path
 

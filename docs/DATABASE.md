@@ -189,6 +189,19 @@ create it — a manual step in Firebase console, not something this codebase con
 composite index distinct from the single-field `stableId` index the other four
 `collectionGroup` listeners need — creating one doesn't create the other.
 
+**This composite index needs to be re-created after the range-query generalization**:
+`useTaskOccurrences` originally queried `date == X` (equality); it now always queries
+`date >= rangeStart AND date <= rangeEnd`, even for the single-date call sites (`rangeEnd`
+just defaults to `rangeStart`). An equality-only composite index does not automatically cover
+a range query on the same field — confirmed live: with only the old equality-shaped index
+present, every `useTaskOccurrences` call (including the single-date ones on `HomePage`/
+`DayBoardPage`/`MemberDayPage`) throws `failed-precondition` and the occurrence-overrides
+listener never populates, so occurrence status/assignee overrides silently stop being read
+back anywhere (the tasks themselves still render fine, since `expandOccurrences` is pure and
+doesn't depend on this listener — only which ones show as "done" or reassigned is affected).
+**A new composite index (`stableId` ==, `date` range) must be created in the Firebase console
+before this is functional** — Firestore's error includes a direct link to create it.
+
 **Security rules for these five `collectionGroup`-queried collections
 (`trainings`/`health`/`healthDocs`/`expenses`/`occurrences`) can't be nested inside the
 `stables/{stableId}` match block the rest of the schema uses** — Firestore only evaluates a

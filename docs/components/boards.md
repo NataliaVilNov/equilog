@@ -40,6 +40,11 @@ src/features/boards/
                                                Done sheet)
   month/
     MonthBoardGrid.jsx                — month-at-a-glance, "Mes" tab (?tab=month)
+    MonthDayTasksSheet.jsx              — the task-count badge's drill-down sheet + "create" entry point
+src/lib/monthGrid.js              — shared month-grid date math (leading blank-cell count,
+                                     days in month, weekday labels), lifted out of
+                                     MonthBoardGrid.jsx and features/team/TeamCalendarPage.jsx,
+                                     which had each hand-rolled it identically
   resource/
     PendingHorseTray.jsx              — unplaced-horses tray (drag source + tap-to-pick)
     ResourceSlot.jsx                    — one droppable/clickable slot cell
@@ -100,14 +105,25 @@ src/components/SlideUpSheet.jsx   — the bottom-sheet backdrop/panel chrome the
   is a from-scratch reimplementation of the reference app's VET flow, which instead synced
   to an external Notion database; EquiLog has no Notion integration, so it writes directly
   to its own Health feature instead.
-- The Month tab is read-derived only — it reads the same `weeklyPlans[]`/`boardConfig` data
-  the weekly grid does and adds no mutators or fields of its own. Its "Todos los
-  caballos"/"Un caballo" mode toggle and `?month=`/`?horse=` search params mirror
-  `TeamCalendarPage`'s existing `?month=`/`?pid=` pattern (`features/team/
-  TeamCalendarPage.jsx`) rather than inventing a new one. Tapping a day drills into
-  `BoardCellPage` for that horse+day in "one horse" mode, or into the Weekly tab for that
-  day's week in "all horses" mode (there's no single cell to jump to when viewing every
-  horse at once).
+- The Month tab reads `weeklyPlans[]`/`boardConfig` the same way the weekly grid does, and
+  now also overlays `tasks` (via `useTaskOccurrences(stableId, tasks, rangeStart, rangeEnd)`
+  for the whole visible month, same range-capable hook `StatsPage`/`TeamReportPage` use —
+  see `docs/components/tasks.md`), filtered through `visibleTasksForUser` so a non-admin sees
+  the same task set they'd see on Day/Home. Occurrences are grouped by `occurrenceDate ||
+  startDate` into a per-day count badge. Its "Todos los caballos"/"Un caballo" mode toggle
+  and `?month=`/`?horse=` search params mirror `TeamCalendarPage`'s existing `?month=`/`?pid=`
+  pattern (`features/team/TeamCalendarPage.jsx`) rather than inventing a new one. Tapping a
+  day cell still drills into `BoardCellPage` (one-horse mode) or the Weekly tab (all-horses
+  mode), unchanged; the task-count badge is a separate nested tappable element
+  (`stopPropagation`) that opens `MonthDayTasksSheet` instead, so the two don't compete for
+  the same tap target.
+- `MonthDayTasksSheet` lists that day's tasks via `TaskCard` (status-cycling, occurrence
+  reassignment, edit, delete all come for free) and, when `can("tasks")`, offers "+ Nueva
+  tarea", which navigates to `/tasks/new?d=<date>&return=<encoded month-view URL>` — the
+  `?return=` param is a generic addition to `TaskFormPage` (see `docs/components/tasks.md`)
+  that sends the user back to the same month/mode they started from instead of the default
+  `/day`. `DayBoardPage`'s FAB and `HomePage`'s quick action pass no `return` param, so their
+  behavior is unchanged.
 
 **Routing**
 - `/boards` (reads `?tab=weekly|month|walker|paddock|config`, `?week=` for the weekly tab,

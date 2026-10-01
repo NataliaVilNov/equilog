@@ -60,8 +60,10 @@ src/features/tasks/
   used to call `tasksForDate` for a single day (`DayBoardPage`, `MemberDayPage`, `HomePage`)
   now calls this instead — it replaces `tasksForDate` for those screens, since it does the
   same exact-date filtering for one-off tasks and adds recurring expansion in the same pass.
-  Currently scoped to single-date screens only, not a date range (e.g. Boards' week view) —
-  there was no multi-day task view to wire it into in this pass.
+  `useTaskOccurrences(stableId, tasks, rangeStart, rangeEnd = rangeStart)` also accepts a date
+  range (the single-date screens above just don't pass `rangeEnd`, so nothing changed for
+  them) — `StatsPage`/`TeamReportPage` and the Boards month view (`docs/components/boards.md`)
+  all use the ranged form to expand recurring tasks across a whole period at once.
 - `DayBoardPage` reads both the selected date and the person filter from URL search params
   (`?d=`, `?person=`), same pattern as every other stateful view in this migration —
   bookmarkable, and the prev/next-day buttons are just search-param updates.
@@ -72,6 +74,10 @@ src/features/tasks/
   unrecognized string with a generic icon, so no `constants.js` change was needed). The old
   `StableTaskFormPage`'s 14-icon emoji picker was dropped — the target schema has no `icon`
   field, and the generic-icon fallback covers it.
+- `TaskFormPage` normally navigates back to `/day?d=<date>` after save/cancel/delete. An
+  optional `?return=<url-encoded-path>` search param overrides this (used by the Boards
+  month view's "+ Nueva tarea" to come back to the same month/mode instead of bouncing to
+  the day board) — absent for every other entry point, so their behavior is unchanged.
 
 **Routing**
 - `/day` — no permission gate (matches legacy; everyone with app access can view the board).

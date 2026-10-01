@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useStableData } from "../../hooks/useStableData.js";
+import { usePermissions } from "../../hooks/usePermissions.js";
 import { useToast } from "../../hooks/useToast.js";
 import { uid } from "../../lib/id.js";
 import { td, fD } from "../../lib/date.js";
 import { EmptyState } from "../../components/EmptyState.jsx";
+import { canViewHorseInfo } from "../horses/horseAccess.js";
+import { AccessLimited } from "../../components/AccessLimited.jsx";
 import {
   ownerListForHorse,
   settlementCandidateExpenses,
@@ -17,6 +20,7 @@ import {
 export function ExpenseSettlementPage() {
   const { hid } = useParams();
   const { horses, expenses, expenseSettlements, addExpenseSettlement } = useStableData();
+  const { isAdmin, uid: myUid } = usePermissions();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -40,6 +44,9 @@ export function ExpenseSettlementPage() {
         <p>No encontrado.</p>
       </div>
     );
+  }
+  if (!canViewHorseInfo(horse, isAdmin, myUid)) {
+    return <AccessLimited />;
   }
 
   function toggleAll(checked) {

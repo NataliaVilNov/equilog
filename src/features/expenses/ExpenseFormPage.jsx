@@ -7,6 +7,8 @@ import { uid } from "../../lib/id.js";
 import { td } from "../../lib/date.js";
 import { EK } from "../../lib/constants.js";
 import { defaultExpenseSplitsForHorse } from "./expenseSplits.js";
+import { canViewHorseInfo } from "../horses/horseAccess.js";
+import { AccessLimited } from "../../components/AccessLimited.jsx";
 
 const STATUSES = [
   { id: "pendiente", label: "Pendiente" },
@@ -22,7 +24,7 @@ const STATUSES = [
 export function ExpenseFormPage() {
   const { hid, eid } = useParams();
   const { horses, expenses, addExpense, updateExpense, deleteExpense } = useStableData();
-  const { can } = usePermissions();
+  const { can, isAdmin, uid: myUid } = usePermissions();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -49,6 +51,9 @@ export function ExpenseFormPage() {
         <p>No encontrado.</p>
       </div>
     );
+  }
+  if (!canViewHorseInfo(horse, isAdmin, myUid)) {
+    return <AccessLimited />;
   }
 
   const direction = (EK.find((c) => c.id === cat) || {}).d || "out";

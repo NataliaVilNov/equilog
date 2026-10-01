@@ -1,16 +1,22 @@
 import { useNavigate } from "react-router-dom";
+import { usePermissions } from "../../hooks/usePermissions.js";
+import { canViewHorseInfo } from "./horseAccess.js";
 
 // Ports one horse row from rList (public/legacy-app.js:1555-1571). The per-horse alert
 // badge is left out — it depends on the Alerts feature (Phase 4), not yet ported.
 export function HorseListItem({ horse, trainingCount }) {
+  const { isAdmin, uid } = usePermissions();
   const navigate = useNavigate();
+  const authorized = canViewHorseInfo(horse, isAdmin, uid);
   const owners =
     horse.owners && horse.owners.length
       ? horse.owners
       : horse.owner
       ? [{ nombre: horse.owner, pct: 100 }]
       : [];
-  const subtitle = owners.length
+  const subtitle = !authorized
+    ? ""
+    : owners.length
     ? "Prop.: " +
       owners.map((o) => (o.nombre || "") + (owners.length > 1 ? " " + o.pct + "%" : "")).join(" · ")
     : horse.breed || "";

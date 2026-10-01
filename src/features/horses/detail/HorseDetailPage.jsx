@@ -1,6 +1,7 @@
 import { useParams, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../../hooks/useStableData.js";
 import { usePermissions } from "../../../hooks/usePermissions.js";
+import { canViewHorseInfo } from "../horseAccess.js";
 import { HorseHeader } from "./HorseHeader.jsx";
 import { HorseTabs } from "./HorseTabs.jsx";
 import { TrainingTab } from "./TrainingTab.jsx";
@@ -14,7 +15,7 @@ import { SaleTab } from "../sale/SaleTab.jsx";
 export function HorseDetailPage() {
   const { hid } = useParams();
   const { horses } = useStableData();
-  const { can } = usePermissions();
+  const { can, isAdmin, uid } = usePermissions();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const horse = horses.find((h) => h.id === hid);
@@ -26,9 +27,11 @@ export function HorseDetailPage() {
     );
   }
 
+  const authorized = canViewHorseInfo(horse, isAdmin, uid);
   let tab = searchParams.get("tab") || "entrenos";
   if (tab === "salud" && !can("health")) tab = "entrenos";
-  if (tab === "venta" && !can("sale")) tab = "entrenos";
+  if (tab === "gastos" && !authorized) tab = "entrenos";
+  if (tab === "venta" && !(can("sale") && authorized)) tab = "entrenos";
 
   function handleTabChange(next) {
     const params = new URLSearchParams(searchParams);
@@ -39,7 +42,7 @@ export function HorseDetailPage() {
   return (
     <div className="view">
       <HorseHeader horse={horse} />
-      <HorseTabs active={tab} onChange={handleTabChange} />
+      <HorseTabs horse={horse} active={tab} onChange={handleTabChange} />
       {tab === "entrenos" && <TrainingTab horse={horse} />}
       {tab === "salud" && <HealthTab horse={horse} />}
       {tab === "gastos" && <ExpensesTab horse={horse} />}

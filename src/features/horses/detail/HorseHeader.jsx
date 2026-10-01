@@ -1,10 +1,12 @@
 import { useNavigate } from "react-router-dom";
 import { usePermissions } from "../../../hooks/usePermissions.js";
+import { canViewHorseInfo } from "../horseAccess.js";
 import { fD } from "../../../lib/date.js";
 
 // Ports the header portion of rHorse (public/legacy-app.js:1674-1690).
 export function HorseHeader({ horse }) {
-  const { can } = usePermissions();
+  const { can, isAdmin, uid } = usePermissions();
+  const authorized = canViewHorseInfo(horse, isAdmin, uid);
   const navigate = useNavigate();
   const owners =
     horse.owners && horse.owners.length
@@ -21,7 +23,7 @@ export function HorseHeader({ horse }) {
         </button>
         <h1>{horse.name}</h1>
         <div className="vhr">
-          {can("horses") && (
+          {can("horses") && authorized && (
             <button className="ib" onClick={() => navigate(`/horses/${horse.id}/edit`)}>
               ✏️
             </button>
@@ -36,7 +38,12 @@ export function HorseHeader({ horse }) {
       <div className="hh">
         <div className="pl">{horse.photo ? <img src={horse.photo.url} alt="" /> : "🐴"}</div>
         <div style={{ minWidth: 0 }}>
-          {owners.length > 0 && (
+          {!authorized && (
+            <div className="ml2" style={{ color: "var(--gr)" }}>
+              🔒 Información restringida
+            </div>
+          )}
+          {authorized && owners.length > 0 && (
             <div className="ml2">
               <b>Prop:</b>{" "}
               {owners.length === 1
@@ -44,42 +51,42 @@ export function HorseHeader({ horse }) {
                 : owners.map((o) => `${o.nombre || ""} ${o.pct}%`).join(" · ")}
             </div>
           )}
-          {horse.breed && (
+          {authorized && horse.breed && (
             <div className="ml2">
               <b>Raza:</b> {horse.breed}
             </div>
           )}
-          {horse.origin && (
+          {authorized && horse.origin && (
             <div className="ml2">
               <b>Procedencia:</b> {horse.origin}
             </div>
           )}
-          {horse.dob && (
+          {authorized && horse.dob && (
             <div className="ml2">
               <b>Nac:</b> {fD(horse.dob)}
             </div>
           )}
-          {horse.notes && (
+          {authorized && horse.notes && (
             <div className="ml2" style={{ color: "var(--gr)" }}>
               {horse.notes}
             </div>
           )}
-          {(horse.sire || horse.dam) && (
+          {authorized && (horse.sire || horse.dam) && (
             <div className="ml2" style={{ marginTop: ".3rem" }}>
               <b>Padre:</b> {horse.sire || "—"} &nbsp;·&nbsp; <b>Madre:</b> {horse.dam || "—"}
             </div>
           )}
-          {(horse.gsire || horse.gdam) && (
+          {authorized && (horse.gsire || horse.gdam) && (
             <div className="ml2">
               <b>Ab. pat.:</b> {horse.gsire || "—"} &nbsp;·&nbsp; {horse.gdam || "—"}
             </div>
           )}
-          {(horse.mgsire || horse.mgdam) && (
+          {authorized && (horse.mgsire || horse.mgdam) && (
             <div className="ml2">
               <b>Ab. mat.:</b> {horse.mgsire || "—"} &nbsp;·&nbsp; {horse.mgdam || "—"}
             </div>
           )}
-          {horse.horsetelex && (
+          {authorized && horse.horsetelex && (
             <div style={{ marginTop: ".4rem" }}>
               <a
                 href={horse.horsetelex}

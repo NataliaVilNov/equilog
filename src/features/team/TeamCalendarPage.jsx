@@ -1,10 +1,9 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../hooks/useStableData.js";
 import { td, fD } from "../../lib/date.js";
+import { getMonthGrid, MONTH_GRID_WEEKDAY_LABELS as WEEKDAY_LABELS } from "../../lib/monthGrid.js";
 import { EmptyState } from "../../components/EmptyState.jsx";
-import { monthStartStr, addMonth, monthLabel, memberColor, memberColorSoft } from "./teamCalendarHelpers.js";
-
-const WEEKDAY_LABELS = ["L", "M", "X", "J", "V", "S", "D"];
+import { addMonth, monthLabel, memberColor, memberColorSoft } from "./teamCalendarHelpers.js";
 
 // Ports rTeamCalendar (public/legacy-app.js:3322-3377).
 export function TeamCalendarPage() {
@@ -37,11 +36,7 @@ export function TeamCalendarPage() {
     );
   }
 
-  const first = new Date(monthStartStr(m) + "T12:00:00");
-  const y = first.getFullYear();
-  const mo = first.getMonth();
-  const firstDow = (new Date(y, mo, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(y, mo + 1, 0).getDate();
+  const { firstDow, daysInMonth } = getMonthGrid(m);
 
   const cells = [];
   for (let i = 0; i < firstDow; i++) {

@@ -1,11 +1,10 @@
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../../hooks/useStableData.js";
-import { td, monthStartStr, addMonth, monthLabel } from "../../../lib/date.js";
+import { td, addMonth, monthLabel } from "../../../lib/date.js";
+import { getMonthGrid, MONTH_GRID_WEEKDAY_LABELS as WEEKDAY_LABELS } from "../../../lib/monthGrid.js";
 import { boardPlan, boardActivity, boardToneClass, boardStartOfWeek } from "../boardHelpers.js";
 import { sortHorsesByOrder } from "../../horses/horseOrder.js";
 import { EmptyState } from "../../../components/EmptyState.jsx";
-
-const WEEKDAY_LABELS = ["L", "M", "X", "J", "V", "S", "D"];
 
 // Month-at-a-glance view of the weekly board — not part of the reference app this feature
 // was reworked from (it only has a weekly view). Mirrors the existing month-grid pattern
@@ -34,11 +33,7 @@ export function MonthBoardGrid() {
     return <EmptyState icon="🐴">Añade caballos para ver el mes.</EmptyState>;
   }
 
-  const first = new Date(monthStartStr(m) + "T12:00:00");
-  const y = first.getFullYear();
-  const mo = first.getMonth();
-  const firstDow = (new Date(y, mo, 1).getDay() + 6) % 7;
-  const daysInMonth = new Date(y, mo + 1, 0).getDate();
+  const { firstDow, daysInMonth } = getMonthGrid(m);
 
   // In "one horse" mode a day drills into that cell's full editor (same destination the
   // weekly grid uses when no tool is armed); in "all horses" mode there's no single cell to

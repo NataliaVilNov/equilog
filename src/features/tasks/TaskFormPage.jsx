@@ -45,8 +45,12 @@ export function TaskFormPage() {
     );
   }
 
-  function handleBack() {
-    navigate(`/day?d=${date}`);
+  // Lets a caller (e.g. the month board view) send the user back to where they started
+  // instead of the default /day. Absent for every existing entry point (DayBoardPage's FAB,
+  // HomePage's quick action), so this is purely additive — their behavior is unchanged.
+  const returnTo = searchParams.get("return");
+  function goBack() {
+    navigate(returnTo ? decodeURIComponent(returnTo) : `/day?d=${date}`);
   }
 
   function handleHorseChange(nextHid) {
@@ -76,19 +80,19 @@ export function TaskFormPage() {
     if (editing) updateTask(record);
     else addTask(record);
     showToast(editing ? "Actualizada" : "Tarea añadida");
-    navigate(`/day?d=${date}`);
+    goBack();
   }
 
   function handleDelete() {
     if (!window.confirm("¿Eliminar?")) return;
     deleteTask(tid);
-    navigate(`/day?d=${date}`);
+    goBack();
   }
 
   return (
     <div className="view">
       <div className="vh">
-        <button className="ib" onClick={handleBack}>
+        <button className="ib" onClick={goBack}>
           ←
         </button>
         <h1>{editing ? "Editar" : "Nueva"} tarea</h1>

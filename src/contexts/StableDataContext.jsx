@@ -1,6 +1,7 @@
 import {
   createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useState,
@@ -31,8 +32,12 @@ import { catFromHealthType, activityById } from "../lib/constants.js";
 import { taskNeedsReturn } from "../features/tasks/taskHelpers.js";
 import { boardDefaults } from "../features/boards/boardDefaults.js";
 import { boardAssignment, horseConflict, safeBoardId } from "../features/boards/boardHelpers.js";
+import { isHorseRestricted } from "../features/horses/horseAccess.js";
+import { canManageStable } from "../lib/permissions.js";
 import { uid } from "../lib/id.js";
 import { td, addD } from "../lib/date.js";
+import { AuthContext } from "./AuthContext.jsx";
+import { StableSelectionContext } from "./StableSelectionContext.jsx";
 
 // Ports uploadFileWithProgress (public/legacy-app.js:1097-1109), minus the DOM status
 // write — callers pass an onProgress(pct) callback instead.
@@ -91,6 +96,13 @@ function normalizeBoardConfig(raw) {
 export const StableDataContext = createContext(null);
 
 export function StableDataProvider({ stableId, children }) {
+  // Needed to split the expenses read path below by role — can't use usePermissions() here,
+  // since that hook itself reads from this same context (circular).
+  const { user } = useContext(AuthContext) || {};
+  const { activeStable } = useContext(StableSelectionContext) || {};
+  const isAdmin = useMemo(() => canManageStable(activeStable, user), [activeStable, user]);
+  const myUid = user ? user.uid : null;
+
   const [horses, setHorses] = useState([]);
   const [trainings, setTrainings] = useState([]);
   const [health, setHealth] = useState([]);
@@ -208,18 +220,57 @@ export function StableDataProvider({ stableId, children }) {
     if (!stableId) {
       setTrainings([]);
       setHealth([]);
-      setExpenses([]);
       setHealthDocs([]);
       return;
     }
     const unsubs = [
       subscribeToCollectionGroup("trainings", stableId, setTrainings),
       subscribeToCollectionGroup("health", stableId, setHealth),
-      subscribeToCollectionGroup("expenses", stableId, setExpenses),
       subscribeToCollectionGroup("healthDocs", stableId, setHealthDocs),
     ];
     return () => unsubs.forEach((u) => u());
   }, [stableId]);
+
+  // Admins read expenses through the single stable-wide collectionGroup listener below, same
+  // as trainings/health/healthDocs above. Non-admins can't: a restricted horse's allowedUids
+  // makes the collectionGroup rule's read check depend on resource.data.hid, a field the
+  // query doesn't filter on — Firestore rejects a list request outright (not per-document) if
+  // its rule can't be proven true for every possible result using only the query's own
+  // where() clauses (see firestore.rules' comment on the expenses collectionGroup block). So
+  // non-admins get one listener per horse they're actually allowed to see instead, merged
+  // into the same `expenses` state — bounded by how many horses that member can see, not by
+  // the stable's total horse count.
+  const visibleHorseIdsKey = useMemo(() => {
+    if (isAdmin) return "";
+    return horses
+      .filter((h) => !isHorseRestricted(h) || (myUid && h.allowedUids.includes(myUid)))
+      .map((h) => h.id)
+      .sort()
+      .join(",");
+  }, [horses, isAdmin, myUid]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setExpenses([]);
+      return;
+    }
+    if (isAdmin) {
+      return subscribeToCollectionGroup("expenses", stableId, setExpenses);
+    }
+    const visibleHorseIds = visibleHorseIdsKey ? visibleHorseIdsKey.split(",") : [];
+    if (!visibleHorseIds.length) {
+      setExpenses([]);
+      return;
+    }
+    const perHorse = {};
+    const unsubs = visibleHorseIds.map((hid) =>
+      subscribeToCollection(stableCollection(stableId, "horses", hid, "expenses"), (docs) => {
+        perHorse[hid] = docs;
+        setExpenses(Object.values(perHorse).flat());
+      })
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [stableId, isAdmin, visibleHorseIdsKey]);
 
   // Ports the horse CRUD portion of the save-horse-btn handler in attach()
   // (public/legacy-app.js:3622-3646) and delHorse (public/legacy-app.js:1644-1653).

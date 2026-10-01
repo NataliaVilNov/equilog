@@ -43,6 +43,20 @@ src/lib/imageResize.js  — resizeProfileImageFile(), pure canvas-based downscal
   to, then hands the merged result to `AuthContext.applyProfileUpdate` so the header/panel
   reflect the change immediately — `AuthContext` only loads `profile` once (on auth state
   change), so nothing else refreshes it after a manual save.
+- A "Personalizar inicio" card (between the profile-edit form and "Mi agenda de hoy") lets
+  the user pick their post-login landing tab and which Home quick-action shortcuts show.
+  Reads `src/features/home/landingDestinations.js`'s `LANDING_DESTINATIONS` (a fixed,
+  non-arbitrary list of routes — `isAvailable(ctx)` filters out ones the user can't currently
+  reach, e.g. "Equipo" without the `team` permission) and `src/features/home/
+  homeShortcuts.js`'s `QUICK_ACTION_CATALOG` (minus the always-on "Más opciones" item, which
+  isn't user-hideable — it's the one guaranteed way into profile/logout/stable-switching).
+  Saving calls `authActions.updateHomePreferences(user, profile, {landingRoute,
+  quickActions})`, which merges `landingRoute`/`quickActions` into the same `users/{uid}` doc
+  the profile form writes to, independently of it (its own save button/state). `HomePage`
+  reads these back through `visibleQuickActions()`; `StableListScreen`'s "a stable just
+  became active" effect and `GuestRoute` read `landingRoute` through
+  `resolveLandingRoute()` to decide where a fresh session lands — see
+  `docs/components/home.md` and `docs/components/boards.md`.
 - The "Mi agenda de hoy" section filters `useStableData().tasks` to today's date and
   `usePermissions().myTeamMember.id` — a simplification of legacy's `renderMyDayTasks`, which
   matched by `task.uid === user.uid` OR a case-insensitive name match against `D.team`;

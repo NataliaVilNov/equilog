@@ -22,8 +22,12 @@ One document per authenticated user, keyed by their Firebase Auth uid. Written b
 `register()`/`updateUserProfile()` (`src/features/auth/authActions.js`): `name`, `email`,
 `phone`, `bio`, `photo` (a small client-resized data URL — see §3), `role`, `created`/
 `updated` timestamps. `lastStable` (the stable id to auto-load on next login) is written
-separately by `StableSelectionContext`'s `switchStable`/`exitActiveStable`. Loaded once per
-auth-state change by `AuthContext`'s `loadProfile()`.
+separately by `StableSelectionContext`'s `switchStable`/`exitActiveStable`. `landingRoute`
+(an id from `LANDING_DESTINATIONS`, `src/features/home/landingDestinations.js`) and
+`quickActions` (an array of enabled `QUICK_ACTION_CATALOG` ids, `src/features/home/
+homeShortcuts.js`) are the per-user home-screen preferences, written together by
+`updateHomePreferences()` in the same file — see `docs/components/profile.md`. Loaded once
+per auth-state change by `AuthContext`'s `loadProfile()`.
 
 ### `stables/{stableId}`
 One document per stable ("cuadra"). Metadata only, written by `StableSelectionContext`

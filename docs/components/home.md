@@ -44,8 +44,18 @@ health controls.
   computed at all (matches `rHome`'s own `canPerm(...)` guards, not just a display filter).
 - `can('trainings')`, `can('tasks')`, `can('horses')` each gate one quick-action button.
 
+**Quick-action customization**
+- The quick-actions grid is no longer hardcoded JSX — it's driven by `QUICK_ACTION_CATALOG`
+  (`src/features/home/homeShortcuts.js`), filtered through `visibleQuickActions(ctx,
+  enabledIds)`: each item's `isAvailable(ctx)` permission check always applies (same as
+  before), and `enabledIds` (the user's saved `profile.quickActions`, from `docs/components/
+  profile.md`'s "Personalizar inicio" card) additionally filters to just the shortcuts they
+  chose to keep — `null`/unset means "show everything available," i.e. today's behavior
+  unchanged for anyone who hasn't customized it. "Más opciones" is `alwaysOn` and not
+  user-hideable.
+
 **Notable decisions / deviations from the legacy behavior**
-- None — a close, direct port.
+- None — a close, direct port, plus the quick-actions catalog extraction described above.
 
 **Known gaps / follow-ups**
 - None — all forward-links this page pointed at (Boards, the More panel, Stats) now resolve;

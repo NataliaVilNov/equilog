@@ -12,6 +12,7 @@ import { visibleTasksForUser } from "../tasks/taskHelpers.js";
 import { upcomingHealthAlerts, pendingSessionAlerts, visibleAlertsForUser } from "../alerts/alertSelectors.js";
 import { TaskCard } from "../tasks/TaskCard.jsx";
 import { AlertCard } from "../alerts/AlertCard.jsx";
+import { visibleQuickActions } from "./homeShortcuts.js";
 
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
@@ -54,6 +55,11 @@ export function HomePage() {
   const nextHealth = healthAlerts.slice(0, 3);
   const urgent = healthAlerts.filter((a) => a.ov).length + sessionAlerts.length;
   const progress = visibleToday.length ? Math.round((done / visibleToday.length) * 100) : 0;
+
+  const quickActions = visibleQuickActions(
+    { can, horses, navigate, showToast, openModal, today },
+    profile && profile.quickActions
+  );
 
   return (
     <div className="view home-view">
@@ -115,43 +121,17 @@ export function HomePage() {
           </div>
         </div>
         <div className="quick-grid">
-          {can("trainings") && horses.length > 0 && (
+          {quickActions.map((item) => (
             <button
-              className="quick-action primary"
-              onClick={() => {
-                navigate("/horses");
-                showToast("Elige el caballo para registrar el entrenamiento");
-              }}
+              key={item.id}
+              className={"quick-action" + (item.primary ? " primary" : "")}
+              onClick={() => item.onClick({ can, horses, navigate, showToast, openModal, today })}
             >
-              <span>＋</span>
-              <b>Entrenamiento</b>
-              <small>Elegir caballo y registrar</small>
+              <span>{item.icon}</span>
+              <b>{item.label}</b>
+              <small>{item.sublabel}</small>
             </button>
-          )}
-          {can("tasks") && (
-            <button className="quick-action" onClick={() => navigate(`/tasks/new?d=${today}`)}>
-              <span>✓</span>
-              <b>Nueva tarea</b>
-              <small>Organizar el día</small>
-            </button>
-          )}
-          {can("horses") && (
-            <button className="quick-action" onClick={() => navigate("/horses/new")}>
-              <span>🐴</span>
-              <b>Nuevo caballo</b>
-              <small>Añadir una ficha</small>
-            </button>
-          )}
-          <button className="quick-action" onClick={() => navigate("/boards?tab=weekly")}>
-            <span>▦</span>
-            <b>Pizarras</b>
-            <small>Plan semanal e instalaciones</small>
-          </button>
-          <button className="quick-action" onClick={() => openModal && openModal("morePanel")}>
-            <span>•••</span>
-            <b>Más opciones</b>
-            <small>Salud, gastos y gestión</small>
-          </button>
+          ))}
         </div>
       </section>
 

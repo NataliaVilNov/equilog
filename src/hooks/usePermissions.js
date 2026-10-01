@@ -39,5 +39,5 @@ export function usePermissions() {
 
   const can = useCallback((key) => !!permissions[key], [permissions]);
 
-  return { isAdmin, myTeamMember, permissions, can };
+  return { isAdmin, myTeamMember, permissions, can, uid: user ? user.uid : null };
 }

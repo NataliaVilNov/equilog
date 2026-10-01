@@ -103,6 +103,19 @@ service cloud.firestore {
       );
     }
 
+    // A horse's allowedUids field restricts its own profile fields and its expenses
+    // subcollection to specific team members, on top of the ordinary myPerm checks above.
+    // Absent/null means legacy/unrestricted (every horse predating this feature) — only an
+    // explicit array actually narrows access, and admins always bypass it.
+    function horseDoc(stableId, hid) {
+      return get(/databases/$(database)/documents/stables/$(stableId)/horses/$(hid));
+    }
+
+    function isHorseRelated(stableId, hid) {
+      let allowed = horseDoc(stableId, hid).data.allowedUids;
+      return isStableAdmin(stableId) || allowed == null || request.auth.uid in allowed;
+    }
+
     match /inviteCodes/{code} {
       allow read: if signedIn();
 
@@ -136,11 +149,36 @@ service cloud.firestore {
       // with these as a looser fallback for the SAME collections — each collection under this
       // stable gets its own explicit block instead (docs/DATABASE.md §4 has the full writeup).
       match /horses/{hid} {
+        // Read is deliberately NOT restricted by allowedUids — every stable member keeps
+        // reading every horse doc (name, etc.), since boards/tasks/lists depend on that and
+        // Firestore can't restrict individual fields within one document. The restriction on
+        // a horse's profile fields is a client-side UI gate only (docs/components/horses.md);
+        // allowedUids here only ever gates writes.
         allow read: if isStableMember(stableId);
-        allow create: if myPerm(stableId, 'horses');
+
+        allow create: if myPerm(stableId, 'horses')
+          && (isStableAdmin(stableId)
+              || request.resource.data.allowedUids == null
+              || request.resource.data.allowedUids == [request.auth.uid]);
+
         allow update: if myPerm(stableId, 'horses')
-          && (request.resource.data.sale == resource.data.sale || myPerm(stableId, 'sale'));
+          && (request.resource.data.sale == resource.data.sale || myPerm(stableId, 'sale'))
+          && (isStableAdmin(stableId)
+              || resource.data.allowedUids == null
+              || request.auth.uid in resource.data.allowedUids)
+          && (request.resource.data.allowedUids == resource.data.allowedUids || isStableAdmin(stableId));
+
         allow delete: if myPerm(stableId, 'deleteItems');
+
+        // Direct per-horse expense reads, used by the non-admin per-horse listeners in
+        // StableDataContext.jsx (see the collectionGroup expenses block below for why
+        // non-admins can't use the single stable-wide collectionGroup listener). Uses the
+        // real path-bound stableId/hid here rather than resource.data fields, so there's no
+        // ambiguity about whether Firestore can prove this against the listener's query the
+        // way there is for the collectionGroup case.
+        match /expenses/{expenseId} {
+          allow read: if isStableMember(stableId) && isHorseRelated(stableId, hid);
+        }
       }
 
       match /tasks/{tid} {
@@ -229,14 +267,30 @@ service cloud.firestore {
     }
 
     match /{path=**}/expenses/{expenseId} {
-      allow read: if isStableMember(resource.data.stableId);
-      allow create: if myPerm(request.resource.data.stableId, 'expenses');
-      allow update: if myPerm(resource.data.stableId, 'expenses');
+      // Admin is its own OR branch, not folded into isHorseRelated, so it stays provable from
+      // the query's own stableId filter alone: Firestore rejects an entire collectionGroup
+      // `list` request outright if the rule can't be proven true for every possible result
+      // using only the query's where() clauses — it does not filter non-matching documents
+      // out of a list result the way a get() does. isStableAdmin(...) depends only on
+      // resource.data.stableId, which IS the query's filter field (StableDataContext.jsx
+      // filters this collectionGroup by stableId alone), so an admin's existing single
+      // stable-wide listener keeps working unchanged. isHorseRelated(...) additionally
+      // depends on resource.data.hid, which the query does NOT filter on — a non-admin's
+      // request would fail that same proof, so non-admins read expenses through separate
+      // per-horse listeners instead (see docs/DATABASE.md and StableDataContext.jsx).
+      allow read: if isStableAdmin(resource.data.stableId)
+        || (isStableMember(resource.data.stableId)
+            && isHorseRelated(resource.data.stableId, resource.data.hid));
+      allow create: if myPerm(request.resource.data.stableId, 'expenses')
+        && isHorseRelated(request.resource.data.stableId, request.resource.data.hid);
+      allow update: if myPerm(resource.data.stableId, 'expenses')
+        && isHorseRelated(resource.data.stableId, resource.data.hid);
       // Deliberately gated by 'expenses' alone, not 'deleteItems': 'expenses' is default-true
       // for new team members, so also requiring deleteItems (default-false) would silently
       // revoke a capability existing non-admin members already have today. Matches current
       // client behavior exactly (see docs/BACKLOG.md).
-      allow delete: if myPerm(resource.data.stableId, 'expenses');
+      allow delete: if myPerm(resource.data.stableId, 'expenses')
+        && isHorseRelated(resource.data.stableId, resource.data.hid);
     }
 
     match /{path=**}/occurrences/{date} {

@@ -4,8 +4,11 @@ import { useStableData } from "../../hooks/useStableData.js";
 import { usePermissions } from "../../hooks/usePermissions.js";
 import { useToast } from "../../hooks/useToast.js";
 import { uid } from "../../lib/id.js";
+import { canViewHorseInfo, isHorseRestricted } from "./horseAccess.js";
+import { AccessLimited } from "../../components/AccessLimited.jsx";
 import { OwnerSplitEditor } from "./OwnerSplitEditor.jsx";
 import { PedigreeFields } from "./PedigreeFields.jsx";
+import { HorseAccessEditor } from "./HorseAccessEditor.jsx";
 
 const PEDIGREE_KEYS = ["sire", "dam", "gsire", "gdam", "mgsire", "mgdam"];
 
@@ -55,8 +58,8 @@ function fieldsFromHorse(horse) {
 export function HorseFormPage() {
   const { hid } = useParams();
   const editing = !!hid;
-  const { horses, addHorse, updateHorse, deleteHorse, uploadHorsePhoto } = useStableData();
-  const { can } = usePermissions();
+  const { horses, team, addHorse, updateHorse, deleteHorse, uploadHorsePhoto } = useStableData();
+  const { can, isAdmin, uid: myUid } = usePermissions();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
@@ -67,6 +70,10 @@ export function HorseFormPage() {
   const [fields, setFields] = useState(() => fieldsFromHorse(horse));
   const [owners, setOwners] = useState(() => ownersFromHorse(horse));
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [restricted, setRestricted] = useState(() => isHorseRestricted(horse));
+  const [allowedUids, setAllowedUids] = useState(() =>
+    isHorseRestricted(horse) ? horse.allowedUids : editing ? [] : myUid ? [myUid] : []
+  );
 
   const pedigree = useMemo(() => {
     const p = {};
@@ -80,6 +87,11 @@ export function HorseFormPage() {
         <p>No encontrado.</p>
       </div>
     );
+  }
+
+  const authorized = !editing || canViewHorseInfo(horse, isAdmin, myUid);
+  if (editing && horse && !authorized) {
+    return <AccessLimited />;
   }
 
   function setField(key, value) {
@@ -139,6 +151,13 @@ export function HorseFormPage() {
       photo: fields.photo,
     };
     if (editing && horse && horse.sale) record.sale = horse.sale;
+    record.allowedUids = isAdmin
+      ? restricted
+        ? allowedUids
+        : null
+      : editing && horse
+      ? horse.allowedUids ?? null
+      : [myUid];
     if (editing) updateHorse(record);
     else addHorse(record);
     showToast(editing ? "Guardado" : "Caballo añadido");
@@ -219,6 +238,26 @@ export function HorseFormPage() {
         <label>Notas</label>
         <textarea value={fields.notes} onChange={(e) => setField("notes", e.target.value)} />
       </div>
+      {isAdmin ? (
+        <HorseAccessEditor
+          team={team}
+          restricted={restricted}
+          onRestrictedChange={setRestricted}
+          allowedUids={allowedUids}
+          onAllowedUidsChange={setAllowedUids}
+        />
+      ) : (
+        editing &&
+        isHorseRestricted(horse) && (
+          <div className="card" style={{ padding: ".85rem", marginBottom: ".85rem", fontSize: ".82rem" }}>
+            🔒 Compartido con:{" "}
+            {team
+              .filter((m) => horse.allowedUids.includes(m.uid || m.userId || m.authUid))
+              .map((m) => m.name)
+              .join(", ") || "nadie más (solo administradores)"}
+          </div>
+        )
+      )}
       <div style={{ display: "grid", gap: ".42rem" }}>
         <button type="button" className="btn bts btbl" onClick={handleSubmit}>
           {editing ? "Guardar cambios" : "Añadir caballo"}

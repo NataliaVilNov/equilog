@@ -32,6 +32,9 @@ src/features/horses/
   PedigreeFields.jsx           — sire/dam/grandparents + Horsetelex link field
   OwnerSplitEditor.jsx          — multi-owner name+% editor used by HorseFormPage (the sale
                                    tab has its own, differently-shaped editor — see below)
+  HorseAccessEditor.jsx          — admin-only "Acceso" section in HorseFormPage (see below)
+  horseAccess.js                  — isHorseRestricted()/canViewHorseInfo(), the single source
+                                     of truth for the per-horse restriction check below
   HorsetelexImportButton.jsx     — fetch-by-URL / paste-HTML import UI
   horsetelexParser.js             — pure HTML-scraping/name-matching functions, no DOM
                                      writes (unlike the legacy version)
@@ -48,6 +51,9 @@ src/features/horses/
     SaleOwnerRow.jsx                  — one owner's editable name/% + live computed breakdown
     saleLiquidation.js                 — pure computeSaleLiquidation(horse, expenses)
 src/components/EmptyState.jsx, src/components/Tabs.jsx, src/components/StatGrid.jsx — generic
+src/components/AccessLimited.jsx — "🔒 Acceso limitado" block, extracted from PermissionRoute.jsx
+                                    so it can also render mid-component (ExpenseFormPage,
+                                    ExpenseSettlementPage, HorseFormPage), not just as a route wrapper
 ```
 
 **State & data**
@@ -80,6 +86,41 @@ src/components/EmptyState.jsx, src/components/Tabs.jsx, src/components/StatGrid.
   now means one Firestore write per keystroke (no debouncing since the schema migration —
   see `docs/DATABASE.md` §5) rather than the 250ms-debounced write it had before; tracked as a
   minor follow-up in `docs/BACKLOG.md`, not fixed in this pass.
+- **Per-horse access restriction**: a horse's `allowedUids` field (null/absent = legacy,
+  visible to everyone with `can('horses')`; an array = restricted to admins + those uids —
+  see `docs/DATABASE.md` §1) gates the horse's own profile fields and its `expenses`
+  subcollection. `horseAccess.js`'s `canViewHorseInfo(horse, isAdmin, uid)` is the one check
+  every gated component below calls:
+  - `HorseHeader` shows only `horse.name`/photo for an unauthorized restricted horse — breed,
+    pedigree, owners, dates, notes, and the Horsetelex link are hidden, replaced by a
+    "🔒 Información restringida" line.
+  - `HorseTabs` hides the Gastos tab entirely, and ANDs the check into the existing `can('sale')`
+    gate for Venta, when unauthorized. Entrenos/Salud are untouched — trainings and health are
+    explicitly **not** part of this restriction.
+  - `HorseDetailPage` redirects `?tab=gastos`/`?tab=venta` back to `entrenos` for an
+    unauthorized direct link, the same fallback pattern already used for `?tab=salud` without
+    `can('health')`.
+  - `HorseListItem` hides the owner/breed subtitle (keeps name, photo, training count).
+  - `HorseFormPage` itself is blocked (`<AccessLimited/>`) for an unauthorized editor of a
+    restricted horse. Its new "Acceso" section (`HorseAccessEditor.jsx`) is admin-only
+    editable — a checkbox to restrict the horse plus a picker over `team`, limited to members
+    who've already linked an account (have a resolvable `uid`/`userId`/`authUid` —
+    `usePermissions.js`'s matching logic); an authorized non-admin sees a read-only
+    "Compartido con: …" line instead. Since `addHorse`/`updateHorse` write via a full-document
+    `setDoc` (no merge), a non-admin's save must carry the existing `allowedUids` forward
+    unchanged — the same reason `horse.sale` already gets this treatment on every save.
+  - `ExpenseFormPage`/`ExpenseSettlementPage` (reached directly by route, not just through the
+    tab) get the identical guard — these had **no** horse-specific check before this feature.
+  - **Enforcement is split by data shape, a deliberate tradeoff**: `expenses` is a real
+    subcollection, so it gets genuine Firestore-rules enforcement (`firestore.rules`,
+    `docs/DATABASE.md` §4). The horse's profile fields live on the same `horses/{hid}`
+    document everyone already reads for the name (needed by Boards/Tasks/lists, which this
+    feature deliberately leaves untouched) — Firestore can't restrict individual fields
+    within one document, so hiding those fields is a client-side UI gate only, not a database
+    guarantee.
+  - Non-admin team members read `expenses` through a different listener shape than admins —
+    see `docs/DATABASE.md` §4 for why (a Firestore `list`-query constraint, not a design
+    preference) and `StableDataContext.jsx`'s expenses effect.
 
 **Routing**
 - `/horses` → `HorseListPage`; `/horses/:hid` → `HorseDetailPage`.
@@ -95,6 +136,9 @@ src/components/EmptyState.jsx, src/components/Tabs.jsx, src/components/StatGrid.
 - `can('reports')` gates the header's report button (still a forward-link — see Known gaps).
 - `can('health')` / `can('sale')` gate the Salud/Venta tabs in `HorseTabs`; `HorseDetailPage`
   falls back to `entrenos` if the URL requests a tab the user can't see.
+- Independently of the permission-key checks above, a restricted horse's `allowedUids` gates
+  the Gastos/Venta tabs, the horse's profile fields, and the horse-edit form to admins and the
+  listed members only — see "Per-horse access restriction" above.
 
 ## Sale tab
 
@@ -120,6 +164,12 @@ dead interactivity, this port:
 
 This is a behavior-preserving simplification, not a feature cut: the "editable" inputs in
 that first case were never functionally editable in legacy either, just visually present.
+
+**Gated the same way as the Gastos tab**: Venta depends on `expenses` for its liquidation
+math, and `expenses` is the one part of this feature with real Firestore-level enforcement
+(see "Per-horse access restriction" above) — showing the tab to an unauthorized user would
+just render a broken/empty liquidation, so it's hidden client-side for the same reason Gastos
+is, on top of its existing `can('sale')` gate.
 
 **Known gaps / follow-ups**
 - `HorseHeader`'s report button links to `/horses/:hid/report`, which doesn't exist until

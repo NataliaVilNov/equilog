@@ -75,7 +75,7 @@ cross-subcollection query instead of the easy one.
 
 | Collection | Holds |
 |---|---|
-| `horses/{horseId}` | name, breed, dob, `owners[]` (name + % split), pedigree, sale info, `sortOrder`, `photo: {path, url}` |
+| `horses/{horseId}` | name, breed, dob, `owners[]` (name + % split), pedigree, sale info, `sortOrder`, `photo: {path, url}`, `allowedUids` |
 | `trainings/{trainingId}` | date, duration, work type, rating, notes |
 | `health/{healthId}` | type, date, next-due date (`nxt`), amount, payee, payment status |
 | `healthDocs/{docId}` | title, category, date, notes, Storage `path` + `url`, optional `healthId` link |
@@ -85,6 +85,15 @@ Every document in `trainings`, `health`, `healthDocs`, and `expenses` also carri
 `stableId` field, even though it's already implied by the document's path — that's what lets
 `collectionGroup()` queries filter to one stable without walking each doc's ancestor path (see
 §4).
+
+**`allowedUids: string[] | null`** restricts a horse's own profile fields and its `expenses`
+subcollection to specific team members (plus admins, always). Absent/`null` means
+legacy/unrestricted — every horse predating this field, visible/editable by any member with
+the `horses` permission, exactly as before the field existed. Only once it's set to an actual
+array does a horse become restricted. New horses default to `[creatorUid]`. `src/features/
+horses/horseAccess.js` is the single source of truth for this logic client-side; see
+`docs/components/horses.md`. **Trainings and health/healthDocs are explicitly not restricted**
+by this field — only the horse's own profile fields and its expenses are.
 
 ## 2. Unified tasks
 
@@ -242,6 +251,37 @@ with a random `uid()` string as their ID) won't match until backfilled to use th
 user's auth uid as the doc ID; until then those members fall through to
 `defaultPermFor()`'s defaults instead of their configured permissions (fail-closed, not
 fail-open).
+
+**Per-horse access, layered on top of the permission-key checks above**: `horses/{hid}`'s
+`create`/`update` rules additionally require `isStableAdmin(stableId)` or the caller's uid to
+be in the horse's `allowedUids` (when that field is set — see §1's "Horse subcollection
+fields"), and lock the `allowedUids` field itself to admin-only changes (the same
+field-diff pattern already used for `sale`). The `expenses` collectionGroup block's
+`create`/`update`/`delete` gain the same check via a new `isHorseRelated(stableId, hid)`
+helper, which `get()`s the ancestor horse doc. **`horses/{hid}`'s own `read` rule is
+deliberately left unrestricted** (`isStableMember(stableId)` only) — restricting it would hide
+a horse's name from Boards/Tasks/lists too, since Firestore can't restrict individual fields
+within one document; the profile-info restriction is a client-side UI gate only
+(`src/features/horses/horseAccess.js`, `docs/components/horses.md`), not a rules-level one.
+
+**A second, sharper version of the collectionGroup gotcha above, specific to per-document
+restrictions on a `list`/collectionGroup query**: Firestore does not filter individual
+documents out of a `list` request's result set the way it does for a `get()` — if a rule
+can't be proven true for every possible matching document using only the query's own
+`where()` clauses, Firestore rejects the *entire query*, not just the non-matching documents.
+The `expenses` collectionGroup listener (`StableDataContext.jsx`) filters only by `stableId`;
+adding an `isHorseRelated(...)` check (which depends on `resource.data.hid`, a field the
+query doesn't filter on) to its `read` rule would silently break the listener for every
+non-admin, stable-wide, the moment any horse in the stable became restricted — not just for
+that one horse. The fix: `isStableAdmin(resource.data.stableId)` is kept as its own OR branch
+(it only depends on `resource.data.stableId`, which *is* the query's filter field, so it
+stays provable and the single stable-wide listener keeps working for admins); non-admins
+read expenses through one `collection()` listener per horse they're allowed to see instead
+(bound by real path segments, not `resource.data` fields, so there's no proof ambiguity),
+merged client-side into the same `expenses` array. This is a real, deliberate increase in
+listener count for non-admins specifically — bounded by how many horses that member can see,
+not by the stable's total horse count, and the existing "~16 listeners regardless of horse
+count" characterization above no longer holds for them.
 
 ## 5. Write path
 

@@ -116,6 +116,25 @@ service cloud.firestore {
       return isStableAdmin(stableId) || allowed == null || request.auth.uid in allowed;
     }
 
+    // Lets a non-admin self-link an UNLINKED team doc to their own account — the join-by-code
+    // flow (StableSelectionContext.linkUserToTeamMember) writes uid/userId/authUid onto a
+    // team doc an admin already created, as the newly-joined (non-admin) user themselves, so
+    // the plain admin-only team write rule below would otherwise block the entire self-service
+    // join flow. Scoped narrowly so it can't be used to re-open the privilege-escalation gap
+    // that admin-only rule closes: only applies while the doc has no uid/userId/authUid yet
+    // (an already-linked doc can't be hijacked), the caller may only point those three fields
+    // at their OWN uid (can't link someone else's identity into this slot), and permissions/
+    // role must stay byte-for-byte unchanged (can't self-grant anything through this path).
+    function isSelfLinking(stableId) {
+      return isStableMember(stableId)
+        && resource.data.uid == null && resource.data.userId == null && resource.data.authUid == null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.authUid == request.auth.uid
+        && request.resource.data.permissions == resource.data.permissions
+        && request.resource.data.role == resource.data.role;
+    }
+
     match /inviteCodes/{code} {
       allow read: if signedIn();
 
@@ -191,10 +210,12 @@ service cloud.firestore {
       // client lets ANY member with team:true edit ANY teammate's doc, including .permissions
       // and .role — a privilege-escalation path. Restricting all writes to owner/admin closes it
       // without depending on the doc-ID-equals-uid convention above (which most existing team
-      // docs don't satisfy yet).
+      // docs don't satisfy yet). The one deliberate carve-out is isSelfLinking (above), needed
+      // for the join-by-code flow to work for non-admins at all.
       match /team/{memberId} {
         allow read: if isStableMember(stableId);
-        allow create, update, delete: if isStableOwnerOrAdmin(stableId);
+        allow create, delete: if isStableOwnerOrAdmin(stableId);
+        allow update: if isStableOwnerOrAdmin(stableId) || isSelfLinking(stableId);
       }
 
       match /taskTemplates/{tid} {

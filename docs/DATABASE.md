@@ -239,9 +239,18 @@ update), `tasks`→`tasks` + `occurrences` (create/update), `trainings`→`train
 (create/update; delete needs `deleteItems` too), `stable`→`stableExpenses` (same pattern).
 `team` subcollection writes themselves (a member's own doc) are **admin/owner-only
 regardless of the `team` key**, closing a privilege-escalation path the client UI didn't
-guard against. `reports`/`stats` are route-only (no writes to gate). Boards/session-alert/
-weekly-plan/absence/settlement collections stay membership-only (no client-side permission-key
-precedent exists for them).
+guard against — **with one narrow carve-out**: `isSelfLinking(stableId)` lets a non-admin
+update an otherwise-untouched (`uid`/`userId`/`authUid` all still null) team doc to point
+those three identity fields at their own uid, with `permissions`/`role` required to stay
+byte-for-byte unchanged in the same write. This is what `StableSelectionContext`'s join-by-code
+flow (`linkUserToTeamMember`) needs to actually complete for a non-admin — without it, the
+admin-only lock above blocks the entire self-service join flow, since the joining (non-admin)
+user is the one writing their own uid onto the team doc an admin already created for them. An
+already-linked doc (any of the three fields non-null) can't be touched by this path, and a
+caller can only ever point the identity fields at their own auth uid, so this can't be used to
+hijack another member's slot or touch `permissions`/`role`. `reports`/`stats` are route-only
+(no writes to gate). Boards/session-alert/weekly-plan/absence/settlement collections stay
+membership-only (no client-side permission-key precedent exists for them).
 
 **Known limitation**: the rules' "is this my own team doc" check (used for `myPerm`'s
 permission lookup) requires the team doc's ID to equal the caller's Firebase Auth uid — rules

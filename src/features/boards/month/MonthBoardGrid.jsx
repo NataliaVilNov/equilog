@@ -130,7 +130,7 @@ export function MonthBoardGrid() {
                 })}
               </span>
             )}
-        {dayTasks.length > 0 && (
+        {(dayTasks.length > 0 || can("tasks")) && (
           <button
             type="button"
             onClick={(e) => {
@@ -152,7 +152,7 @@ export function MonthBoardGrid() {
               padding: ".08rem .4rem",
             }}
           >
-            📋 {dayTasks.length}
+            {dayTasks.length > 0 ? `📋 ${dayTasks.length}` : "📋 +"}
           </button>
         )}
       </div>

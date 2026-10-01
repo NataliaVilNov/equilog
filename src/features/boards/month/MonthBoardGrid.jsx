@@ -1,10 +1,15 @@
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../../hooks/useStableData.js";
+import { useTaskOccurrences } from "../../../hooks/useTaskOccurrences.js";
+import { usePermissions } from "../../../hooks/usePermissions.js";
 import { td, addMonth, monthLabel } from "../../../lib/date.js";
 import { getMonthGrid, MONTH_GRID_WEEKDAY_LABELS as WEEKDAY_LABELS } from "../../../lib/monthGrid.js";
 import { boardPlan, boardActivity, boardToneClass, boardStartOfWeek } from "../boardHelpers.js";
 import { sortHorsesByOrder } from "../../horses/horseOrder.js";
+import { visibleTasksForUser } from "../../tasks/taskHelpers.js";
 import { EmptyState } from "../../../components/EmptyState.jsx";
+import { MonthDayTasksSheet } from "./MonthDayTasksSheet.jsx";
 
 // Month-at-a-glance view of the weekly board — not part of the reference app this feature
 // was reworked from (it only has a weekly view). Mirrors the existing month-grid pattern
@@ -15,13 +20,27 @@ import { EmptyState } from "../../../components/EmptyState.jsx";
 export function MonthBoardGrid() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { horses, weeklyPlans, boardConfig } = useStableData();
+  const { stableId, horses, tasks, weeklyPlans, boardConfig } = useStableData();
+  const { isAdmin, myTeamMember, can } = usePermissions();
+  const [openDate, setOpenDate] = useState(null);
 
   const m = searchParams.get("month") || td().slice(0, 7);
   const mode = searchParams.get("mode") || "all";
   const sortedHorses = sortHorsesByOrder(horses);
   const hid = searchParams.get("horse") || (sortedHorses[0] ? sortedHorses[0].id : "");
   const selected = sortedHorses.find((h) => h.id === hid);
+  const myMid = myTeamMember ? myTeamMember.id : null;
+
+  const { firstDow, daysInMonth, rangeStart, rangeEnd } = getMonthGrid(m);
+  // useTaskOccurrences/getMonthGrid are called unconditionally, before the "no horses yet"
+  // early return below, so hook call order stays stable across renders either way.
+  const monthOccurrences = useTaskOccurrences(stableId, tasks, rangeStart, rangeEnd);
+  const visibleOccurrences = visibleTasksForUser(monthOccurrences, isAdmin, myMid);
+  const tasksByDate = {};
+  visibleOccurrences.forEach((t) => {
+    const d = t.occurrenceDate || t.startDate;
+    (tasksByDate[d] ||= []).push(t);
+  });
 
   function setParam(key, value) {
     const params = new URLSearchParams(searchParams);
@@ -29,11 +48,14 @@ export function MonthBoardGrid() {
     setSearchParams(params, { replace: true });
   }
 
+  function handleCreateTask() {
+    const back = `/boards?tab=month&month=${m}&mode=${mode}${mode === "one" ? `&horse=${hid}` : ""}`;
+    navigate(`/tasks/new?d=${openDate}&return=${encodeURIComponent(back)}`);
+  }
+
   if (!horses.length) {
     return <EmptyState icon="🐴">Añade caballos para ver el mes.</EmptyState>;
   }
-
-  const { firstDow, daysInMonth } = getMonthGrid(m);
 
   // In "one horse" mode a day drills into that cell's full editor (same destination the
   // weekly grid uses when no tool is armed); in "all horses" mode there's no single cell to
@@ -62,11 +84,11 @@ export function MonthBoardGrid() {
         : [];
     const onePlan = mode === "one" && hid ? boardPlan(weeklyPlans, hid, ds) : null;
     const oneActivities = onePlan ? onePlan.activities || [] : [];
+    const dayTasks = tasksByDate[ds] || [];
 
     cells.push(
-      <button
+      <div
         key={ds}
-        type="button"
         onClick={() => goToDay(ds)}
         style={{
           minHeight: "78px",
@@ -108,7 +130,32 @@ export function MonthBoardGrid() {
                 })}
               </span>
             )}
-      </button>
+        {dayTasks.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenDate(ds);
+            }}
+            style={{
+              marginTop: "auto",
+              alignSelf: "flex-start",
+              display: "flex",
+              alignItems: "center",
+              gap: ".15rem",
+              fontSize: ".58rem",
+              fontWeight: 800,
+              color: "var(--az)",
+              background: "var(--al)",
+              border: "1px solid var(--az)",
+              borderRadius: "999px",
+              padding: ".08rem .4rem",
+            }}
+          >
+            📋 {dayTasks.length}
+          </button>
+        )}
+      </div>
     );
   }
 
@@ -187,6 +234,15 @@ export function MonthBoardGrid() {
         ))}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: ".28rem", marginBottom: "1rem" }}>{cells}</div>
+      {openDate && (
+        <MonthDayTasksSheet
+          date={openDate}
+          tasks={tasksByDate[openDate] || []}
+          onClose={() => setOpenDate(null)}
+          onCreateTask={handleCreateTask}
+          canCreate={can("tasks")}
+        />
+      )}
     </>
   );
 }

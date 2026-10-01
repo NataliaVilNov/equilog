@@ -2,9 +2,11 @@ import { useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../../contexts/AuthContext.jsx";
 import { StableSelectionContext } from "../../contexts/StableSelectionContext.jsx";
+import { usePermissions } from "../../hooks/usePermissions.js";
 import { logout } from "../auth/authActions.js";
 import { JoinByCodeForm } from "./JoinByCodeForm.jsx";
 import { CreateStableModal } from "./CreateStableModal.jsx";
+import { resolveLandingRoute } from "../home/landingDestinations.js";
 
 // Ports the #stable-screen markup + renderStableList()
 // (index.html:43-65, public/legacy-app.js:334-365).
@@ -12,6 +14,7 @@ export function StableListScreen() {
   const { user, profile } = useContext(AuthContext) || {};
   const { stables, activeStableId, loading, error, refreshStables, switchStable } =
     useContext(StableSelectionContext) || {};
+  const { can } = usePermissions();
   const [showCreate, setShowCreate] = useState(false);
   const navigate = useNavigate();
 
@@ -21,12 +24,18 @@ export function StableListScreen() {
 
   // Legacy's render() reacted globally the moment _fbSwitchStable set an active stable,
   // however that happened (picking one, creating one, joining by code). This is the React
-  // equivalent: leave for /home as soon as activeStableId becomes non-null, regardless of
-  // which action in this screen (or a child modal) caused it, rather than wiring a
-  // navigate() call into every individual handler.
+  // equivalent: leave for the user's preferred landing tab as soon as activeStableId becomes
+  // non-null, regardless of which action in this screen (or a child modal) caused it, rather
+  // than wiring a navigate() call into every individual handler. This fires for BOTH a manual
+  // pick here and a returning user's stable auto-selected from their saved `lastStable` (see
+  // StableSelectionContext's autoSelectedForUid effect) — ProtectedRoute routes every signed-in
+  // session through here until a stable is active, so this is the one universal "a fresh
+  // session just got a stable" moment, making it the right place to resolve the landing
+  // preference rather than the routes.jsx catch-all (which only ever fires once a stable is
+  // already active, i.e. mid-session, not on a fresh app open).
   useEffect(() => {
-    if (activeStableId) navigate("/home");
-  }, [activeStableId, navigate]);
+    if (activeStableId) navigate(resolveLandingRoute(profile && profile.landingRoute, { can }));
+  }, [activeStableId, navigate, profile, can]);
 
   const userName =
     (profile && profile.name) || (user && user.displayName) || (user && user.email) || "";

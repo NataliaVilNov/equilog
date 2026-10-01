@@ -63,3 +63,15 @@ export async function updateUserProfile(user, currentProfile, { name, phone, bio
   }
   return { profile: { ...currentProfile, ...payload }, photoDropped: false };
 }
+
+// Writes just the home-personalization fields (landing tab + quick-action shortcut
+// selection) — kept separate from updateUserProfile since these aren't identity fields (no
+// auth displayName touch, no photo-fallback retry logic).
+export async function updateHomePreferences(user, currentProfile, { landingRoute, quickActions }) {
+  const payload = cleanForFirestore({
+    landingRoute: landingRoute || null,
+    quickActions: quickActions || null,
+  });
+  await setDoc(doc(db, "users", user.uid), payload, { merge: true });
+  return { ...currentProfile, ...payload };
+}

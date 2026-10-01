@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="es">
 <head>
 <meta charset="utf-8"/>
@@ -7,146 +6,10 @@
 <title>EquiLog</title>
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&amp;family=Mulish:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-
 </head>
 <body>
 <noscript><div style="padding:2rem;font-family:Arial,sans-serif">EquiLog necesita JavaScript activado para funcionar.</div></noscript>
-<!-- AUTH SCREEN -->
-<div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:500;background:var(--fo);overflow-y:auto">
-<div style="max-width:380px;margin:0 auto;padding:2.5rem 1.2rem 3rem">
-<div style="text-align:center;margin-bottom:2rem">
-<div style="font-family:'Cormorant Garamond',serif;font-size:2rem;font-weight:600;color:var(--ti)">EquiLog</div>
-<div style="font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--v);font-weight:700;margin-top:.2rem">Gestión ecuestre</div>
-</div>
-<div style="display:flex;background:var(--ar);border-radius:999px;padding:.2rem;margin-bottom:1.5rem">
-<button id="auth-tab-login" onclick="authTab('login')" style="flex:1;padding:.52rem;border:none;border-radius:999px;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:#fff;color:var(--vd);box-shadow:0 1px 4px rgba(0,0,0,.08);cursor:pointer">Entrar</button>
-<button id="auth-tab-register" onclick="authTab('register')" style="flex:1;padding:.52rem;border:none;border-radius:999px;font-family:inherit;font-size:.72rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;background:none;color:var(--gr);cursor:pointer">Registrarse</button>
-</div>
-<div id="auth-login-form">
-<div class="f"><label>Email</label><input autocomplete="email" id="login-email" placeholder="tu@email.com" type="email"/></div>
-<div class="f"><label>Contraseña</label><input autocomplete="current-password" id="login-pass" placeholder="••••••••" type="password"/></div>
-<div id="auth-err" style="font-size:.78rem;color:var(--ro);margin-bottom:.75rem;display:none"></div>
-<button class="btn bts btbl" onclick="doLogin()" style="margin-bottom:.65rem">Entrar →</button>
-</div>
-<div id="auth-register-form" style="display:none">
-<div class="f"><label>Nombre completo</label><input autocomplete="name" id="reg-name" placeholder="Laura García" type="text"/></div>
-<div class="f"><label>Email</label><input autocomplete="email" id="reg-email" placeholder="tu@email.com" type="email"/></div>
-<div class="f"><label>Contraseña</label><input autocomplete="new-password" id="reg-pass" placeholder="Mínimo 6 caracteres" type="password"/></div>
-<div id="reg-err" style="font-size:.78rem;color:var(--ro);margin-bottom:.75rem;display:none"></div>
-<button class="btn bts btbl" onclick="doRegister()" style="margin-bottom:.65rem">Crear cuenta →</button>
-</div>
-<p style="font-size:.72rem;color:var(--gr);text-align:center">Tus datos se guardan en la nube y son accesibles desde cualquier dispositivo.</p>
-</div>
-</div>
-<!-- STABLE SELECTOR SCREEN -->
-<div id="stable-screen" style="display:none;position:fixed;inset:0;z-index:490;background:var(--fo);overflow-y:auto">
-<div style="max-width:500px;margin:0 auto;padding:1.5rem 1rem 5rem">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem">
-<div>
-<div style="font-family:'Cormorant Garamond',serif;font-size:1.5rem;font-weight:600;color:var(--ti)">Mis cuadras</div>
-<div id="stable-screen-user" style="font-size:.78rem;color:var(--gr)"></div>
-</div>
-<button class="btn btg btsm" onclick="doLogout()">Salir</button>
-</div>
-<div id="stable-list-screen"></div>
-<div style="margin-top:1rem;border-top:1px solid var(--li);padding-top:1rem">
-<p style="font-size:.8rem;color:var(--gr);margin-bottom:.75rem">¿Tienes un código de invitación?</p>
-<div style="display:flex;gap:.5rem">
-<input id="invite-code-input" placeholder="Código de invitación..." style="flex:1;font-family:inherit;font-size:.88rem;padding:.6rem .8rem;border:1px solid var(--li);border-radius:9px;background:#fff"/>
-<button class="btn bts" onclick="joinByCode()">Unirse</button>
-</div>
-</div>
-<div style="margin-top:1rem">
-<button class="btn btbl" onclick="showCreateStable()" style="width:100%">+ Crear nueva cuadra</button>
-</div>
-</div>
-</div>
-<!-- CREATE STABLE MODAL -->
-<div id="create-stable-modal" onclick="if(event.target===this)this.style.display='none'" style="display:none;position:fixed;inset:0;z-index:510;background:rgba(44,41,37,.55);backdrop-filter:blur(3px)">
-<div style="position:absolute;bottom:0;left:0;right:0;background:var(--fo);border-radius:18px 18px 0 0;padding:1.5rem 1rem 2.5rem;max-width:500px;margin:0 auto">
-<h2 style="font-size:1.1rem;margin-bottom:1rem">Nueva cuadra</h2>
-<div class="f"><label>Nombre de la cuadra *</label><input id="new-stable-name" placeholder="Ej: Cuadra El Pinar"/></div>
-<div class="f"><label>Descripción (opcional)</label><input id="new-stable-desc" placeholder="Ej: Cuadra familiar en Sevilla"/></div>
-<div id="create-stable-err" style="font-size:.78rem;color:var(--ro);margin-bottom:.75rem;display:none"></div>
-<button class="btn bts btbl" onclick="doCreateStable()">Crear cuadra</button>
-</div>
-</div>
-<!-- JOIN TEAM SELECTOR MODAL -->
-<div id="join-team-modal" style="display:none;position:fixed;inset:0;z-index:520;background:rgba(44,41,37,.58);backdrop-filter:blur(3px);overflow-y:auto">
-<div style="max-width:520px;margin:0 auto;padding:1.5rem 1rem 4rem">
-<div style="background:var(--fo);border-radius:18px;padding:1.2rem;border:1px solid var(--li);margin-top:2rem">
-<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:.75rem;margin-bottom:.85rem">
-<div>
-<div style="font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--v);font-weight:800">Invitación a cuadra</div>
-<h2 id="join-team-title" style="font-size:1.25rem;margin-top:.12rem">¿Qué integrante del equipo eres?</h2>
-<p id="join-team-sub" style="font-size:.82rem;color:var(--gr);margin-top:.25rem;line-height:1.45">Selecciona tu mote o perfil para vincular tu usuario.</p>
-</div>
-<button onclick="closeJoinTeamModal()" style="background:none;border:none;font-size:1.35rem;color:var(--gr);cursor:pointer">✕</button>
-</div>
-<div id="join-team-list"></div>
-<div style="margin-top:.8rem;border-top:1px solid var(--li);padding-top:.8rem">
-<button class="btn btg btbl" onclick="confirmJoinAs(null)">No estoy en la lista / unirme sin vincular</button>
-</div>
-</div>
-</div>
-</div>
-<!-- MAIN APP HEADER -->
-<header id="main-header" style="display:none"><div class="bar">
-<button class="logo" onclick="openStablePanel()" style="background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:.4rem;text-align:left">
-    EquiLog <span class="ltag">Beta</span>
-<span id="active-stable-name" style="font-family:Mulish,sans-serif;font-size:.6rem;font-weight:700;color:var(--v);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--v);border-radius:999px;padding:.08rem .4rem"></span>
-</button>
-<div style="display:flex;gap:.4rem;align-items:center">
-<span id="header-user-name" style="font-size:.68rem;color:var(--gr);font-weight:600"></span>
-<button class="ib" onclick="openUserPanel()" title="Mi perfil">👤</button>
-</div>
-</div></header>
-<!-- STABLE PANEL (slide-up) -->
-<div id="stable-panel" onclick="if(event.target===this)closeStablePanel()" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(44,41,37,.55);backdrop-filter:blur(3px)">
-<div style="position:absolute;bottom:0;left:0;right:0;background:var(--fo);border-radius:18px 18px 0 0;padding:1.2rem 1rem 2rem;max-height:85vh;overflow-y:auto">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-<h2 style="font-size:1.1rem">🏠 Cuadras</h2>
-<button onclick="closeStablePanel()" style="background:none;border:none;font-size:1.3rem;color:var(--gr);cursor:pointer">✕</button>
-</div>
-<div id="stable-panel-list"></div>
-<div style="margin-top:.75rem;display:grid;gap:.4rem">
-<button class="btn btbl" onclick="closeStablePanel();showCreateStable()">+ Nueva cuadra</button>
-<button class="btn btg btbl" onclick="copyInviteCode()">📋 Copiar código de invitación</button>
-</div>
-</div>
-</div>
-<!-- USER PANEL -->
-<div id="user-panel" onclick="if(event.target===this)closeUserPanel()" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(44,41,37,.55);backdrop-filter:blur(3px)">
-<div style="position:absolute;bottom:0;left:0;right:0;background:var(--fo);border-radius:18px 18px 0 0;padding:1.2rem 1rem 2rem">
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">
-<h2 style="font-size:1.1rem">👤 Mi perfil</h2>
-<button onclick="closeUserPanel()" style="background:none;border:none;font-size:1.3rem;color:var(--gr);cursor:pointer">✕</button>
-</div>
-<div id="user-panel-content"></div>
-</div>
-</div>
-<div class="wrap" id="app-wrap"><div id="app"></div></div>
-<button class="fab" id="fab" style="display:none">+</button>
-<nav class="bn" style="display:none" aria-label="Navegación principal">
-<button class="nb" id="nb-home"><span class="ni">⌂</span>Inicio</button>
-<button class="nb" id="nb-horses"><span class="ni">🐴</span>Caballos</button>
-<button class="nb" id="nb-day"><span class="ni">✓</span>Hoy</button>
-<button class="nb" id="nb-team"><span class="ni">👥</span>Equipo</button>
-<button class="nb" id="nb-more"><span class="ni">•••</span>Más</button>
-</nav>
-
-<div id="more-panel" class="sheet-overlay" style="display:none" onclick="if(event.target===this)closeMorePanel()">
-  <section class="sheet" aria-label="Más opciones">
-    <div class="sheet-head"><div><span class="ey">EquiLog</span><h2>Más opciones</h2></div><button class="ib" onclick="closeMorePanel()" aria-label="Cerrar">✕</button></div>
-    <div id="more-panel-content" class="more-grid"></div>
-  </section>
-</div>
-<div class="toast" id="toast"></div>
-<div id="loading-screen" style="display:none;position:fixed;inset:0;z-index:480;background:var(--fo);align-items:center;justify-content:center;flex-direction:column;gap:.75rem"><div class="sp"></div><div style="font-size:.82rem;color:var(--gr)">Cargando...</div></div>
-
-<script src="./legacy-app.js"></script>
-<script type="module" src="./src/main.js"></script>
+<div id="root"></div>
+<script type="module" src="./src/main.jsx"></script>
 </body>
 </html>

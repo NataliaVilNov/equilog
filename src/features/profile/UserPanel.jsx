@@ -8,7 +8,9 @@ import { useToast } from "../../hooks/useToast.js";
 import { td } from "../../lib/date.js";
 import { activityById } from "../../lib/constants.js";
 import { resizeProfileImageFile } from "../../lib/imageResize.js";
-import { updateUserProfile, logout } from "../auth/authActions.js";
+import { updateUserProfile, updateHomePreferences, logout } from "../auth/authActions.js";
+import { QUICK_ACTION_CATALOG } from "../home/homeShortcuts.js";
+import { LANDING_DESTINATIONS } from "../home/landingDestinations.js";
 
 function profilePhoto(profile, user) {
   return (profile && (profile.photo || profile.avatar)) || (user && user.photoURL) || "";
@@ -30,7 +32,7 @@ export function UserPanel() {
   const { activeStable } = useContext(StableSelectionContext) || {};
   const { closeModal } = useContext(ModalContext) || {};
   const { tasks, horses } = useStableData();
-  const { myTeamMember } = usePermissions();
+  const { can, myTeamMember } = usePermissions();
   const { showToast } = useToast();
 
   const [name, setName] = useState((profile && profile.name) || (user && user.displayName) || "");
@@ -39,6 +41,16 @@ export function UserPanel() {
   const [photo, setPhoto] = useState(profilePhoto(profile, user));
   const [saving, setSaving] = useState(false);
   const [preparingPhoto, setPreparingPhoto] = useState(false);
+
+  const homeCtx = { can, horses };
+  const toggleableShortcuts = QUICK_ACTION_CATALOG.filter((item) => !item.alwaysOn);
+  const [landingRoute, setLandingRoute] = useState((profile && profile.landingRoute) || "home");
+  const [enabledShortcuts, setEnabledShortcuts] = useState(
+    () =>
+      (profile && profile.quickActions) ||
+      toggleableShortcuts.filter((item) => item.isAvailable(homeCtx)).map((item) => item.id)
+  );
+  const [savingHome, setSavingHome] = useState(false);
 
   if (!user) return null;
 
@@ -94,6 +106,23 @@ export function UserPanel() {
   async function handleLogout() {
     handleClose();
     await logout();
+  }
+
+  function toggleShortcut(id) {
+    setEnabledShortcuts((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function handleSaveHomePrefs() {
+    setSavingHome(true);
+    try {
+      const result = await updateHomePreferences(user, profile || {}, { landingRoute, quickActions: enabledShortcuts });
+      if (applyProfileUpdate) applyProfileUpdate(result);
+      showToast("Preferencias de inicio guardadas");
+    } catch (err) {
+      showToast("Error al guardar: " + err.message);
+    } finally {
+      setSavingHome(false);
+    }
   }
 
   return (
@@ -192,6 +221,59 @@ export function UserPanel() {
           </div>
           <button className="btn bts btbl" onClick={handleSave} disabled={saving}>
             Guardar perfil
+          </button>
+        </div>
+
+        <div className="card" style={{ marginBottom: ".75rem" }}>
+          <div style={{ fontSize: ".7rem", fontWeight: 700, color: "var(--gr)", textTransform: "uppercase", letterSpacing: ".07em", marginBottom: ".65rem" }}>
+            Personalizar inicio
+          </div>
+          <div className="f">
+            <label>Pantalla de inicio</label>
+            <select value={landingRoute} onChange={(e) => setLandingRoute(e.target.value)}>
+              {LANDING_DESTINATIONS.filter((d) => d.isAvailable(homeCtx)).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: ".68rem", color: "var(--gr)", marginTop: ".35rem" }}>
+              La pantalla a la que irás al abrir la app.
+            </div>
+          </div>
+          <div className="f">
+            <label>Accesos rápidos en Inicio</label>
+            {toggleableShortcuts
+              .filter((item) => item.isAvailable(homeCtx))
+              .map((item) => (
+                <label
+                  key={item.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: ".55rem",
+                    textTransform: "none",
+                    letterSpacing: 0,
+                    fontSize: ".82rem",
+                    color: "var(--ti)",
+                    fontWeight: 700,
+                    marginTop: ".5rem",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={enabledShortcuts.includes(item.id)}
+                    onChange={() => toggleShortcut(item.id)}
+                    style={{ width: "auto" }}
+                  />
+                  <span>
+                    {item.icon} {item.label}
+                  </span>
+                </label>
+              ))}
+          </div>
+          <button className="btn bts btbl" onClick={handleSaveHomePrefs} disabled={savingHome}>
+            Guardar preferencias de inicio
           </button>
         </div>
 

@@ -1018,31 +1018,6 @@ export function StableDataProvider({ stableId, children }) {
     [weeklyPlans, stableId]
   );
 
-  // Copies one weekly-plan cell's activities + note into one or more target cells.
-  // Deliberately does not copy completed-state (always starts un-done, matching the
-  // reference behavior this ports the interaction from) or vetHealthId (a pasted VET flag
-  // needs its own fresh detail, not a duplicate reference to the source's health record).
-  // One writeBatch handles a single-cell paste, a whole-day paste, and a whole-horse-row
-  // paste — the caller just passes more/fewer targets.
-  const pasteWeeklyPlanContent = useCallback(
-    (sourceHid, sourceDate, targets) => {
-      const source = weeklyPlans.find((p) => p.hid === sourceHid && p.date === sourceDate);
-      const activities = source ? [...(source.activities || [])] : [];
-      const note = source ? source.note || "" : "";
-      if (!activities.length && !note) return;
-      const batch = writeBatch(db);
-      (targets || []).forEach(({ hid, date }) => {
-        const id = weeklyPlanCellId(hid, date);
-        batch.set(
-          stableDoc(stableId, "weeklyPlans", id),
-          cleanForFirestore({ id, stableId, hid, date, activities: [...activities], completed: [], note, vetHealthId: null })
-        );
-      });
-      commitBatch(batch);
-    },
-    [weeklyPlans, stableId]
-  );
-
   // For every weekly-plan cell in the 7 days before weekStart that had content, writes that
   // same activities+note into the corresponding day this week (date shifted +7). Only
   // writes cells that had source content — never touches a cell whose corresponding source
@@ -1451,7 +1426,6 @@ export function StableDataProvider({ stableId, children }) {
       toggleWeeklyPlanActivity,
       setWeeklyPlanNote,
       toggleWeeklyPlanCompleted,
-      pasteWeeklyPlanContent,
       repeatPreviousWeek,
       eraseWeeklyPlanCell,
       setWeeklyPlanVetLink,
@@ -1531,7 +1505,6 @@ export function StableDataProvider({ stableId, children }) {
       toggleWeeklyPlanActivity,
       setWeeklyPlanNote,
       toggleWeeklyPlanCompleted,
-      pasteWeeklyPlanContent,
       repeatPreviousWeek,
       eraseWeeklyPlanCell,
       setWeeklyPlanVetLink,

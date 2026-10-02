@@ -6,7 +6,7 @@ import { useToast } from "../../hooks/useToast.js";
 import { createNotionClient } from "./notionClient.js";
 import { parseNotionPageId } from "./notionSchema.js";
 import { clearNotionToken, getNotionToken, setNotionToken } from "./notionStorage.js";
-import { loadNotionConfig, saveNotionConfig } from "./notionStore.js";
+import { clearNotionLinks, loadNotionConfig, saveNotionConfig } from "./notionStore.js";
 
 const steps = { fontSize: ".78rem", color: "var(--gr)", paddingLeft: "1.1rem", margin: "0 0 .8rem", lineHeight: 1.5 };
 
@@ -50,9 +50,11 @@ export function NotionSettingsSheet({ onClose }) {
     return true;
   }
 
-  async function connect() {
+  // Validates the token and page, creates the database and saves its ids. `recreate` reuses
+  // the token already stored on this device (to replace a deleted/broken database).
+  async function connect({ recreate = false } = {}) {
     setError("");
-    const value = token.trim();
+    const value = recreate ? getNotionToken(uid) : token.trim();
     const parentPageId = parseNotionPageId(pageLink);
     if (!value) return setError("Pega el token de la integración.");
     if (!parentPageId) return setError("No encuentro el identificador de la página en ese enlace.");
@@ -70,8 +72,11 @@ export function NotionSettingsSheet({ onClose }) {
         createdBy: uid,
         createdAt: new Date().toISOString(),
       });
-      if (storeToken(value)) {
-        setConfig({ ...db, parentPageId });
+      // Links point at pages of the old database; drop them so everything is sent again.
+      if (recreate) await clearNotionLinks(stableId);
+      if (recreate || storeToken(value)) {
+        setConfig({ ...db, databaseUrl: db.url, parentPageId });
+        setPageLink("");
         showToast("Notion conectado: base de datos creada");
       }
     } catch (err) {
@@ -133,6 +138,22 @@ export function NotionSettingsSheet({ onClose }) {
         <button type="button" className="btn btg btsm" onClick={disconnect}>
           Desconectar este dispositivo
         </button>
+        {isAdmin && (
+          <details style={{ marginTop: "1rem", fontSize: ".75rem", color: "var(--gr)" }}>
+            <summary style={{ cursor: "pointer" }}>Crear una base de datos nueva</summary>
+            <div style={{ margin: ".4rem 0" }}>
+              Si has borrado la base de datos en Notion (o quieres otra), comparte una página con tu integración y pega su enlace.
+              Los registros ya enviados se volverán a enviar a la base nueva.
+            </div>
+            <div className="f">
+              <label>Enlace de la página de Notion</label>
+              <input value={pageLink} placeholder="https://www.notion.so/…" onChange={(e) => setPageLink(e.target.value)} />
+            </div>
+            <button type="button" className="btn btsm" disabled={busy} onClick={() => connect({ recreate: true })}>
+              {busy ? "Creando…" : "Crear base de datos nueva"}
+            </button>
+          </details>
+        )}
       </>
     );
   } else if (config) {
@@ -173,7 +194,7 @@ export function NotionSettingsSheet({ onClose }) {
           El token se guarda solo en este navegador: no se sube a EquiLog ni lo ven los demás miembros. Cada persona que envíe
           datos a Notion necesita su propia integración compartida con esa página.
         </div>
-        <button type="button" className="btn bts btbl" disabled={busy} onClick={connect}>
+        <button type="button" className="btn bts btbl" disabled={busy} onClick={() => connect()}>
           {busy ? "Conectando…" : "Conectar y crear base de datos"}
         </button>
       </>

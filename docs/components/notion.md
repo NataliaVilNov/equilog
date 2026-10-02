@@ -23,6 +23,14 @@ unconnected device). Two separate things:
   stable member can read stable docs) and never part of the build (`VITE_*` is public). Each
   person who syncs needs their own integration shared with the page; "Desconectar este
   dispositivo" deletes the token.
+- *Recreating the database:* a connected admin can use "Crear una base de datos nueva" (shared
+  page link; the token already on the device is reused). It creates a new database, saves its
+  ids and deletes every `notionLinks` doc, so everything is sent again to the new one.
+
+**Sharing the page.** With the current "API token" connections, a page is shared from the
+connection's own settings (developers page → the connection → *Acceso al contenido* → *Editar
+acceso* → add the page, then **Guardar**), not from the page's "···" menu. Until then Notion
+answers 404 for the page.
 
 **Why browser-direct.** `api.notion.com` currently answers browser (CORS) requests —
 observed (OPTIONS 204, `Access-Control-Allow-Origin: *`), **not documented**, so Notion could
@@ -79,6 +87,9 @@ never uses Notion has no listener.
 (headers, 429/5xx retries, error messages, create-database), and the sync loop with fake
 clients (create, skip, patch, adopt orphan, recreate deleted, link-after-success, abort on 401,
 archive in scope, progress/summary). Not covered automatically: the real Notion API and Firestore.
+The whole flow was also exercised once against a real workspace: database creation (`euro` number
+format accepted), first sync (4 pages), re-sync (4 unchanged, no requests), edit (same page
+PATCHed), erased cell (page archived).
 
 ## Known limits
 

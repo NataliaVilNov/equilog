@@ -30,3 +30,9 @@ export function saveNotionLink(stableId, key, link) {
 export function removeNotionLink(stableId, key) {
   return deleteDocRef(stableDoc(stableId, "notionLinks", key));
 }
+
+// Used when the database is recreated: every link points at a page of the old one.
+export async function clearNotionLinks(stableId) {
+  const links = await loadNotionLinks(stableId);
+  await Promise.all([...links.keys()].map((key) => removeNotionLink(stableId, key)));
+}

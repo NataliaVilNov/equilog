@@ -13,6 +13,7 @@ import { BoardCell } from "./BoardCell.jsx";
 import { NoteSheet } from "./NoteSheet.jsx";
 import { DoneChecklistSheet } from "./DoneChecklistSheet.jsx";
 import { VetDetailSheet } from "./VetDetailSheet.jsx";
+import { NotionSyncButton } from "../../notion/NotionSyncButton.jsx";
 
 // The VET activity's id is a hardcoded literal, not a generic flag — matches the reference
 // app's own VET-second-tap behavior, which is tied to a literal code string too (see
@@ -148,8 +149,12 @@ export function WeeklyBoardGrid({ week }) {
   function handleSaveVetDetail(detailText) {
     const { hid, date } = vetTarget;
     const plan = boardPlan(weeklyPlans, hid, date);
-    if (plan && plan.vetHealthId) {
-      updateHealthRecord(plan.vetHealthId, { notes: detailText });
+    // updateHealthRecord takes the whole record (it rewrites the doc and its linked expense), so
+    // merge the new notes into the existing one. A dangling link (record deleted from Salud)
+    // falls through to creating a fresh record, which also re-links the cell.
+    const linked = plan && plan.vetHealthId ? health.find((r) => r.id === plan.vetHealthId) : null;
+    if (linked) {
+      updateHealthRecord({ ...linked, notes: detailText });
     } else {
       const id = uid();
       addHealthRecord({
@@ -193,13 +198,12 @@ export function WeeklyBoardGrid({ week }) {
           →
         </button>
       </div>
-      <button
-        className="btn btg btsm"
-        style={{ borderStyle: "dashed", marginBottom: ".7rem" }}
-        onClick={handleRepeatPreviousWeek}
-      >
-        ↻ Repetir anterior
-      </button>
+      <div style={{ display: "flex", gap: ".45rem", flexWrap: "wrap", marginBottom: ".7rem" }}>
+        <button className="btn btg btsm" style={{ borderStyle: "dashed" }} onClick={handleRepeatPreviousWeek}>
+          ↻ Repetir anterior
+        </button>
+        <NotionSyncButton scope={{ from: week, to: end, plans: true }} label="Enviar semana a Notion" />
+      </div>
 
       {!sortedHorses.length ? (
         <EmptyState icon="🐴">Añade caballos para utilizar la pizarra.</EmptyState>

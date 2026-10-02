@@ -65,6 +65,8 @@ how it's actually queried:
 | `periodicBoardDates/{recordId}` | Boards due-date tracker rows, one per horse+column (deterministic id: `${hid}__${columnId}`) |
 | `boardAssignments/{assignmentId}` | Boards walker/paddock resource-slot bookings |
 | `boardConfig/main` | Boards settings — a **single document**, not a subcollection (see §5) |
+| `integrations/notion` | Notion export: database/data-source ids only (never the token), see `docs/components/notion.md` |
+| `notionLinks/{key}` | which Notion page each health record / board cell was sent to (`health__<id>`, `plan__<hid>__<date>`) |
 
 Boards data (`weeklyPlans`, `periodicBoardDates`, `boardAssignments`) is scoped to the
 *stable*, not nested under each horse, because board views are inherently "every horse for

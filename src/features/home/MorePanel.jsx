@@ -37,6 +37,7 @@ export function MorePanel() {
     },
     { icon: "🔔", title: "Alertas", sub: "Avisos y recordatorios", onClick: () => goTo("/alerts") },
     can("stats") && { icon: "▥", title: "Estadísticas", sub: "Actividad y finanzas", onClick: () => goTo("/stats") },
+    can("health") && { icon: "N", title: "Notion", sub: "Enviar registros y plan a Notion", onClick: () => openPanel("notionPanel") },
     { icon: "👤", title: "Mi perfil", sub: "Datos personales y sesión", onClick: () => openPanel("userPanel") },
     { icon: "⇄", title: "Cambiar de cuadra", sub: "Abrir otra cuadra", onClick: () => openPanel("stablePanel") },
   ].filter(Boolean);

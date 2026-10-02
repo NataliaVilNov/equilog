@@ -5,7 +5,7 @@ import { buildHorsetelexUpdates, horsetelexSlug, parseHorsetelexSource } from ".
 const page = readFileSync(new URL("./__fixtures__/horsetelex-emerald.html", import.meta.url), "utf-8");
 // The pedigree part of the page's visible text, as select-all + copy gives it. Reconstructed from
 // the server-rendered markup of the same page, not a real clipboard capture.
-const pageText = readFileSync(new URL("./__fixtures__/horsetelex-emerald.txt", import.meta.url), "utf-8");
+const pageText = readFileSync(new URL("./__fixtures__/horsetelex-emerald.txt", import.meta.url), "utf-8").replace(/\r\n/g, "\n");
 
 describe("parseHorsetelexSource", () => {
   it("reads the horse and its pedigree from a full page source", () => {

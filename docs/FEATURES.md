@@ -88,9 +88,11 @@ pending tasks, count of horses worked recently, health alerts, and a pending-pay
 
 ## 7. Horsetelex pedigree import
 
-**What it does**: Import a horse's pedigree (sire/dam lineage) either by fetching a
-horsetelex.com URL directly from the browser, or by pasting the page's HTML manually when the
-fetch is blocked (e.g. by CORS).
+**What it does**: Import a horse's pedigree (sire/dam/grandparents), name, studbook (as
+`breed`), breeder (as `origin`) and Horsetelex link from a horsetelex.com horse page. The legacy
+app fetched the URL from the browser; the React app no longer fetches anything (see
+`docs/components/horses.md`): the user pastes the page's source code, or copies it with a
+bookmarklet, and the data is read client-side.
 
 - Entry points: `importHorsetelex()`, `fetchHorsetelexHtml()`, `manualHorsetelexPaste()`,
   `applyPedigree()`, `extractHorsetelexFromHtml()` (lines ~2576–2745)

@@ -43,7 +43,7 @@ src/routes/GuestRoute.jsx       — redirects an already-authenticated user away
   else in the React port reacted to `user` becoming truthy the way legacy's global
   `onAuthStateChanged` handler did. See `docs/components/stables.md` for the matching fix on
   the `/stables` side (auto-selecting `profile.lastStable`, and leaving `/stables` once a
-  stable becomes active).
+  different stable becomes active while the list is open).
 - `ProtectedRoute` (`src/routes/ProtectedRoute.jsx`) redirects to `/login` whenever
   `AuthContext`'s `user` is null.
 

@@ -8,6 +8,15 @@ export function addD(s, n) {
   return d.toISOString().slice(0, 10);
 }
 
+// ISO-8601 week number (weeks start Monday; week 1 contains the year's first Thursday).
+export function isoWeek(s) {
+  const d = new Date(s + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + 3); // Thursday of this week
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  firstThursday.setUTCDate(firstThursday.getUTCDate() - ((firstThursday.getUTCDay() + 6) % 7) + 3);
+  return 1 + Math.round((d - firstThursday) / (7 * 86400000));
+}
+
 export function fD(d) {
   return new Date(d + "T12:00:00").toLocaleDateString("es-ES", {
     day: "2-digit",

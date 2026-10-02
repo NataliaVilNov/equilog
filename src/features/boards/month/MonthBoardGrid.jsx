@@ -4,23 +4,27 @@ import { useStableData } from "../../../hooks/useStableData.js";
 import { useTaskOccurrences } from "../../../hooks/useTaskOccurrences.js";
 import { usePermissions } from "../../../hooks/usePermissions.js";
 import { td, addMonth, monthLabel } from "../../../lib/date.js";
+import { activityById } from "../../../lib/constants.js";
 import { getMonthGrid, MONTH_GRID_WEEKDAY_LABELS as WEEKDAY_LABELS } from "../../../lib/monthGrid.js";
-import { boardPlan, boardActivity, boardToneClass, boardStartOfWeek } from "../boardHelpers.js";
+import { boardPlan, boardActivity, boardToneClass } from "../boardHelpers.js";
 import { sortHorsesByOrder } from "../../horses/horseOrder.js";
 import { visibleTasksForUser } from "../../tasks/taskHelpers.js";
 import { EmptyState } from "../../../components/EmptyState.jsx";
 import { MonthDayTasksSheet } from "./MonthDayTasksSheet.jsx";
 
+// How many task chips a day square shows before collapsing the rest into "+N más".
+const MAX_CHIPS = 3;
+
 // Month-at-a-glance view of the weekly board — not part of the reference app this feature
-// was reworked from (it only has a weekly view). Mirrors the existing month-grid pattern
-// from the team absence calendar (features/team/TeamCalendarPage.jsx) instead: same
-// all-horses/one-horse toggle, same weekday grid with leading blank cells for days before
-// the 1st, same "pick a mode, then read/tap day cells" shape — reusing an already-
-// established pattern rather than inventing a new one.
+// was reworked from (it only has a weekly view). Laid out like a Google Calendar month: a
+// left column with each row's ISO week number (tap → that week on the weekly tab), day squares
+// listing that day's tasks as compact chips, and a tap on a square opening a sheet with
+// everything for the day (see MonthDayTasksSheet). Shares its date math with the team absence
+// calendar (lib/monthGrid.js).
 export function MonthBoardGrid() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { stableId, horses, tasks, weeklyPlans, boardConfig } = useStableData();
+  const { stableId, horses, tasks, weeklyPlans, boardConfig, health } = useStableData();
   const { isAdmin, myTeamMember, can } = usePermissions();
   const [openDate, setOpenDate] = useState(null);
 
@@ -28,10 +32,9 @@ export function MonthBoardGrid() {
   const mode = searchParams.get("mode") || "all";
   const sortedHorses = sortHorsesByOrder(horses);
   const hid = searchParams.get("horse") || (sortedHorses[0] ? sortedHorses[0].id : "");
-  const selected = sortedHorses.find((h) => h.id === hid);
   const myMid = myTeamMember ? myTeamMember.id : null;
 
-  const { firstDow, daysInMonth, rangeStart, rangeEnd } = getMonthGrid(m);
+  const { weeks, rangeStart, rangeEnd } = getMonthGrid(m);
   // useTaskOccurrences/getMonthGrid are called unconditionally, before the "no horses yet"
   // early return below, so hook call order stays stable across renders either way.
   const monthOccurrences = useTaskOccurrences(stableId, tasks, rangeStart, rangeEnd);
@@ -41,6 +44,8 @@ export function MonthBoardGrid() {
     const d = t.occurrenceDate || t.startDate;
     (tasksByDate[d] ||= []).push(t);
   });
+  // Timed tasks first (by time), untimed ones after, so the chips read like a day agenda.
+  Object.values(tasksByDate).forEach((list) => list.sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99")));
 
   function setParam(key, value) {
     const params = new URLSearchParams(searchParams);
@@ -48,112 +53,101 @@ export function MonthBoardGrid() {
     setSearchParams(params, { replace: true });
   }
 
+  function backUrl() {
+    return `/boards?tab=month&month=${m}&mode=${mode}${mode === "one" ? `&horse=${hid}` : ""}`;
+  }
+
   function handleCreateTask() {
-    const back = `/boards?tab=month&month=${m}&mode=${mode}${mode === "one" ? `&horse=${hid}` : ""}`;
-    navigate(`/tasks/new?d=${openDate}&return=${encodeURIComponent(back)}`);
+    navigate(`/tasks/new?d=${openDate}&return=${encodeURIComponent(backUrl())}`);
   }
 
   if (!horses.length) {
     return <EmptyState icon="🐴">Añade caballos para ver el mes.</EmptyState>;
   }
 
-  // In "one horse" mode a day drills into that cell's full editor (same destination the
-  // weekly grid uses when no tool is armed); in "all horses" mode there's no single cell to
-  // jump to, so it drills into the weekly tab for that day's week instead.
-  function goToDay(ds) {
-    if (mode === "one" && hid) {
-      navigate(`/boards/cell/${hid}/${ds}?week=${boardStartOfWeek(ds)}`);
-    } else {
-      navigate(`/boards?tab=weekly&week=${boardStartOfWeek(ds)}`);
-    }
+  function openWeek(monday) {
+    navigate(`/boards?tab=weekly&week=${monday}`);
   }
 
-  const cells = [];
-  for (let i = 0; i < firstDow; i++) {
-    cells.push(<div key={"pad" + i} style={{ minHeight: "72px", border: "1px solid transparent" }} />);
+  // Horses whose plan for `ds` has content, limited to the selected horse in "one" mode.
+  function plansForDay(ds) {
+    const scope = mode === "one" ? sortedHorses.filter((h) => h.id === hid) : sortedHorses;
+    return scope
+      .map((h) => ({ horse: h, plan: boardPlan(weeklyPlans, h.id, ds) }))
+      .filter(({ plan }) => plan && ((plan.activities || []).length || plan.note))
+      .map(({ horse, plan }) => ({
+        horse,
+        note: plan.note || "",
+        activities: (plan.activities || []).map((id) => ({
+          ...boardActivity(boardConfig.activities, id),
+          done: (plan.completed || []).includes(id),
+        })),
+      }));
   }
-  for (let d = 1; d <= daysInMonth; d++) {
-    const ds = `${m}-${String(d).padStart(2, "0")}`;
+
+  function healthDueOn(ds) {
+    if (!can("health")) return [];
+    return (health || [])
+      .filter((r) => r.nxt === ds)
+      .map((r) => {
+        const horse = horses.find((h) => h.id === r.hid);
+        return { ...r, horseName: horse ? horse.name : "" };
+      });
+  }
+
+  function renderDay(ds) {
     const isToday = ds === td();
-    const horsesWithContent =
-      mode === "all"
-        ? sortedHorses.filter((h) => {
-            const plan = boardPlan(weeklyPlans, h.id, ds);
-            return plan && ((plan.activities || []).length || plan.note);
-          })
-        : [];
-    const onePlan = mode === "one" && hid ? boardPlan(weeklyPlans, hid, ds) : null;
-    const oneActivities = onePlan ? onePlan.activities || [] : [];
     const dayTasks = tasksByDate[ds] || [];
+    const shown = dayTasks.length > MAX_CHIPS ? dayTasks.slice(0, MAX_CHIPS - 1) : dayTasks;
+    const hidden = dayTasks.length - shown.length;
+    const plans = plansForDay(ds);
+    const onePlan = mode === "one" ? plans[0] : null;
 
-    cells.push(
+    return (
       <div
         key={ds}
-        onClick={() => goToDay(ds)}
-        style={{
-          minHeight: "78px",
-          border: `1px solid ${isToday ? "var(--v)" : "var(--li)"}`,
-          borderRadius: "10px",
-          background: "#fff",
-          padding: ".36rem",
-          textAlign: "left",
-          display: "flex",
-          flexDirection: "column",
-          gap: ".16rem",
-          cursor: "pointer",
-          overflow: "hidden",
+        className={"month-day" + (isToday ? " is-today" : "")}
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpenDate(ds)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpenDate(ds);
+          }
         }}
       >
-        <span style={{ fontWeight: 800, fontSize: ".8rem", color: "var(--ti)" }}>
-          {d}
-          {isToday ? " · hoy" : ""}
-        </span>
-        {mode === "all"
-          ? horsesWithContent.length > 0 && (
-              <span style={{ fontSize: ".6rem", color: "var(--gr)" }}>
-                {horsesWithContent.length} caballo{horsesWithContent.length !== 1 ? "s" : ""}
+        <span className="month-day-num">{Number(ds.slice(8))}</span>
+        {shown.map((t) => {
+          const horse = t.horseId ? horses.find((h) => h.id === t.horseId) : null;
+          const label = activityById(t.activity).l + (horse ? " · " + horse.name : "");
+          return (
+            <span
+              key={t.id + (t.occurrenceDate || "")}
+              className={"month-chip" + (t.status === "done" ? " is-done" : "")}
+              title={(t.time ? t.time + " " : "") + label}
+            >
+              {t.time && <b>{t.time}</b>}
+              {label}
+            </span>
+          );
+        })}
+        {hidden > 0 && <span className="month-more">+{hidden} más</span>}
+        {onePlan ? (
+          <span className="month-codes">
+            {onePlan.activities.map((a) => (
+              <span key={a.id} className={"plan-code " + boardToneClass(a.tone) + (a.done ? " cell-done" : "")}>
+                {a.code}
               </span>
-            )
-          : oneActivities.length > 0 && (
-              <span style={{ display: "flex", flexWrap: "wrap", gap: ".1rem" }}>
-                {oneActivities.map((id) => {
-                  const a = boardActivity(boardConfig.activities, id);
-                  return (
-                    <span
-                      key={id}
-                      className={"plan-code " + boardToneClass(a.tone)}
-                      style={{ minWidth: "18px", height: "18px", fontSize: ".55rem" }}
-                    >
-                      {a.code}
-                    </span>
-                  );
-                })}
-              </span>
-            )}
-        {(dayTasks.length > 0 || can("tasks")) && (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpenDate(ds);
-            }}
-            style={{
-              marginTop: "auto",
-              alignSelf: "flex-start",
-              display: "flex",
-              alignItems: "center",
-              gap: ".15rem",
-              fontSize: ".58rem",
-              fontWeight: 800,
-              color: "var(--az)",
-              background: "var(--al)",
-              border: "1px solid var(--az)",
-              borderRadius: "999px",
-              padding: ".08rem .4rem",
-            }}
-          >
-            {dayTasks.length > 0 ? `📋 ${dayTasks.length}` : "📋 +"}
-          </button>
+            ))}
+          </span>
+        ) : (
+          mode === "all" &&
+          plans.length > 0 && (
+            <span className="month-horses">
+              {plans.length} caballo{plans.length !== 1 ? "s" : ""}
+            </span>
+          )
         )}
       </div>
     );
@@ -161,19 +155,24 @@ export function MonthBoardGrid() {
 
   return (
     <>
-      <div className="card" style={{ padding: ".85rem", marginBottom: ".85rem" }}>
-        <div className="r2">
-          <div className="f">
-            <label>Vista</label>
-            <select value={mode} onChange={(e) => setParam("mode", e.target.value)}>
-              <option value="all">Todos los caballos</option>
-              <option value="one">Un caballo</option>
-            </select>
-          </div>
-          <div className="f">
-            <label>Mes</label>
-            <input type="month" value={m} onChange={(e) => setParam("month", e.target.value)} />
-          </div>
+      <div className="board-toolbar month-toolbar">
+        <button className="ib" onClick={() => setParam("month", addMonth(m, -1))} aria-label="Mes anterior">
+          ←
+        </button>
+        <div>
+          <b className="month-title">{monthLabel(m)}</b>
+        </div>
+        <button className="ib" onClick={() => setParam("month", addMonth(m, 1))} aria-label="Mes siguiente">
+          →
+        </button>
+      </div>
+      <div className="month-controls">
+        <div className="f">
+          <label>Vista</label>
+          <select value={mode} onChange={(e) => setParam("mode", e.target.value)}>
+            <option value="all">Todos los caballos</option>
+            <option value="one">Un caballo</option>
+          </select>
         </div>
         {mode === "one" && (
           <div className="f">
@@ -187,60 +186,42 @@ export function MonthBoardGrid() {
             </select>
           </div>
         )}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: ".5rem" }}>
-          <button className="btn btsm btg" onClick={() => setParam("month", addMonth(m, -1))}>
-            ‹ Mes anterior
-          </button>
-          <div
-            style={{
-              fontFamily: "'Cormorant Garamond',serif",
-              fontSize: "1.1rem",
-              fontWeight: 700,
-              textTransform: "capitalize",
-              color: "var(--ti)",
-            }}
-          >
-            {monthLabel(m)}
-          </div>
-          <button className="btn btsm btg" onClick={() => setParam("month", addMonth(m, 1))}>
-            Mes siguiente ›
-          </button>
+        <div className="f">
+          <label>Mes</label>
+          <input type="month" value={m} onChange={(e) => setParam("month", e.target.value)} />
         </div>
       </div>
-      <div style={{ fontSize: ".78rem", color: "var(--gr)", marginBottom: ".55rem" }}>
-        {mode === "all" ? (
-          "Vista conjunta. Toca un día para ir a esa semana."
-        ) : (
-          <>
-            Toca un día para editar el plan de <b>{selected ? selected.name : "este caballo"}</b>.
-          </>
-        )}
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(7,1fr)",
-          gap: ".28rem",
-          marginBottom: ".4rem",
-          fontSize: ".62rem",
-          fontWeight: 800,
-          color: "var(--gr)",
-          textTransform: "uppercase",
-          letterSpacing: ".06em",
-        }}
-      >
-        {WEEKDAY_LABELS.map((w) => (
-          <div key={w}>{w}</div>
+
+      <div className="month-board">
+        <div className="month-head">
+          <span className="month-wk-head">Sem</span>
+          {WEEKDAY_LABELS.map((w) => (
+            <span key={w}>{w}</span>
+          ))}
+        </div>
+        {weeks.map((w) => (
+          <div className="month-week" key={w.monday}>
+            <button type="button" className="month-wk" onClick={() => openWeek(w.monday)} title="Ver esta semana">
+              {w.isoWeek}
+            </button>
+            {w.days.map((ds, i) => (ds ? renderDay(ds) : <div key={"pad" + i} className="month-pad" />))}
+          </div>
         ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: ".28rem", marginBottom: "1rem" }}>{cells}</div>
+
       {openDate && (
         <MonthDayTasksSheet
           date={openDate}
           tasks={tasksByDate[openDate] || []}
+          plans={plansForDay(openDate)}
+          healthDue={healthDueOn(openDate)}
           onClose={() => setOpenDate(null)}
           onCreateTask={handleCreateTask}
           canCreate={can("tasks")}
+          onOpenWeek={() => openWeek(weeks.find((w) => w.days.includes(openDate)).monday)}
+          onOpenCell={(h) =>
+            navigate(`/boards/cell/${h}/${openDate}?week=${weeks.find((w) => w.days.includes(openDate)).monday}`)
+          }
         />
       )}
     </>

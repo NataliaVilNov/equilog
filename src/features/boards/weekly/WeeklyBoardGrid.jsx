@@ -40,7 +40,7 @@ function DateHeaderLabel({ date }) {
 
 // Ports rWeeklyBoard (public/legacy-app.js:1358-1372) plus a multi-tool toolbar/cell-action
 // model added afterward (not a legacy port — see docs/components/boards.md): a single armed
-// tool (an activity, or Nota/Hecho/Copiar/Borrar) governs what tapping a cell does, matching
+// tool (an activity, or Nota/Hecho/Borrar) governs what tapping a cell does, matching
 // the reference "pizarra semanal" app's interaction model. The armed tool is ordinary
 // component state, same as the single-activity quick-assign mode it replaces.
 export function WeeklyBoardGrid({ week }) {
@@ -54,7 +54,6 @@ export function WeeklyBoardGrid({ week }) {
     toggleWeeklyPlanActivity,
     setWeeklyPlanNote,
     toggleWeeklyPlanCompleted,
-    pasteWeeklyPlanContent,
     repeatPreviousWeek,
     eraseWeeklyPlanCell,
     setWeeklyPlanVetLink,
@@ -67,13 +66,11 @@ export function WeeklyBoardGrid({ week }) {
   const [noteTarget, setNoteTarget] = useState(null); // {hid, date} | null
   const [doneTarget, setDoneTarget] = useState(null); // {hid, date} | null
   const [vetTarget, setVetTarget] = useState(null); // {hid, date} | null
-  const [copySource, setCopySource] = useState(null); // {hid, date} | null
 
   const sortedHorses = sortHorsesByOrder(horses);
   const dates = boardWeekDates(week);
   const end = dates[6];
   const today = td();
-  const copyMode = activeTool === "copy";
 
   function shiftWeek(n) {
     const params = new URLSearchParams(searchParams);
@@ -84,13 +81,12 @@ export function WeeklyBoardGrid({ week }) {
   function toggleTool(id) {
     const next = activeTool === id ? null : id;
     setActiveTool(next);
-    setCopySource(null);
     if (!next) {
       showToast("Herramienta desactivada");
       return;
     }
-    if (["note", "done", "copy", "erase"].includes(next)) {
-      showToast("Toca una casilla para " + { note: "añadir una nota", done: "marcar hecho", copy: "copiar", erase: "borrar" }[next]);
+    if (["note", "done", "erase"].includes(next)) {
+      showToast("Toca una casilla para " + { note: "añadir una nota", done: "marcar hecho", erase: "borrar" }[next]);
       return;
     }
     const a = boardActivity(boardConfig.activities, next);
@@ -105,52 +101,9 @@ export function WeeklyBoardGrid({ week }) {
     showToast("Semana anterior repetida");
   }
 
-  function handleCopyClick(hid, date) {
-    const plan = boardPlan(weeklyPlans, hid, date);
-    const hasContent = !!(plan && ((plan.activities || []).length || plan.note));
-    if (!copySource) {
-      if (!hasContent) {
-        showToast("Esa casilla está vacía. Elige una con contenido como origen.");
-        return;
-      }
-      setCopySource({ hid, date });
-      showToast("Origen elegido. Ahora toca todas las casillas donde quieras copiarlo.");
-      return;
-    }
-    if (copySource.hid === hid && copySource.date === date) {
-      setCopySource(null);
-      showToast("Origen desmarcado.");
-      return;
-    }
-    pasteWeeklyPlanContent(copySource.hid, copySource.date, [{ hid, date }]);
-    showToast("1 casilla copiada · las tareas quedan pendientes");
-  }
-
-  function pasteToDay(date) {
-    if (!copySource) return;
-    const targets = sortedHorses
-      .filter((h) => !(h.id === copySource.hid && date === copySource.date))
-      .map((h) => ({ hid: h.id, date }));
-    if (!targets.length) return;
-    pasteWeeklyPlanContent(copySource.hid, copySource.date, targets);
-    showToast(`${targets.length} casillas copiadas · las tareas quedan pendientes`);
-  }
-
-  function pasteToHorseRow(hid) {
-    if (!copySource) return;
-    const targets = dates.filter((d) => !(hid === copySource.hid && d === copySource.date)).map((d) => ({ hid, date: d }));
-    if (!targets.length) return;
-    pasteWeeklyPlanContent(copySource.hid, copySource.date, targets);
-    showToast(`${targets.length} casillas copiadas · las tareas quedan pendientes`);
-  }
-
   function clickCell(hid, date) {
     if (!activeTool) {
       navigate(`/boards/cell/${hid}/${date}?week=${week}`);
-      return;
-    }
-    if (activeTool === "copy") {
-      handleCopyClick(hid, date);
       return;
     }
     if (activeTool === "note") {
@@ -269,18 +222,7 @@ export function WeeklyBoardGrid({ week }) {
                   <th className="horse-col">Caballo</th>
                   {dates.map((d) => (
                     <th key={d} className={d === today ? "is-today" : ""}>
-                      {copyMode && copySource ? (
-                        <button
-                          type="button"
-                          className="copy-target"
-                          onClick={() => pasteToDay(d)}
-                          style={{ background: "none", border: "none", width: "100%", cursor: "copy" }}
-                        >
-                          <DateHeaderLabel date={d} />
-                        </button>
-                      ) : (
-                        <DateHeaderLabel date={d} />
-                      )}
+                      <DateHeaderLabel date={d} />
                     </th>
                   ))}
                   {boardConfig.periodicColumns.map((c) => (
@@ -294,22 +236,10 @@ export function WeeklyBoardGrid({ week }) {
                 {sortedHorses.map((h) => (
                   <tr key={h.id}>
                     <th className="horse-col">
-                      {copyMode && copySource ? (
-                        <button
-                          type="button"
-                          className="board-horse-name copy-target"
-                          onClick={() => pasteToHorseRow(h.id)}
-                          style={{ background: "none", border: "none", width: "100%", textAlign: "left", cursor: "copy" }}
-                        >
-                          {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
-                          <b>{h.name}</b>
-                        </button>
-                      ) : (
-                        <div className="board-horse-name">
-                          {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
-                          <b>{h.name}</b>
-                        </div>
-                      )}
+                      <div className="board-horse-name">
+                        {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
+                        <b>{h.name}</b>
+                      </div>
                     </th>
                     {dates.map((d) => (
                       <BoardCell
@@ -320,8 +250,6 @@ export function WeeklyBoardGrid({ week }) {
                         plan={boardPlan(weeklyPlans, h.id, d)}
                         boardActivities={boardConfig.activities}
                         vetActivityId={VET_ACTIVITY_ID}
-                        isCopySource={!!(copySource && copySource.hid === h.id && copySource.date === d)}
-                        isCopyTarget={copyMode && !!copySource && !(copySource.hid === h.id && copySource.date === d)}
                         onClick={() => clickCell(h.id, d)}
                       />
                     ))}
@@ -335,13 +263,6 @@ export function WeeklyBoardGrid({ week }) {
           </div>
         </>
       )}
-
-      <div className="board-legend">
-        <span className="ok">Verde: al día</span>
-        <span className="warn">Amarillo: próximo o pendiente</span>
-        <span className="bad">Rojo: vencido o conflicto</span>
-        <span className="info">Azul: información</span>
-      </div>
 
       {noteTarget && (
         <NoteSheet note={noteTargetPlan ? noteTargetPlan.note : ""} onSave={handleSaveNote} onClose={() => setNoteTarget(null)} />

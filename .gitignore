@@ -3,3 +3,6 @@ dist/
 .env
 .env.*
 !.env.example
+
+# page sources saved locally while developing the Horsetelex importer
+/https___www.horsetelex.com_*

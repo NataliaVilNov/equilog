@@ -126,15 +126,22 @@ Boards feature) and appears to be a stale snapshot left behind after edits conti
   full React migration proceeds.
 - **Status**: done — removed on `refactor/react-migration` during Phase 0.
 
-### 6. Horsetelex pedigree import is CORS-fragile
+### 6. Horsetelex pedigree import is CORS-fragile (resolved: no fetch at all)
 `fetchHorsetelexHtml()` does a direct client-side `fetch()` against an external
 horsetelex.com URL with no server-side proxy. This will break unpredictably if
 horsetelex.com's CORS policy changes, and there's already a manual-paste fallback in the UI
 suggesting this is a known pain point.
 - **Fix**: either accept manual-paste as the primary path and simplify the UI, or add a small
   server-side proxy endpoint for the fetch.
-- **Status**: not fixed — ported as-is to `src/features/horses/HorsetelexImportButton.jsx`/
-  `horsetelexParser.js`, manual-paste fallback included.
+- **Status**: done on `feature/horsetelex-import`. The port actually went through three public
+  CORS proxies, and neither that nor a server-side proxy can work: horsetelex.com sits behind a
+  Cloudflare bot challenge (every automated request gets a 403) and sends no CORS headers, and
+  getting around that is off the table. The import therefore never contacts Horsetelex: the
+  user pastes the page source they already have open (or uses the clipboard bookmarklet) and
+  `horsetelexParser.js` reads the JSON Angular embeds in it. A real URL-in/data-out flow would
+  need an official data licence/API from Horsetelex (now part of Equine & Stable Technologies
+  GmbH).
+
 
 ## Testing & process
 
@@ -146,11 +153,12 @@ deploy workflow (`.github/workflows/deploy.yml`, which just runs `npm run build`
   point to start — e.g. `REFACTOR_PLAN.md` Phase 7 (Smart Order) explicitly calls out
   extracting the `so*` parser functions as pure functions specifically because they're the
   first realistic unit-test target in the app.
-- **Status**: still no test runner configured. The migration did, however, consistently pull
+- **Status**: a test runner (`vitest`, `npm test`) now exists, used so far only by
+  `src/features/horses/horsetelexParser.test.js`. The migration did, however, consistently pull
   business logic out into small pure functions with no DOM/global reads (`src/lib/*.js`,
   and every feature's non-component helper files, e.g. `expenseSplits.js`,
   `saleLiquidation.js`, the whole `src/features/smart-order/` parsing pipeline) — these are
-  now realistic unit-test targets whenever a test runner is added, which it still isn't.
+  now realistic unit-test targets.
 
 ## Documentation
 

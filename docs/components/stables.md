@@ -19,7 +19,8 @@ src/features/stables/
   CreateStableModal.jsx   — name/description form, opened from StableListScreen
   JoinByCodeForm.jsx       — invite-code input, embedded in StableListScreen
   StablePanel.jsx           — slide-up panel (opened from AppHeader's logo button):
-                              active stable info, switch/delete/leave
+                              active stable info, "Cambiar de cuadra" (opens /stables
+                              without leaving the stable), delete/leave
   JoinTeamModal.jsx          — "which team member are you" picker, shown whenever
                               StableSelectionContext.pendingJoin is set
 src/contexts/StableSelectionContext.jsx — all state and mutators for this feature
@@ -52,13 +53,17 @@ src/contexts/StableSelectionContext.jsx — all state and mutators for this feat
 - `StableListScreen` is mounted at `/stables` (`src/routes/routes.jsx`), wrapped in
   `<ProtectedRoute requireStable={false}>` — signed in required, active stable not.
 - `ProtectedRoute` redirects here whenever a user is signed in but has no `activeStableId`.
-- `StableListScreen` itself runs an effect that navigates to `/home` as soon as
-  `activeStableId` becomes non-null, however it got set — picking an existing stable,
-  creating one, or completing a join-by-code/`confirmJoinAs` flow. Legacy's `render()`
-  reacted to this globally; nothing in the initial React port did, so picking or creating a
-  stable silently left the user stuck on `/stables` with the new stable active but invisible
-  until a manual reload. One effect at the screen level covers all of those entry points
-  instead of wiring a `navigate()` call into each handler individually.
+- `StableListScreen` itself runs an effect that navigates to the user's landing route when
+  `activeStableId` changes to a different non-null id *after the screen mounted* — picking
+  another stable, creating one, joining by code/`confirmJoinAs`, or a returning user's
+  `lastStable` being auto-selected. Legacy's `render()` reacted to this globally; nothing in
+  the initial React port did, so picking or creating a stable silently left the user stuck on
+  `/stables`. It is deliberately *not* "whenever `activeStableId` is set": a user already
+  inside a stable can open `/stables` ("Cambiar de cuadra" in `StablePanel`) to create or join
+  another one without being bounced back — the id captured at mount is ignored. Tapping the
+  already-active stable changes no state, so `pickStable()` navigates to the landing route
+  explicitly for that case. The active stable (and `lastStable`) is untouched while the list
+  is open, so the header/bottom nav stay visible.
 
 **Permissions**
 - `deleteStable` requires `canManageStable(activeStable, user)` — true if the user is the

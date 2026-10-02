@@ -12,8 +12,6 @@ export function BoardCell({
   plan,
   boardActivities,
   vetActivityId,
-  isCopySource,
-  isCopyTarget,
   onClick,
 }) {
   const activities = (plan && plan.activities) || [];
@@ -26,9 +24,7 @@ export function BoardCell({
     "plan-cell" +
     (isToday ? " is-today" : "") +
     (activeTool ? " quick-mode" : "") +
-    (allDone ? " cell-all-done" : "") +
-    (isCopySource ? " copy-source" : "") +
-    (isCopyTarget ? " copy-target" : "");
+    (allDone ? " cell-all-done" : "");
 
   return (
     <td key={date} className={className} onClick={onClick}>
@@ -53,7 +49,7 @@ export function BoardCell({
                       {vetHealthId ? "✓" : "?"}
                     </em>
                   )}
-                  {i < activities.length - 1 && <i>›</i>}
+                  {i < activities.length - 1 && <i>+</i>}
                 </span>
               );
             })}
@@ -63,7 +59,7 @@ export function BoardCell({
       ) : note ? (
         <div className="cell-note">{note}</div>
       ) : (
-        <span className="plan-empty">＋</span>
+        <span className="plan-empty">·</span>
       )}
     </td>
   );

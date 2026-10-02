@@ -12,12 +12,16 @@ shown as colored due-date pills next to the weekly grid. Ported from
 
 The **Weekly tab** was later reworked (not a legacy port) to feel like a separate reference
 implementation the team built, `EquiLog_pizarra_semanal_codigo` — a single always-present
-toolbar of activities plus 4 fixed utility tools (Nota/Hecho/Copiar/Borrar), one active at a
+toolbar of activities plus 3 fixed utility tools (Nota/Hecho/Borrar), one active at a
 time, governs what tapping a cell does. The resource boards, periodic columns, and the rest
 of the config screen were explicitly out of scope for that rework — the reference app has no
 equivalent for any of them — and remain exactly as described below. A **Month tab** was added
 after that rework, purely as an EquiLog addition — the reference app has no month view at
-all, only weekly.
+all, only weekly. Both tabs were later restyled toward that reference's look (bigger rows,
+Boards pages widened to 1180px on desktop via `.wrap:has(.board-view)`, hairline-only dividers,
+activity codes as bare tinted text instead of boxed pills, a faint `·` for empty cells, no
+color legend, and no "Copiar" tool — only the layout/sizing was borrowed, the EquiLog palette
+and fonts stayed). The toolbar heading reads "Actividades".
 
 ## Implementation
 
@@ -28,7 +32,7 @@ src/features/boards/
   boardHelpers.js                 — pure selectors/matching helpers, explicit-param
   BoardsPage.jsx                    — /boards, tab shell (weekly/month/walker/paddock/config)
   weekly/
-    BoardToolbar.jsx                  — activities + Nota/Hecho/Copiar/Borrar, one tool armed
+    BoardToolbar.jsx                  — activities + Nota/Hecho/Borrar, one tool armed
     BoardCell.jsx                      — one grid cell: codes, done state, note, VET badge
     NoteSheet.jsx                       — the "Nota" tool's cell sheet
     DoneChecklistSheet.jsx               — the "Hecho" tool's per-activity checklist sheet
@@ -40,7 +44,7 @@ src/features/boards/
                                                Done sheet)
   month/
     MonthBoardGrid.jsx                — month-at-a-glance, "Mes" tab (?tab=month)
-    MonthDayTasksSheet.jsx              — the task-count badge's drill-down sheet + "create" entry point
+    MonthDayTasksSheet.jsx              — day sheet: tasks, activities, health due + "create" entry point
 src/lib/monthGrid.js              — shared month-grid date math (leading blank-cell count,
                                      days in month, weekday labels), lifted out of
                                      MonthBoardGrid.jsx and features/team/TeamCalendarPage.jsx,
@@ -82,7 +86,6 @@ src/components/SlideUpSheet.jsx   — the bottom-sheet backdrop/panel chrome the
   `withDefaults()` logic for this collection.
 - Mutators: `setWeeklyPlanActivities`/`toggleWeeklyPlanActivity` (weekly plan activities,
   unchanged by the rework), `setWeeklyPlanNote`, `toggleWeeklyPlanCompleted`,
-  `pasteWeeklyPlanContent` (copy/paste, single-cell or batched to a whole day/horse-row),
   `repeatPreviousWeek`, `eraseWeeklyPlanCell`, `setWeeklyPlanVetLink` (all new), plus
   `setBoardPeriodic` (periodic columns), `assignBoardHorse`/`moveBoardAssignment`/
   `removeBoardAssignment` (resource-board placements), CRUD mutators for every
@@ -110,20 +113,24 @@ src/components/SlideUpSheet.jsx   — the bottom-sheet backdrop/panel chrome the
   for the whole visible month, same range-capable hook `StatsPage`/`TeamReportPage` use —
   see `docs/components/tasks.md`), filtered through `visibleTasksForUser` so a non-admin sees
   the same task set they'd see on Day/Home. Occurrences are grouped by `occurrenceDate ||
-  startDate` into a per-day count badge. Its "Todos los caballos"/"Un caballo" mode toggle
-  and `?month=`/`?horse=` search params mirror `TeamCalendarPage`'s existing `?month=`/`?pid=`
-  pattern (`features/team/TeamCalendarPage.jsx`) rather than inventing a new one. Tapping a
-  day cell still drills into `BoardCellPage` (one-horse mode) or the Weekly tab (all-horses
-  mode), unchanged; the task-count badge is a separate nested tappable element
-  (`stopPropagation`) that opens `MonthDayTasksSheet` instead, so the two don't compete for
-  the same tap target.
-- `MonthDayTasksSheet` lists that day's tasks via `TaskCard` (status-cycling, occurrence
-  reassignment, edit, delete all come for free) and, when `can("tasks")`, offers "+ Nueva
-  tarea", which navigates to `/tasks/new?d=<date>&return=<encoded month-view URL>` — the
-  `?return=` param is a generic addition to `TaskFormPage` (see `docs/components/tasks.md`)
-  that sends the user back to the same month/mode they started from instead of the default
-  `/day`. `DayBoardPage`'s FAB and `HomePage`'s quick action pass no `return` param, so their
-  behavior is unchanged.
+  startDate` and rendered Google-Calendar style: each day square lists up to 3 task chips
+  (time + activity label, sorted by time; done tasks muted/struck through) and "+N más" for the
+  rest, followed by that horse's activity codes ("Un caballo" mode) or an "N caballos" summary
+  ("Todos" mode). The grid has a left column with each row's ISO week number
+  (`isoWeek()` in `lib/date.js`, rows built by `getMonthGrid().weeks` in `lib/monthGrid.js`);
+  tapping it opens the Weekly tab on that Monday. Its "Todos los caballos"/"Un caballo" mode
+  toggle and `?month=`/`?horse=` search params mirror `TeamCalendarPage`'s existing
+  `?month=`/`?pid=` pattern (`features/team/TeamCalendarPage.jsx`) rather than inventing a new
+  one.
+- Tapping a day square opens `MonthDayTasksSheet`: tasks via `TaskCard` (status-cycling,
+  occurrence reassignment, edit, delete all come for free), that day's board activities per
+  horse (tap → `BoardCellPage`), health records whose `nxt` falls on the day (only if
+  `can("health")`), a "Ver semana" button and, when `can("tasks")`, "+ Nueva tarea", which
+  navigates to `/tasks/new?d=<date>&return=<encoded month-view URL>` — the `?return=` param is
+  a generic addition to `TaskFormPage` (see `docs/components/tasks.md`) that sends the user
+  back to the same month/mode they started from instead of the default `/day`.
+  `DayBoardPage`'s FAB and `HomePage`'s quick action pass no `return` param, so their behavior
+  is unchanged. There is no per-square create button anymore.
 
 **Routing**
 - `/boards` (reads `?tab=weekly|month|walker|paddock|config`, `?week=` for the weekly tab,

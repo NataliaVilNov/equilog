@@ -74,7 +74,7 @@ export function PedigreeFields({ pedigree, onFieldChange, horsetelex, onHorsetel
             </a>
           )}
         </div>
-        <HorsetelexImportButton url={horsetelex} current={current} onImport={onImport} />
+        <HorsetelexImportButton current={current} onImport={onImport} />
       </div>
     </div>
   );

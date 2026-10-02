@@ -1,0 +1,155 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { buildHorsetelexUpdates, horsetelexSlug, parseHorsetelexSource } from "./horsetelexParser.js";
+
+const page = readFileSync(new URL("./__fixtures__/horsetelex-emerald.html", import.meta.url), "utf-8");
+// The pedigree part of the page's visible text, as select-all + copy gives it. Reconstructed from
+// the server-rendered markup of the same page, not a real clipboard capture.
+const pageText = readFileSync(new URL("./__fixtures__/horsetelex-emerald.txt", import.meta.url), "utf-8").replace(/\r\n/g, "\n");
+
+describe("parseHorsetelexSource", () => {
+  it("reads the horse and its pedigree from a full page source", () => {
+    expect(parseHorsetelexSource(page)).toEqual({
+      via: "source",
+      pedigreeComplete: true,
+      horseName: "EMERALD",
+      breed: "KWPN",
+      dob: "",
+      birthYear: "1986",
+      origin: "",
+      horsetelexUrl: "https://www.horsetelex.com/horses/pedigree/16020/emerald",
+      sire: "ZEOLIET",
+      dam: "NATASJA",
+      gsire: "RAMIRO Z",
+      gdam: "SARGAB",
+      mgsire: "SOLARIS XX",
+      mgdam: "BERDONNA",
+    });
+  });
+
+  it("accepts just the script element, or just its text (what a bookmarklet reads)", () => {
+    const script = page.match(/<script[\s\S]*?<\/script>/)[0];
+    const text = script.replace(/^<script[^>]*>/, "").replace(/<\/script>$/, "");
+    expect(parseHorsetelexSource(script).sire).toBe("ZEOLIET");
+    expect(parseHorsetelexSource(text).dam).toBe("NATASJA");
+  });
+
+  it("returns null for anything that is not a Horsetelex page source, without throwing", () => {
+    expect(parseHorsetelexSource("")).toBeNull();
+    expect(parseHorsetelexSource(null)).toBeNull();
+    expect(parseHorsetelexSource("EMERALD\nSire ZEOLIET\nDam NATASJA")).toBeNull();
+    expect(parseHorsetelexSource("<html><body>Just a moment...</body></html>")).toBeNull();
+    expect(parseHorsetelexSource('<script id="serverApp-state">{&q;broken')).toBeNull();
+    expect(parseHorsetelexSource('<script id="serverApp-state">{&q;other&q;:1}</script>')).toBeNull();
+  });
+
+  it("leaves unknown ancestors empty and uses a full foal date when there is one", () => {
+    const state = {
+      "https://x/pedigree/pedigrees/family-tree": {
+        value: { pedigree: { id: 7, name: "Luna", year: 2015, foaldate: "2015-04-09T00:00:00", mother: { name: "Dam" } } },
+      },
+    };
+    const escaped = JSON.stringify(state).replace(/&/g, "&a;").replace(/"/g, "&q;");
+    const parsed = parseHorsetelexSource(`<script id="serverApp-state" type="application/json">${escaped}</script>`);
+    expect(parsed).toMatchObject({ horseName: "Luna", dob: "2015-04-09", sire: "", dam: "Dam", gsire: "", mgdam: "" });
+  });
+});
+
+describe("parseHorsetelexSource — visible text (phone copy)", () => {
+  it("reads the horse and the 14 ancestors in depth-first order", () => {
+    expect(parseHorsetelexSource(pageText)).toEqual({
+      via: "text",
+      pedigreeComplete: true,
+      horseName: "EMERALD",
+      breed: "KWPN",
+      dob: "",
+      birthYear: "1986",
+      origin: "",
+      horsetelexUrl: "",
+      sire: "ZEOLIET",
+      dam: "NATASJA",
+      gsire: "RAMIRO Z",
+      gdam: "SARGAB",
+      mgsire: "SOLARIS XX",
+      mgdam: "BERDONNA",
+    });
+  });
+
+  it("reads a real browser copy: UI words glued to names, 'Sgrt.' studbooks, trailing tables", () => {
+    // Copied from ZEOLIET's page; the progeny tables after the pedigree must not be mistaken for it.
+    const real = readFileSync(new URL("./__fixtures__/horsetelex-zeoliet.txt", import.meta.url), "utf-8").replace(/\r\n/g, "\n");
+    expect(parseHorsetelexSource(real)).toMatchObject({
+      via: "text",
+      pedigreeComplete: true,
+      horseName: "ZEOLIET",
+      breed: "KWPN",
+      birthYear: "1981",
+      sire: "RAMIRO Z",
+      dam: "SARGAB",
+      gsire: "RAIMOND",
+      gdam: "VALINE",
+      mgsire: "ABGAR XX",
+      mgdam: "A.GONNIE",
+    });
+  });
+
+  it("tolerates CRLF, blank lines and stray spacing", () => {
+    const messy = pageText.replace(/\n/g, "\r\n\r\n  ");
+    expect(parseHorsetelexSource(messy)).toMatchObject({ sire: "ZEOLIET", mgdam: "BERDONNA", pedigreeComplete: true });
+  });
+
+  it("does not guess the pedigree when ancestors are missing from the copy", () => {
+    const parsed = parseHorsetelexSource(pageText.replace("SOLONAWAY XX\nxx 1946\n", ""));
+    expect(parsed).toMatchObject({ horseName: "EMERALD", breed: "KWPN", birthYear: "1986", pedigreeComplete: false });
+    ["sire", "dam", "gsire", "gdam", "mgsire", "mgdam"].forEach((k) => expect(parsed[k]).toBe(""));
+  });
+
+  it("prefers the page source when both are present", () => {
+    expect(parseHorsetelexSource(page + "\n" + pageText).via).toBe("source");
+  });
+});
+
+describe("buildHorsetelexUpdates", () => {
+  const parsed = parseHorsetelexSource(page);
+
+  it("fills an empty form completely", () => {
+    expect(buildHorsetelexUpdates(parsed, {})).toEqual({
+      sire: "ZEOLIET",
+      dam: "NATASJA",
+      gsire: "RAMIRO Z",
+      gdam: "SARGAB",
+      mgsire: "SOLARIS XX",
+      mgdam: "BERDONNA",
+      name: "EMERALD",
+      breed: "KWPN",
+      horsetelex: "https://www.horsetelex.com/horses/pedigree/16020/emerald",
+    });
+  });
+
+  it("keeps name/breed/link the user already typed, but always takes the pedigree", () => {
+    const updates = buildHorsetelexUpdates(parsed, { name: "Esme", breed: "PRE", horsetelex: "x", sire: "old" });
+    expect(updates).not.toHaveProperty("name");
+    expect(updates).not.toHaveProperty("breed");
+    expect(updates).not.toHaveProperty("horsetelex");
+    expect(updates.sire).toBe("ZEOLIET");
+  });
+
+  it("overwrites those too when asked", () => {
+    expect(buildHorsetelexUpdates(parsed, { name: "Esme", breed: "PRE" }, { overwrite: true })).toMatchObject({
+      name: "EMERALD",
+      breed: "KWPN",
+    });
+  });
+
+  it("does nothing for a failed parse", () => {
+    expect(buildHorsetelexUpdates(null, {})).toEqual({});
+  });
+});
+
+describe("horsetelexSlug", () => {
+  it("builds the URL slug", () => {
+    expect(horsetelexSlug("Zeoliet")).toBe("zeoliet");
+    expect(horsetelexSlug("RAMIRO Z")).toBe("ramiro-z");
+    expect(horsetelexSlug("Bé d'Or")).toBe("be-d-or");
+  });
+});

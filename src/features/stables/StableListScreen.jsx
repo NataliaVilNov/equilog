@@ -1,4 +1,4 @@
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../../contexts/AuthContext.jsx";
 import { StableSelectionContext } from "../../contexts/StableSelectionContext.jsx";
@@ -22,20 +22,27 @@ export function StableListScreen() {
     if (refreshStables) refreshStables();
   }, [refreshStables]);
 
-  // Legacy's render() reacted globally the moment _fbSwitchStable set an active stable,
-  // however that happened (picking one, creating one, joining by code). This is the React
-  // equivalent: leave for the user's preferred landing tab as soon as activeStableId becomes
-  // non-null, regardless of which action in this screen (or a child modal) caused it, rather
-  // than wiring a navigate() call into every individual handler. This fires for BOTH a manual
-  // pick here and a returning user's stable auto-selected from their saved `lastStable` (see
-  // StableSelectionContext's autoSelectedForUid effect) — ProtectedRoute routes every signed-in
-  // session through here until a stable is active, so this is the one universal "a fresh
-  // session just got a stable" moment, making it the right place to resolve the landing
-  // preference rather than the routes.jsx catch-all (which only ever fires once a stable is
-  // already active, i.e. mid-session, not on a fresh app open).
+  // Leave for the user's preferred landing tab when a stable becomes active WHILE this screen
+  // is open: picking one, creating one, joining by code, or a returning user's `lastStable`
+  // being auto-selected (ProtectedRoute routes every signed-in session through here until a
+  // stable is active, so that is the "fresh session just got a stable" moment, and the landing
+  // preference is resolved here rather than in the routes.jsx catch-all, which only fires once
+  // a stable is already active). Deliberately NOT "whenever activeStableId is non-null": a user
+  // already inside a stable who opens this list on purpose (Cambiar de cuadra, to create or join
+  // another one) must be able to stay. So only a change away from the id that was active when
+  // the screen mounted counts. Tapping the already-active stable changes nothing, which is why
+  // pickStable() navigates explicitly for that case.
+  const activeAtMount = useRef(activeStableId);
   useEffect(() => {
-    if (activeStableId) navigate(resolveLandingRoute(profile && profile.landingRoute, { can }));
+    if (activeStableId && activeStableId !== activeAtMount.current) {
+      navigate(resolveLandingRoute(profile && profile.landingRoute, { can }));
+    }
   }, [activeStableId, navigate, profile, can]);
+
+  function pickStable(id) {
+    if (id === activeStableId) navigate(resolveLandingRoute(profile && profile.landingRoute, { can }));
+    else switchStable(id);
+  }
 
   const userName =
     (profile && profile.name) || (user && user.displayName) || (user && user.email) || "";
@@ -97,7 +104,7 @@ export function StableListScreen() {
             return (
               <button
                 key={s.id}
-                onClick={() => switchStable(s.id)}
+                onClick={() => pickStable(s.id)}
                 style={{
                   width: "100%",
                   display: "flex",

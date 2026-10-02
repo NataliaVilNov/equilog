@@ -4,7 +4,7 @@
 
 The horse roster: list/search all horses in the active stable, add/edit/delete a horse
 (name, breed, pedigree, multi-owner ownership splits, photo), import pedigree data from a
-Horsetelex page (by URL fetch or manual paste), and a detail view with a tabbed layout
+Horsetelex page (pasted page source, copied page text, or clipboard bookmarklet — never fetched), and a detail view with a tabbed layout
 (Entrenos / Salud / Gastos / Venta) covering training log, health records, expenses, and
 sale/ownership liquidation. Ported from `public/legacy-app.js:1539-1970` and
 `public/legacy-app.js:2576-2738` (Horsetelex import). This is the **reference-pattern
@@ -35,8 +35,11 @@ src/features/horses/
   HorseAccessEditor.jsx          — admin-only "Acceso" section in HorseFormPage (see below)
   horseAccess.js                  — isHorseRestricted()/canViewHorseInfo(), the single source
                                      of truth for the per-horse restriction check below
-  HorsetelexImportButton.jsx     — fetch-by-URL / paste-HTML import UI
-  horsetelexParser.js             — pure HTML-scraping/name-matching functions, no DOM
+  HorsetelexImportButton.jsx     — "Importar de Horsetelex" sheet: paste source → preview → apply
+  horsetelexBookmarklet.js        — bookmarklet source (copies the open Horsetelex page's data)
+  horsetelexParser.js             — pure string/JSON parser, no DOM; tests: horsetelexParser.test.js
+  __fixtures__/horsetelex-emerald.{html,txt} — trimmed page source / reconstructed visible text
+  __fixtures__/horsetelex-zeoliet.txt        — a real browser copy of a horse page (visible text)
                                      writes (unlike the legacy version)
   detail/
     HorseDetailPage.jsx           — /horses/:hid, ports the shell of rHorse + owns which
@@ -79,8 +82,38 @@ src/components/AccessLimited.jsx — "🔒 Acceso limitado" block, extracted fro
   explicitly reorders.
 - `HorseFormPage` holds all form fields in local component state until submit, matching
   legacy's "nothing saved until you press the save button" behavior.
-- `HorsetelexImportButton`/`horsetelexParser.js` are pure — they return `{updates, success}`
-  rather than writing into DOM inputs directly.
+- **Horsetelex import** — EquiLog never contacts horsetelex.com: it is behind a Cloudflare bot
+  challenge (403 for every automated request) and sends no CORS headers, so neither a proxy nor
+  a server-side fetch is viable, and bypassing the challenge is out of scope. Instead the user
+  opens the horse page in their own browser and hands the page over: Ctrl+U → Ctrl+A → Ctrl+C →
+  paste into the sheet, or click the "Copiar de Horsetelex" bookmarklet on the page and use
+  "Pegar del portapapeles" (the bookmarklet is untested against the live site's CSP; the Ctrl+U
+  route is the fallback). The site is an Angular Universal app: its server-rendered HTML carries
+  a `<script id="serverApp-state">` with the JSON of the page's API calls (entities escaped as
+  `&q; &a; &s; &l; &g;`), including `…/pedigrees/family-tree` with the horse and 3 generations
+  of ancestors (name, birth year, studbook, breeder, registration…). `parseHorsetelexSource()`
+  reads that (`via: "source"`, exact). **Phones** have no Ctrl+U, so a second route reads the
+  page's *visible text* (long-press → Select all → Copy; also `view-source:` on Android):
+  the pedigree is 4 generations drawn as `NAME` + `STUDBOOK REG-or-YEAR` line pairs in
+  depth-first order (sire, his sire, that sire's sire and dam, his dam … then the dam's branch),
+  with the horse itself as `NAME` / `Mare 1986 Dark brown 1.64 m` / `KWPN 5280…`. In a real browser
+  copy each name carries two glued UI words (`ZEOLIET  ProgeniesEdit`), which are stripped (a
+  trailing CamelCase token is never part of an upper-case horse name), and studbook codes may
+  end in a dot (`Sgrt. 1949`). Text carries no
+  generation marker, so the ancestors are only positioned when exactly 14 are found; with fewer
+  (an unknown ancestor would shift every name after it) only name/breed/birth year come back
+  and `pedigreeComplete` is `false` (the sheet warns instead of guessing). The Zeoliet fixture is a real
+  desktop copy; the Emerald text one was reconstructed from the server-rendered markup. The text
+  route is untested against Horsetelex's phone layout and other site languages (the UI-word
+  stripping is language-independent, the sex/header line is matched generically) — the sheet
+  tells the user to check the names. Anything that is neither (a Cloudflare challenge page, unrelated text)
+  returns `null` and the sheet says so. The sheet opens the phone instructions first on
+  `(pointer: coarse)` devices and hides the draggable bookmarklet there. `buildHorsetelexUpdates()` returns the form
+  fields to set: the six pedigree names always; name/breed/dob/origin/link only when empty
+  unless "sobrescribir" is ticked. Horsetelex gives the birth *year* only, so `dob` is left
+  alone (a full `foaldate` is used when present). The form applies the result to its own
+  state; nothing is saved until "Guardar caballo". Both functions are pure (no DOM), which is
+  what makes them testable in Node (`npm test`).
 - `SaleTab` has **no local draft state** — every field writes straight through
   `updateHorseSale` on change, matching legacy's own no-separate-save-button venta tab. This
   now means one Firestore write per keystroke (no debouncing since the schema migration —

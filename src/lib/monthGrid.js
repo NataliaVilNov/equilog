@@ -1,4 +1,4 @@
-import { monthStartStr } from "./date.js";
+import { monthStartStr, addD, isoWeek } from "./date.js";
 
 // Shared date math for a month-at-a-glance grid (leading blank-cell count for days before
 // the 1st, days in the month, every date string in the month). Lifted out of
@@ -17,8 +17,17 @@ export function getMonthGrid(m) {
   const daysInMonth = new Date(y, mo + 1, 0).getDate();
   const dateStrings = Array.from({ length: daysInMonth }, (_, i) => `${m}-${String(i + 1).padStart(2, "0")}`);
 
+  // One entry per calendar row: the Monday it starts on, its ISO week number, and 7 slots
+  // (date string, or null for the padding before the 1st / after the last day).
+  const weeks = Array.from({ length: Math.ceil((firstDow + daysInMonth) / 7) }, (_, w) => {
+    const monday = addD(dateStrings[0], w * 7 - firstDow);
+    const days = Array.from({ length: 7 }, (_, i) => dateStrings[w * 7 + i - firstDow] || null);
+    return { monday, isoWeek: isoWeek(monday), days };
+  });
+
   return {
     firstDow,
+    weeks,
     daysInMonth,
     dateStrings,
     rangeStart: monthStartStr(m),

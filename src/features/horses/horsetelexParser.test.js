@@ -75,6 +75,24 @@ describe("parseHorsetelexSource — visible text (phone copy)", () => {
     });
   });
 
+  it("reads a real browser copy: UI words glued to names, 'Sgrt.' studbooks, trailing tables", () => {
+    // Copied from ZEOLIET's page; the progeny tables after the pedigree must not be mistaken for it.
+    const real = readFileSync(new URL("./__fixtures__/horsetelex-zeoliet.txt", import.meta.url), "utf-8").replace(/\r\n/g, "\n");
+    expect(parseHorsetelexSource(real)).toMatchObject({
+      via: "text",
+      pedigreeComplete: true,
+      horseName: "ZEOLIET",
+      breed: "KWPN",
+      birthYear: "1981",
+      sire: "RAMIRO Z",
+      dam: "SARGAB",
+      gsire: "RAIMOND",
+      gdam: "VALINE",
+      mgsire: "ABGAR XX",
+      mgdam: "A.GONNIE",
+    });
+  });
+
   it("tolerates CRLF, blank lines and stray spacing", () => {
     const messy = pageText.replace(/\n/g, "\r\n\r\n  ");
     expect(parseHorsetelexSource(messy)).toMatchObject({ sire: "ZEOLIET", mgdam: "BERDONNA", pedigreeComplete: true });

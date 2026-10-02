@@ -38,7 +38,8 @@ src/features/horses/
   HorsetelexImportButton.jsx     — "Importar de Horsetelex" sheet: paste source → preview → apply
   horsetelexBookmarklet.js        — bookmarklet source (copies the open Horsetelex page's data)
   horsetelexParser.js             — pure string/JSON parser, no DOM; tests: horsetelexParser.test.js
-  __fixtures__/horsetelex-emerald.{html,txt} — trimmed page source / visible-text fixtures for the tests
+  __fixtures__/horsetelex-emerald.{html,txt} — trimmed page source / reconstructed visible text
+  __fixtures__/horsetelex-zeoliet.txt        — a real browser copy of a horse page (visible text)
                                      writes (unlike the legacy version)
   detail/
     HorseDetailPage.jsx           — /horses/:hid, ports the shell of rHorse + owns which
@@ -95,13 +96,17 @@ src/components/AccessLimited.jsx — "🔒 Acceso limitado" block, extracted fro
   page's *visible text* (long-press → Select all → Copy; also `view-source:` on Android):
   the pedigree is 4 generations drawn as `NAME` + `STUDBOOK REG-or-YEAR` line pairs in
   depth-first order (sire, his sire, that sire's sire and dam, his dam … then the dam's branch),
-  with the horse itself as `NAME` / `Mare 1986 Dark brown 1.64 m` / `KWPN 5280…`. Text carries no
+  with the horse itself as `NAME` / `Mare 1986 Dark brown 1.64 m` / `KWPN 5280…`. In a real browser
+  copy each name carries two glued UI words (`ZEOLIET  ProgeniesEdit`), which are stripped (a
+  trailing CamelCase token is never part of an upper-case horse name), and studbook codes may
+  end in a dot (`Sgrt. 1949`). Text carries no
   generation marker, so the ancestors are only positioned when exactly 14 are found; with fewer
   (an unknown ancestor would shift every name after it) only name/breed/birth year come back
-  and `pedigreeComplete` is `false` (the sheet warns instead of guessing). The text fixture was
-  reconstructed from the server-rendered markup, not captured from a real clipboard, and the
-  text route is untested against Horsetelex's phone layout — the sheet tells the user to
-  check the names. Anything that is neither (a Cloudflare challenge page, unrelated text)
+  and `pedigreeComplete` is `false` (the sheet warns instead of guessing). The Zeoliet fixture is a real
+  desktop copy; the Emerald text one was reconstructed from the server-rendered markup. The text
+  route is untested against Horsetelex's phone layout and other site languages (the UI-word
+  stripping is language-independent, the sex/header line is matched generically) — the sheet
+  tells the user to check the names. Anything that is neither (a Cloudflare challenge page, unrelated text)
   returns `null` and the sheet says so. The sheet opens the phone instructions first on
   `(pointer: coarse)` devices and hides the draggable bookmarklet there. `buildHorsetelexUpdates()` returns the form
   fields to set: the six pedigree names always; name/breed/dob/origin/link only when empty

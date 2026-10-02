@@ -110,8 +110,13 @@ const TEXT_POSITIONS = { sire: 0, gsire: 1, gdam: 4, dam: 7, mgsire: 8, mgdam: 1
 // "<sex or label> 1986 …": any word(s) then a plausible birth year.
 const HEADER_LINE_RE = /^\p{L}[\p{L} .'’-]{1,20}?\s+(1[5-9]\d{2}|20\d{2})(?:\s|$)/u;
 // "<studbook> <registration or year>": a short code, then a token containing a digit.
-const STUDBOOK_LINE_RE = /^(\p{L}{1,8})\s+(?=\S*\d)\S+$/u;
-const NOT_STUDBOOKS = /^(level|lic|int|test|class|klasse)$/i;
+const STUDBOOK_LINE_RE = /^([\p{L}.]{1,8})\s+(?=\S*\d)\S+$/u;
+const NOT_STUDBOOKS = /^(level|lic|int|test|class|klasse)\.?$/i;
+// Every horse name in the copied text is followed by two glued UI words ("ZEOLIET  ProgeniesEdit",
+// "NachkommenBearbeiten" in German…). Names are upper case, so a trailing CamelCase token is
+// never part of one.
+const UI_SUFFIX_RE = /\s+\p{Lu}\p{Ll}+\p{Lu}\p{Ll}+$/u;
+const cleanTextName = (line) => line.replace(UI_SUFFIX_RE, "").trim();
 
 function isStudbookLine(line) {
   const m = line && line.match(STUDBOOK_LINE_RE);
@@ -130,7 +135,7 @@ function parseFromText(text) {
   for (let i = 1; i < lines.length - 1; i++) {
     const header = lines[i].match(HEADER_LINE_RE);
     if (header && isStudbookLine(lines[i + 1]) && !isStudbookLine(lines[i - 1])) {
-      main = { name: lines[i - 1], year: header[1], breed: lines[i + 1].split(" ")[0] };
+      main = { name: cleanTextName(lines[i - 1]), year: header[1], breed: lines[i + 1].split(" ")[0] };
       next = i + 2;
       break;
     }
@@ -139,7 +144,7 @@ function parseFromText(text) {
 
   const ancestors = [];
   for (let j = next; j < lines.length && ancestors.length < ANCESTORS_IN_TREE; j++) {
-    if (isStudbookLine(lines[j]) && !isStudbookLine(lines[j - 1])) ancestors.push(lines[j - 1]);
+    if (isStudbookLine(lines[j]) && !isStudbookLine(lines[j - 1])) ancestors.push(cleanTextName(lines[j - 1]));
   }
   const complete = ancestors.length === ANCESTORS_IN_TREE;
   const pick = (key) => (complete ? ancestors[TEXT_POSITIONS[key]] : "");

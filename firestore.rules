@@ -248,6 +248,20 @@ service cloud.firestore {
         allow read, write: if isStableMember(stableId);
       }
 
+      // Notion export. integrations/notion holds only NON-secret ids (database/data-source id,
+      // the page it lives under) — the Notion token never goes to Firestore — and is written
+      // by an admin when they connect Notion. notionLinks/{key} remembers which Notion page
+      // each health record / board cell was sent to, so re-sending updates instead of
+      // duplicating; any member with the health permission may sync, hence membership-only.
+      match /integrations/{docId} {
+        allow read: if isStableMember(stableId);
+        allow write: if isStableOwnerOrAdmin(stableId);
+      }
+
+      match /notionLinks/{key} {
+        allow read, write: if myPerm(stableId, 'health');
+      }
+
       match /periodicBoardDates/{id} {
         allow read, write: if isStableMember(stableId);
       }

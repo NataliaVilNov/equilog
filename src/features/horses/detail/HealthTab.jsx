@@ -6,6 +6,7 @@ import { EmptyState } from "../../../components/EmptyState.jsx";
 import { HealthDocUploader } from "../../health/HealthDocUploader.jsx";
 import { HealthDocCard } from "../../health/HealthDocCard.jsx";
 import { HealthRecordCard } from "../../health/HealthRecordCard.jsx";
+import { NotionSyncButton } from "../../notion/NotionSyncButton.jsx";
 
 // Ports the "salud" tab body of rHorse (public/legacy-app.js:1715-1766).
 export function HealthTab({ horse }) {
@@ -69,6 +70,15 @@ export function HealthTab({ horse }) {
           <button className="btn bts btbl" onClick={() => navigate(`/horses/${horse.id}/health/new`)}>
             + Añadir registro sanitario
           </button>
+        )}
+        {he.length > 0 && (
+          <div style={{ marginTop: ".45rem" }}>
+            <NotionSyncButton
+              scope={{ hid: horse.id, from: "0000-01-01", to: "9999-12-31", plans: false }}
+              label="Enviar registros a Notion"
+              className="btn btg btsm btbl"
+            />
+          </div>
         )}
       </div>
       {!he.length ? (

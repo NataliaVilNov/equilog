@@ -48,6 +48,16 @@ visible in the code**. Two possibilities, both bad:
 
 ## Data model
 
+### 2b. Notion export keeps the integration token in the browser
+The Notion export (`docs/components/notion.md`) calls `api.notion.com` straight from the
+browser with the user's own integration token, stored only in that device's `localStorage`.
+Two caveats: Notion's browser (CORS) access is observed, not documented, and the token is
+readable by anything running in that browser profile. The safer design is the same serverless
+proxy item #2 asks for (holds secrets, verifies the Firebase login) — `notionClient.js` takes a
+`baseUrl` so it can be repointed without touching the rest. New Firestore rules
+(`integrations`, `notionLinks`) must be published in the console.
+- **Status**: accepted trade-off for now; revisit together with #2.
+
 ### 3. Single Firestore document per stable (scalability + concurrency risk)
 The entire stable dataset (every horse, every training/health/expense record, tasks, team,
 etc.) used to live in one Firestore document (`stables/{id}/data/main`), overwritten wholesale

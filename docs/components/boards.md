@@ -106,8 +106,11 @@ src/components/SlideUpSheet.jsx   — the bottom-sheet backdrop/panel chrome the
   means no linked expense gets created (matches `addHealthRecord`'s existing `amount > 0`
   gate) — a board-flagged vet visit carries no cost data, unlike the full Health form. This
   is a from-scratch reimplementation of the reference app's VET flow, which instead synced
-  to an external Notion database; EquiLog has no Notion integration, so it writes directly
-  to its own Health feature instead.
+  to an external Notion database; EquiLog writes to its own Health feature, and the optional
+  Notion export (`docs/components/notion.md`) sends that record — and the weekly plan — to
+  Notion on request. Re-editing an already-linked VET detail merges the new notes into the
+  existing record (`updateHealthRecord` takes the whole record; an earlier version passed the
+  id and threw).
 - The Month tab reads `weeklyPlans[]`/`boardConfig` the same way the weekly grid does, and
   now also overlays `tasks` (via `useTaskOccurrences(stableId, tasks, rangeStart, rangeEnd)`
   for the whole visible month, same range-capable hook `StatsPage`/`TeamReportPage` use —
@@ -155,7 +158,7 @@ src/components/SlideUpSheet.jsx   — the bottom-sheet backdrop/panel chrome the
 | Paddock `capacity` field exists but never drives multiple columns the way walker `capacity` does | Preserved | Matches legacy's `rResourceBoard`, which always renders paddocks as a single column regardless of `capacity`. |
 | The activity-order editor (`BoardCellPage`) uses real array state with up/down buttons instead of reading DOM node order at save time | Mechanical adaptation, not a behavior change | There's no React-idiomatic equivalent of "read the final order from the DOM" — legacy's `saveBoardCell` does exactly that via `querySelectorAll`. |
 | `addPaddockSlot`/`addBoardActivity`/etc. take explicit form fields instead of `prompt()` | Mechanical adaptation | Matches the real-form pattern used for every other "add X" flow in this migration; `window.confirm()` is still used for deletes, matching every other destructive action ported so far. |
-| VET's second-tap detail flow writes to EquiLog's own Health feature | Deliberate reimplementation, not a port | The reference app syncs to an external Notion database instead — EquiLog has no such integration, and already has a real Health feature the board can write into directly. |
+| VET's second-tap detail flow writes to EquiLog's own Health feature | Deliberate reimplementation, not a port | The reference app syncs to an external Notion database instead — EquiLog writes into its own Health feature, and exports to Notion on request (`docs/components/notion.md`). |
 | Erase gets a `window.confirm()` guard when the cell isn't already empty | Deliberate deviation from the reference | The reference app erases on a single tap with no confirmation; EquiLog's own convention is to confirm destructive actions everywhere else, so Erase follows suit here too (skipped on already-empty cells to avoid a pointless prompt). |
 | `BoardCellPage` kept as a secondary entry point (linked from the Done sheet) rather than deleted | Deliberate | Tap-toggling a cell's activities can only append/remove — it can't reorder two already-assigned activities relative to each other, which `BoardCellPage`'s up/down controls still do. |
 | Activity editing stays on `BoardConfigPage` — no new inline toolbar editor | Deliberate | The reference app's inline gear-icon editor exists because that app has no separate settings area; EquiLog already has one (the Config tab), so duplicating it would work against this app's existing convention of dedicated config pages. |

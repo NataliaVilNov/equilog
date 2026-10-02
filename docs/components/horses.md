@@ -4,7 +4,7 @@
 
 The horse roster: list/search all horses in the active stable, add/edit/delete a horse
 (name, breed, pedigree, multi-owner ownership splits, photo), import pedigree data from a
-Horsetelex page (pasted page source or clipboard bookmarklet — never fetched), and a detail view with a tabbed layout
+Horsetelex page (pasted page source, copied page text, or clipboard bookmarklet — never fetched), and a detail view with a tabbed layout
 (Entrenos / Salud / Gastos / Venta) covering training log, health records, expenses, and
 sale/ownership liquidation. Ported from `public/legacy-app.js:1539-1970` and
 `public/legacy-app.js:2576-2738` (Horsetelex import). This is the **reference-pattern
@@ -38,7 +38,7 @@ src/features/horses/
   HorsetelexImportButton.jsx     — "Importar de Horsetelex" sheet: paste source → preview → apply
   horsetelexBookmarklet.js        — bookmarklet source (copies the open Horsetelex page's data)
   horsetelexParser.js             — pure string/JSON parser, no DOM; tests: horsetelexParser.test.js
-  __fixtures__/horsetelex-emerald.html — trimmed real page source used by the tests
+  __fixtures__/horsetelex-emerald.{html,txt} — trimmed page source / visible-text fixtures for the tests
                                      writes (unlike the legacy version)
   detail/
     HorseDetailPage.jsx           — /horses/:hid, ports the shell of rHorse + owns which
@@ -91,8 +91,19 @@ src/components/AccessLimited.jsx — "🔒 Acceso limitado" block, extracted fro
   a `<script id="serverApp-state">` with the JSON of the page's API calls (entities escaped as
   `&q; &a; &s; &l; &g;`), including `…/pedigrees/family-tree` with the horse and 3 generations
   of ancestors (name, birth year, studbook, breeder, registration…). `parseHorsetelexSource()`
-  reads that and returns `null` for anything else (copied visible text doesn't work, nor does a
-  Cloudflare challenge page — the sheet says so). `buildHorsetelexUpdates()` returns the form
+  reads that (`via: "source"`, exact). **Phones** have no Ctrl+U, so a second route reads the
+  page's *visible text* (long-press → Select all → Copy; also `view-source:` on Android):
+  the pedigree is 4 generations drawn as `NAME` + `STUDBOOK REG-or-YEAR` line pairs in
+  depth-first order (sire, his sire, that sire's sire and dam, his dam … then the dam's branch),
+  with the horse itself as `NAME` / `Mare 1986 Dark brown 1.64 m` / `KWPN 5280…`. Text carries no
+  generation marker, so the ancestors are only positioned when exactly 14 are found; with fewer
+  (an unknown ancestor would shift every name after it) only name/breed/birth year come back
+  and `pedigreeComplete` is `false` (the sheet warns instead of guessing). The text fixture was
+  reconstructed from the server-rendered markup, not captured from a real clipboard, and the
+  text route is untested against Horsetelex's phone layout — the sheet tells the user to
+  check the names. Anything that is neither (a Cloudflare challenge page, unrelated text)
+  returns `null` and the sheet says so. The sheet opens the phone instructions first on
+  `(pointer: coarse)` devices and hides the draggable bookmarklet there. `buildHorsetelexUpdates()` returns the form
   fields to set: the six pedigree names always; name/breed/dob/origin/link only when empty
   unless "sobrescribir" is ticked. Horsetelex gives the birth *year* only, so `dob` is left
   alone (a full `foaldate` is used when present). The form applies the result to its own

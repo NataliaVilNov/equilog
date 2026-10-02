@@ -23,8 +23,12 @@ function problemFor(raw) {
   if (/just a moment|cf-chl|challenge-platform/i.test(raw) && !/serverApp-state/.test(raw)) {
     return "Has copiado la página de verificación de Cloudflare, no la ficha. Espera a que cargue el caballo y vuelve a copiar.";
   }
-  return 'No encuentro los datos del caballo. Abre la ficha del caballo en Horsetelex y copia el código fuente: Ctrl+U, Ctrl+A, Ctrl+C (en Mac: Opción+⌘+U). No sirve copiar solo el texto visible.';
+  return "No encuentro los datos del caballo. Abre la ficha del caballo en Horsetelex (con el pedigree a la vista) y copia todo: en el ordenador el código fuente (Ctrl+U, Ctrl+A, Ctrl+C), en el móvil el texto de la página (mantén pulsado, Seleccionar todo, Copiar).";
 }
+
+// Phones have no Ctrl+U and can't drag a bookmarklet, so they get the copy-the-visible-text
+// route first; the source route stays one tap away.
+const isTouchDevice = () => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
 
 // The bookmarklet's href is a javascript: URL, which React refuses to render as a prop.
 function BookmarkletLink() {
@@ -50,6 +54,7 @@ export function HorsetelexImportButton({ current, onImport }) {
   const [raw, setRaw] = useState("");
   const [overwrite, setOverwrite] = useState(false);
   const textareaRef = useRef(null);
+  const touch = useMemo(isTouchDevice, []);
 
   const parsed = useMemo(() => parseHorsetelexSource(raw), [raw]);
 
@@ -85,17 +90,36 @@ export function HorsetelexImportButton({ current, onImport }) {
       </div>
       {open && (
         <SlideUpSheet title="Importar de Horsetelex" onClose={close}>
-          <ol style={{ fontSize: ".78rem", color: "var(--gr)", paddingLeft: "1.1rem", margin: "0 0 .7rem", lineHeight: 1.5 }}>
-            <li>Abre la ficha del caballo en Horsetelex (en tu navegador).</li>
-            <li>
-              Pulsa <b>Ctrl+U</b> (código fuente), <b>Ctrl+A</b> y <b>Ctrl+C</b>.
-            </li>
-            <li>Pega aquí y revisa lo que se ha leído.</li>
-          </ol>
+          <div style={{ fontSize: ".78rem", color: "var(--gr)", margin: "0 0 .7rem", lineHeight: 1.5 }}>
+            <details open={touch}>
+              <summary style={{ cursor: "pointer", fontWeight: 700 }}>📱 En el móvil</summary>
+              <ol style={{ paddingLeft: "1.1rem", margin: ".3rem 0" }}>
+                <li>Abre la ficha del caballo en Horsetelex con el navegador del móvil y espera a que se vea el pedigree.</li>
+                <li>
+                  Mantén pulsado un texto, elige <b>Seleccionar todo</b> y luego <b>Copiar</b>.
+                </li>
+                <li>Vuelve aquí y pulsa «Pegar del portapapeles».</li>
+              </ol>
+              <div style={{ fontSize: ".7rem" }}>
+                Se lee el texto visible, así que el pedigree tiene que verse completo (4 generaciones). En Android también vale{" "}
+                <code>view-source:</code> delante de la dirección y copiar todo.
+              </div>
+            </details>
+            <details open={!touch} style={{ marginTop: ".4rem" }}>
+              <summary style={{ cursor: "pointer", fontWeight: 700 }}>💻 En el ordenador</summary>
+              <ol style={{ paddingLeft: "1.1rem", margin: ".3rem 0" }}>
+                <li>Abre la ficha del caballo en Horsetelex.</li>
+                <li>
+                  Pulsa <b>Ctrl+U</b> (código fuente), <b>Ctrl+A</b> y <b>Ctrl+C</b>.
+                </li>
+                <li>Pega aquí y revisa lo que se ha leído.</li>
+              </ol>
+            </details>
+          </div>
           <textarea
             ref={textareaRef}
             rows={3}
-            placeholder="Pega aquí el código fuente de la ficha…"
+            placeholder="Pega aquí lo que has copiado de la ficha…"
             onChange={(e) => setRaw(e.target.value)}
             style={{ width: "100%", fontSize: ".75rem", marginBottom: ".5rem" }}
           />
@@ -103,11 +127,11 @@ export function HorsetelexImportButton({ current, onImport }) {
             <button type="button" className="btn btg btsm" onClick={pasteFromClipboard}>
               📋 Pegar del portapapeles
             </button>
-            <BookmarkletLink />
+            {!touch && <BookmarkletLink />}
           </div>
           <div style={{ fontSize: ".68rem", color: "var(--gr)", marginBottom: ".8rem" }}>
-            Atajo: arrastra «Copiar de Horsetelex» a tu barra de marcadores y púlsalo estando en la ficha; luego pulsa «Pegar del
-            portapapeles». Los datos se leen solo en tu navegador; EquiLog no se conecta a Horsetelex.
+            {!touch && "Atajo: arrastra «Copiar de Horsetelex» a tu barra de marcadores y púlsalo estando en la ficha; luego pulsa «Pegar del portapapeles». "}
+            Los datos se leen solo en tu navegador; EquiLog no se conecta a Horsetelex.
           </div>
 
           {raw && !parsed && (
@@ -136,6 +160,17 @@ export function HorsetelexImportButton({ current, onImport }) {
                   </div>
                 )}
               </div>
+              {parsed.via === "text" && !parsed.pedigreeComplete && (
+                <div style={{ fontSize: ".75rem", color: "var(--am)", marginBottom: ".6rem" }}>
+                  ⚠️ En el texto copiado faltan antepasados, así que no puedo colocar el pedigree con seguridad. Solo se aplicarán
+                  nombre y raza; rellena el pedigree a mano o usa el código fuente (Ctrl+U) desde un ordenador.
+                </div>
+              )}
+              {parsed.via === "text" && parsed.pedigreeComplete && (
+                <div style={{ fontSize: ".7rem", color: "var(--gr)", marginBottom: ".6rem" }}>
+                  Leído del texto visible: comprueba que padres y abuelos están en su sitio.
+                </div>
+              )}
               <label
                 style={{ display: "flex", gap: ".5rem", alignItems: "center", fontSize: ".75rem", color: "var(--gr)", marginBottom: ".7rem", textTransform: "none", letterSpacing: 0 }}
               >

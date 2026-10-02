@@ -61,9 +61,8 @@ export function horsetelexSlug(name) {
     .replace(/^-+|-+$/g, "");
 }
 
-// Returns null when `text` isn't a Horsetelex horse page source (or has no pedigree in it);
-// otherwise the horse's data. Fields Horsetelex doesn't give are "" (never undefined).
-export function parseHorsetelexSource(text) {
+// Reads the Angular transfer-state JSON out of a pasted page source. null if there is none.
+function parseFromSource(text) {
   const state = readTransferState(text);
   const horse = state && familyTreeEntry(state);
   if (!horse || !nameOf(horse)) return null;
@@ -74,6 +73,10 @@ export function parseHorsetelexSource(text) {
   const slug = horsetelexSlug(horse.name);
 
   return {
+    via: "source",
+    // The tree comes straight from Horsetelex's data, so an ancestor it doesn't list is
+    // genuinely unknown (nothing was lost in copying).
+    pedigreeComplete: true,
     horseName: nameOf(horse),
     breed: (horse.studbook && horse.studbook.shortname) || "",
     // Horsetelex normally only gives the birth year; a full date only when a foal date exists.
@@ -88,6 +91,83 @@ export function parseHorsetelexSource(text) {
     mgsire: nameOf(dam && dam.father),
     mgdam: nameOf(dam && dam.mother),
   };
+}
+
+// --- Visible-text route (phones: select-all + copy on the rendered page) -------------------
+//
+// Horsetelex draws the pedigree as a 4-generation tree. Copied as text, every horse becomes
+// "NAME" followed by a "STUDBOOK REG-OR-YEAR" line (e.g. "KWPN 528003198101668", "HOLST 1960",
+// "xx BB2261/1540N"), in depth-first order: sire, his sire, that one's sire and dam, his dam,
+// … then the dam's branch. The horse itself is the same pair with a "Mare 1986 Dark brown
+// 1.64 m" line in between. Nothing in the text says which generation an entry belongs to, so
+// the position of an ancestor is only trustworthy when all 14 are present; with fewer, an
+// unknown ancestor would silently shift every name after it, so only the horse itself is
+// returned and the pedigree is flagged incomplete.
+const ANCESTORS_IN_TREE = 14;
+// Indexes into the depth-first ancestor list.
+const TEXT_POSITIONS = { sire: 0, gsire: 1, gdam: 4, dam: 7, mgsire: 8, mgdam: 11 };
+
+// "<sex or label> 1986 …": any word(s) then a plausible birth year.
+const HEADER_LINE_RE = /^\p{L}[\p{L} .'’-]{1,20}?\s+(1[5-9]\d{2}|20\d{2})(?:\s|$)/u;
+// "<studbook> <registration or year>": a short code, then a token containing a digit.
+const STUDBOOK_LINE_RE = /^(\p{L}{1,8})\s+(?=\S*\d)\S+$/u;
+const NOT_STUDBOOKS = /^(level|lic|int|test|class|klasse)$/i;
+
+function isStudbookLine(line) {
+  const m = line && line.match(STUDBOOK_LINE_RE);
+  return !!m && !NOT_STUDBOOKS.test(m[1]);
+}
+
+function parseFromText(text) {
+  const lines = String(text || "")
+    .replace(/\r/g, "\n")
+    .split("\n")
+    .map((l) => l.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  let main = null;
+  let next = 0;
+  for (let i = 1; i < lines.length - 1; i++) {
+    const header = lines[i].match(HEADER_LINE_RE);
+    if (header && isStudbookLine(lines[i + 1]) && !isStudbookLine(lines[i - 1])) {
+      main = { name: lines[i - 1], year: header[1], breed: lines[i + 1].split(" ")[0] };
+      next = i + 2;
+      break;
+    }
+  }
+  if (!main) return null;
+
+  const ancestors = [];
+  for (let j = next; j < lines.length && ancestors.length < ANCESTORS_IN_TREE; j++) {
+    if (isStudbookLine(lines[j]) && !isStudbookLine(lines[j - 1])) ancestors.push(lines[j - 1]);
+  }
+  const complete = ancestors.length === ANCESTORS_IN_TREE;
+  const pick = (key) => (complete ? ancestors[TEXT_POSITIONS[key]] : "");
+
+  return {
+    via: "text",
+    pedigreeComplete: complete,
+    horseName: main.name,
+    breed: main.breed,
+    dob: "",
+    birthYear: main.year,
+    origin: "",
+    horsetelexUrl: "",
+    sire: pick("sire"),
+    dam: pick("dam"),
+    gsire: pick("gsire"),
+    gdam: pick("gdam"),
+    mgsire: pick("mgsire"),
+    mgdam: pick("mgdam"),
+  };
+}
+
+// What the user pasted: a page source (preferred: exact, from Horsetelex's own data) or the
+// visible text of the page. Returns null when it is neither, or has no horse in it; otherwise
+// the horse's data with unknown fields as "" (never undefined). `via` says which route read it
+// and `pedigreeComplete` is false when a text copy lacked ancestors (see above).
+export function parseHorsetelexSource(text) {
+  return parseFromSource(text) || parseFromText(text);
 }
 
 const PEDIGREE_KEYS = ["sire", "dam", "gsire", "gdam", "mgsire", "mgdam"];

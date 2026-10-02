@@ -56,7 +56,7 @@ export default function App() {
         <StableDataScope>
           <ToastProvider>
             <ModalProvider>
-              <BrowserRouter>
+              <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                 <AppShell />
               </BrowserRouter>
             </ModalProvider>

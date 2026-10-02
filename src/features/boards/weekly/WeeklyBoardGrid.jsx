@@ -148,8 +148,12 @@ export function WeeklyBoardGrid({ week }) {
   function handleSaveVetDetail(detailText) {
     const { hid, date } = vetTarget;
     const plan = boardPlan(weeklyPlans, hid, date);
-    if (plan && plan.vetHealthId) {
-      updateHealthRecord(plan.vetHealthId, { notes: detailText });
+    // updateHealthRecord takes the whole record (it rewrites the doc and its linked expense), so
+    // merge the new notes into the existing one. A dangling link (record deleted from Salud)
+    // falls through to creating a fresh record, which also re-links the cell.
+    const linked = plan && plan.vetHealthId ? health.find((r) => r.id === plan.vetHealthId) : null;
+    if (linked) {
+      updateHealthRecord({ ...linked, notes: detailText });
     } else {
       const id = uid();
       addHealthRecord({

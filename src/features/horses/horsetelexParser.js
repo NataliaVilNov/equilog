@@ -1,161 +1,116 @@
-// Ports extractHorsetelexFromHtml and its string helpers (public/legacy-app.js:2654-2738),
-// plus applyPedigree (public/legacy-app.js:2638-2651) adapted to return data instead of
-// writing directly into DOM inputs.
+// Reads a horse's data out of a Horsetelex page the user copied from their own browser.
+//
+// Horsetelex is an Angular Universal app behind a Cloudflare bot challenge, so EquiLog never
+// fetches it (no proxy, no server). Instead the user pastes the page's source (Ctrl+U, then
+// select-all/copy) — or a bookmarklet hands over the same thing from their open tab (see
+// horsetelexBookmarklet.js). The server-rendered HTML carries Angular's "transfer state": a
+// <script id="serverApp-state"> holding the JSON of every API call the page made, including
+// the horse's whole family tree (names, birth year, studbook, breeder…). Reading that is far
+// sturdier than scraping the rendered markup, and it is pure string/JSON work, so this module
+// has no DOM dependency and runs in Node (tests) as well as the browser.
 
-export function normalizePedText(txt) {
-  return String(txt || "")
-    .replace(/\r/g, "\n")
-    .replace(/[\t ]+/g, " ")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
+const STATE_SCRIPT_RE = /<script[^>]*\bid=["']serverApp-state["'][^>]*>([\s\S]*?)<\/script>/i;
+const FAMILY_TREE_KEY_RE = /\/pedigrees\/family-tree(?:$|[?#])/;
+
+// Angular's TransferState escapes these five characters inside the script body.
+const TRANSFER_STATE_ESCAPES = { q: '"', a: "&", s: "'", l: "<", g: ">" };
+
+function unescapeTransferState(s) {
+  return s.replace(/&([qaslg]);/g, (_, c) => TRANSFER_STATE_ESCAPES[c]);
 }
 
-export function cleanHorseName(s) {
-  return String(s || "")
-    .replace(/\s+/g, " ")
-    .replace(/^[\s:;\-–—|]+|[\s:;\-–—|]+$/g, "")
-    .replace(/\b(HorseTelex|horsetelex|pedigree|offspring|progeny|details|information)\b/gi, "")
-    .replace(/\([^)]*\b(stallion|mare|gelding|hengst|merrie|ruin|sire|dam)\b[^)]*\)/gi, "")
-    .trim();
-}
-
-export function isLikelyHorseName(s) {
-  if (!s || s.length < 2 || s.length > 70) return false;
-  if (/^\d+$/.test(s)) return false;
-  if (
-    /@|http|www\.|cookie|login|search|menu|privacy|contact|advert|owner|breeder|born|sex|color|height|studbook|offspring|pedigree|details|information|show more/i.test(
-      s
-    )
-  )
-    return false;
-  if ((s.match(/\d/g) || []).length > 5) return false;
-  return /[A-Za-zÀ-ÿ]/.test(s);
-}
-
-export function uniqueHorseNames(arr) {
-  const out = [];
-  const seen = new Set();
-  arr.forEach((x) => {
-    const c = cleanHorseName(x);
-    const k = c.toLowerCase();
-    if (c && isLikelyHorseName(c) && !seen.has(k)) {
-      seen.add(k);
-      out.push(c);
-    }
-  });
-  return out;
-}
-
-export function sameHorse(a, b) {
-  if (!a || !b) return false;
-  const ca = cleanHorseName(a).toLowerCase();
-  const cb = cleanHorseName(b).toLowerCase();
-  return ca === cb || ca.includes(cb) || cb.includes(ca);
-}
-
-export function extractHorsetelexFromHtml(html) {
-  const result = { sire: "", dam: "", gsire: "", gdam: "", mgsire: "", mgdam: "", horseName: "", breed: "", dob: "" };
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(String(html || ""), "text/html");
-
-  const titleCandidates = [
-    doc.querySelector("h1"),
-    doc.querySelector("h2"),
-    doc.querySelector(".horse-name"),
-    doc.querySelector(".title"),
-    doc.querySelector("title"),
-  ]
-    .filter(Boolean)
-    .map((x) => x.textContent || "")
-    .map(cleanHorseName)
-    .filter(Boolean);
-  result.horseName = titleCandidates[0] || "";
-
-  const bodyText = normalizePedText(doc.body ? doc.body.innerText : html);
-  const labelMap = [
-    ["sire", /(?:^|\n)\s*(?:sire|father|padre)\s*[:\-]?\s*([^\n]+)/i],
-    ["dam", /(?:^|\n)\s*(?:dam|mother|madre)\s*[:\-]?\s*([^\n]+)/i],
-    ["gsire", /(?:^|\n)\s*(?:sire of sire|father of sire|abuelo paterno|grandsire)\s*[:\-]?\s*([^\n]+)/i],
-    ["mgsire", /(?:^|\n)\s*(?:sire of dam|father of dam|abuelo materno|damsire)\s*[:\-]?\s*([^\n]+)/i],
-  ];
-  labelMap.forEach(([k, re]) => {
-    const m = bodyText.match(re);
-    if (m && !result[k]) result[k] = cleanHorseName(m[1]);
-  });
-
-  const nodes = [];
-  const pedigreeSelectors = "table[class*=ped], table[id*=ped], .pedigree, [class*=pedigree], [id*=pedigree]";
-  const pedRoots = Array.from(doc.querySelectorAll(pedigreeSelectors));
-  const roots = pedRoots.length ? pedRoots : [doc.body || doc];
-  roots.forEach((root) => {
-    Array.from(root.querySelectorAll('a[href*="/horses/"], a[href*="horse"], td, th, div, span')).forEach((el) => {
-      const txt = cleanHorseName(el.textContent || "");
-      if (isLikelyHorseName(txt)) nodes.push(txt);
-    });
-  });
-  const names = uniqueHorseNames(nodes).filter((n) => !sameHorse(n, result.horseName));
-
-  const patterns = [];
-  if (names.length >= 6) {
-    patterns.push({ sire: names[0], dam: names[1], gsire: names[2], gdam: names[3], mgsire: names[4], mgdam: names[5] });
-    patterns.push({ sire: names[0], gsire: names[1], gdam: names[2], dam: names[3], mgsire: names[4], mgdam: names[5] });
-    patterns.push({ sire: names[1], dam: names[2], gsire: names[3], gdam: names[4], mgsire: names[5], mgdam: names[6] || "" });
-  } else if (names.length >= 2) {
-    patterns.push({
-      sire: names[0],
-      dam: names[1],
-      gsire: names[2] || "",
-      gdam: names[3] || "",
-      mgsire: names[4] || "",
-      mgdam: names[5] || "",
-    });
+// The transfer-state JSON from whatever the user pasted: a full page source, just the
+// <script> element, or just its text content (what a bookmarklet reads).
+function readTransferState(text) {
+  const src = String(text || "");
+  const m = src.match(STATE_SCRIPT_RE);
+  const body = m ? m[1] : src.trim();
+  if (!/^\{\s*(&q;|")/.test(body)) return null;
+  try {
+    return JSON.parse(unescapeTransferState(body));
+  } catch (_err) {
+    return null;
   }
-  const best = patterns.find((p) => p.sire && p.dam) || patterns[0] || {};
-  ["sire", "dam", "gsire", "gdam", "mgsire", "mgdam"].forEach((k) => {
-    if (!result[k] && best[k]) result[k] = best[k];
-  });
-
-  const dobMatch = bodyText.match(/(?:born|nacido|nacimiento|date of birth)\s*[:\-]?\s*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})/i);
-  if (dobMatch) {
-    const dd = dobMatch[1].padStart(2, "0");
-    const mm = dobMatch[2].padStart(2, "0");
-    const yy = dobMatch[3];
-    result.dob = `${yy}-${mm}-${dd}`;
-  }
-
-  return result;
 }
 
-// Ports applyPedigree, minus the direct DOM writes: returns which fields to update and
-// whether the import counts as a success (matches the same success heuristic).
-export function applyPedigree(ped, current) {
-  const updates = {};
-  let changed = false;
-  const set = (key, val) => {
-    const cleaned = cleanHorseName(val || "");
-    if (cleaned) {
-      updates[key] = cleaned;
-      changed = true;
+function familyTreeEntry(state) {
+  const key = Object.keys(state).find((k) => FAMILY_TREE_KEY_RE.test(k));
+  if (!key) return null;
+  let entry = state[key];
+  if (typeof entry === "string") {
+    try {
+      entry = JSON.parse(entry);
+    } catch (_err) {
+      return null;
     }
+  }
+  const value = entry && (entry.value || entry);
+  return value && value.pedigree ? value.pedigree : null;
+}
+
+function nameOf(horse) {
+  return horse && typeof horse.name === "string" ? horse.name.trim() : "";
+}
+
+export function horsetelexSlug(name) {
+  return String(name || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+// Returns null when `text` isn't a Horsetelex horse page source (or has no pedigree in it);
+// otherwise the horse's data. Fields Horsetelex doesn't give are "" (never undefined).
+export function parseHorsetelexSource(text) {
+  const state = readTransferState(text);
+  const horse = state && familyTreeEntry(state);
+  if (!horse || !nameOf(horse)) return null;
+
+  const sire = horse.father;
+  const dam = horse.mother;
+  const foaldate = typeof horse.foaldate === "string" ? horse.foaldate.slice(0, 10) : "";
+  const slug = horsetelexSlug(horse.name);
+
+  return {
+    horseName: nameOf(horse),
+    breed: (horse.studbook && horse.studbook.shortname) || "",
+    // Horsetelex normally only gives the birth year; a full date only when a foal date exists.
+    dob: /^\d{4}-\d{2}-\d{2}$/.test(foaldate) ? foaldate : "",
+    birthYear: horse.year ? String(horse.year) : "",
+    origin: typeof horse.breeder === "string" ? horse.breeder.trim() : "",
+    horsetelexUrl: horse.id ? `https://www.horsetelex.com/horses/pedigree/${horse.id}${slug ? "/" + slug : ""}` : "",
+    sire: nameOf(sire),
+    dam: nameOf(dam),
+    gsire: nameOf(sire && sire.father),
+    gdam: nameOf(sire && sire.mother),
+    mgsire: nameOf(dam && dam.father),
+    mgdam: nameOf(dam && dam.mother),
   };
-  set("sire", ped && ped.sire);
-  set("dam", ped && ped.dam);
-  set("gsire", ped && ped.gsire);
-  set("gdam", ped && ped.gdam);
-  set("mgsire", ped && ped.mgsire);
-  set("mgdam", ped && ped.mgdam);
-  if (ped && ped.horseName && !(current && current.name)) {
-    updates.name = ped.horseName;
-    changed = true;
-  }
-  if (ped && ped.breed && !(current && current.breed)) {
-    updates.breed = ped.breed;
-    changed = true;
-  }
-  if (ped && ped.dob && !(current && current.dob)) {
-    updates.dob = ped.dob;
-    changed = true;
-  }
-  const success = changed && !!(ped && (ped.sire || ped.dam || ped.gsire || ped.mgsire));
-  return { updates, success };
+}
+
+const PEDIGREE_KEYS = ["sire", "dam", "gsire", "gdam", "mgsire", "mgdam"];
+const SCALAR_KEYS = [
+  ["horseName", "name"],
+  ["breed", "breed"],
+  ["dob", "dob"],
+  ["origin", "origin"],
+  ["horsetelexUrl", "horsetelex"],
+];
+
+// Which horse-form fields an import would change. The six pedigree names are always taken
+// (that is what the import is for); name/breed/dob/origin/link only fill an empty field unless
+// `overwrite` is set, so re-importing never clobbers something the user typed. Pure: the form
+// applies the result to its own state, nothing is saved until "Guardar caballo".
+export function buildHorsetelexUpdates(parsed, current, { overwrite = false } = {}) {
+  const updates = {};
+  if (!parsed) return updates;
+  PEDIGREE_KEYS.forEach((key) => {
+    if (parsed[key]) updates[key] = parsed[key];
+  });
+  SCALAR_KEYS.forEach(([from, to]) => {
+    if (parsed[from] && (overwrite || !(current && current[to]))) updates[to] = parsed[from];
+  });
+  return updates;
 }

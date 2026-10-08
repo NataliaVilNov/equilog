@@ -27,6 +27,7 @@ export function BoardConfigPage() {
     deleteBoardActivity,
     setBoardActivityTone,
     setBoardHidden,
+    setSchoolMode,
     addPeriodicColumn,
     deletePeriodicColumn,
   } = useStableData();
@@ -100,6 +101,21 @@ export function BoardConfigPage() {
               </div>
             );
           })}
+                    <div className="config-row">
+            <span className="config-code">{boardConfig.schoolMode ? "✓" : "✕"}</span>
+            <div>
+              <b>Escuela</b>
+              <small>{boardConfig.schoolMode ? "Alumnos y clases activados" : "Desactivado"}</small>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: ".4rem", flexShrink: 0 }}>
+              <input
+                type="checkbox"
+                checked={!!boardConfig.schoolMode}
+                onChange={(e) => setSchoolMode(e.target.checked)}
+              />
+              Usar
+            </label>
+          </div>
         </div>
       </section>
 

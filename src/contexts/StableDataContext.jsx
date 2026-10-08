@@ -82,9 +82,10 @@ function normalizeBoardConfig(raw) {
   if (!raw || typeof raw !== "object") return boardDefaults();
   const defaults = boardDefaults();
   const cfg = { ...raw };
-  ["activities", "periodicColumns", "walkers", "paddocks", "paddockSlots"].forEach((k) => {
+      ["activities", "periodicColumns", "walkers", "paddocks", "paddockSlots", "classSlots"].forEach((k) => {
     if (!Array.isArray(cfg[k])) cfg[k] = defaults[k];
   });
+    if (typeof cfg.schoolMode !== "boolean") cfg.schoolMode = false;
   // Backfills the "vet" activity onto stables created before the weekly board's VET flow
   // existed — new stables already get it from boardDefaults() above.
   if (!cfg.activities.some((a) => a.id === "vet")) {
@@ -1194,6 +1195,14 @@ export function StableDataProvider({ stableId, children }) {
     },
     [boardConfig, stableId]
   );
+    // Activa el modo escuela: pestaña de alumnos y chips de alumno en la pizarra semanal.
+  // Apagado por defecto — una cuadra normal no da clases.
+  const setSchoolMode = useCallback(
+    (enabled) => {
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), { ...boardConfig, schoolMode: !!enabled });
+    },
+    [boardConfig, stableId]
+  );
 
   const deleteBoardActivity = useCallback(
     (id) => {
@@ -1457,6 +1466,7 @@ export function StableDataProvider({ stableId, children }) {
             addBoardActivity,
       setBoardActivityTone,
       setBoardHidden,
+      setSchoolMode,
       deleteBoardActivity,
       addPeriodicColumn,
       deletePeriodicColumn,
@@ -1538,6 +1548,7 @@ export function StableDataProvider({ stableId, children }) {
       addBoardActivity,
       setBoardActivityTone,
       setBoardHidden,
+      setSchoolMode,
       deleteBoardActivity,
       addPeriodicColumn,
       deletePeriodicColumn,

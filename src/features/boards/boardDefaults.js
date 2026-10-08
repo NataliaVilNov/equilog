@@ -43,5 +43,7 @@ export function boardDefaults() {
       { id: "p1600", start: "16:00", end: "18:00" },
       { id: "p1800", start: "18:00", end: "20:00" },
     ],
+      schoolMode: false,
+  classSlots: [],
   };
 }

@@ -3,6 +3,7 @@ import { useStableData } from "../../../hooks/useStableData.js";
 import { boardToneClass } from "../boardHelpers.js";
 import { WalkersConfig } from "./WalkersConfig.jsx";
 import { PaddocksConfig } from "./PaddocksConfig.jsx";
+import { ClassSlotsConfig } from "./ClassSlotsConfig.jsx";
 
 // Los siete tonos que la pizarra sabe pintar (ver boardDefaults.js y las clases ba-* del CSS).
 const BOARD_TONES = [
@@ -208,8 +209,9 @@ export function BoardConfigPage() {
         </div>
       </section>
 
-      {!hiddenBoards.includes("walker") && <WalkersConfig />}
+            {!hiddenBoards.includes("walker") && <WalkersConfig />}
       {!hiddenBoards.includes("paddock") && <PaddocksConfig />}
+      {boardConfig.schoolMode && <ClassSlotsConfig />}
     </>
   );
 }

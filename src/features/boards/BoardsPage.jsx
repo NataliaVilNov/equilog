@@ -7,24 +7,29 @@ import { WeeklyBoardGrid } from "./weekly/WeeklyBoardGrid.jsx";
 import { MonthBoardGrid } from "./month/MonthBoardGrid.jsx";
 import { ResourceBoardPage } from "./resource/ResourceBoardPage.jsx";
 import { BoardConfigPage } from "./config/BoardConfigPage.jsx";
+import { StudentsPage } from "../students/StudentsPage.jsx";
 
 const TABS = [
   { key: "weekly", label: "Principal" },
   { key: "month", label: "Mes" },
   { key: "walker", label: "Caminador" },
   { key: "paddock", label: "Paddocks" },
+  { key: "students", label: "Alumnos" },
   { key: "config", label: "Configurar" },
 ];
 
 // Ports rBoards (public/legacy-app.js:1348-1357). No permission gate — matches legacy
 // exactly, see routes.jsx for the reasoning. Las pestañas de caminador y paddocks se
-// ocultan según boardConfig.hiddenBoards (instalaciones que no tienen esos recursos).
+// ocultan según boardConfig.hiddenBoards; la de alumnos solo aparece en modo escuela.
 export function BoardsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { boardConfig } = useStableData();
   const hiddenBoards = boardConfig.hiddenBoards || [];
-  const tabs = TABS.filter((t) => !hiddenBoards.includes(t.key));
+  const tabs = TABS.filter((t) => {
+    if (t.key === "students") return !!boardConfig.schoolMode;
+    return !hiddenBoards.includes(t.key);
+  });
   const requestedTab = searchParams.get("tab") || "weekly";
   // Una pestaña oculta puede seguir viva en una URL guardada o en un enlace antiguo.
   const tab = tabs.some((t) => t.key === requestedTab) ? requestedTab : "weekly";
@@ -53,6 +58,7 @@ export function BoardsPage() {
       {tab === "month" && <MonthBoardGrid />}
       {tab === "walker" && <ResourceBoardPage type="walker" date={date} />}
       {tab === "paddock" && <ResourceBoardPage type="paddock" date={date} />}
+      {tab === "students" && <StudentsPage />}
       {tab === "config" && <BoardConfigPage />}
     </div>
   );

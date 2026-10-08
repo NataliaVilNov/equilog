@@ -120,6 +120,8 @@ export function StableDataProvider({ stableId, children }) {
   const [periodicBoardDates, setPeriodicBoardDates] = useState([]);
   const [boardAssignments, setBoardAssignments] = useState([]);
   const [boardConfig, setBoardConfig] = useState(boardDefaults());
+    const [students, setStudents] = useState([]);
+  const [lessons, setLessons] = useState([]);
 
   useEffect(() => {
     if (!stableId) {
@@ -207,6 +209,21 @@ export function StableDataProvider({ stableId, children }) {
       return;
     }
     return subscribeToCollection(stableCollection(stableId, "boardAssignments"), setBoardAssignments);
+  }, [stableId]);
+    useEffect(() => {
+    if (!stableId) {
+      setStudents([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "students"), setStudents);
+  }, [stableId]);
+
+  useEffect(() => {
+    if (!stableId) {
+      setLessons([]);
+      return;
+    }
+    return subscribeToCollection(stableCollection(stableId, "lessons"), setLessons);
   }, [stableId]);
 
   useEffect(() => {
@@ -1203,6 +1220,87 @@ export function StableDataProvider({ stableId, children }) {
     },
     [boardConfig, stableId]
   );
+    // Franjas de clase del modo escuela. A diferencia de paddockSlots, cada franja lleva su
+  // día (weekday 1=lunes … 7=domingo): cada escuela tiene su propio horario y no coincide
+  // de un día a otro. Se ordenan por día y hora al insertar.
+  const addClassSlot = useCallback(
+    (weekday, start, end) => {
+      const classSlots = [...(boardConfig.classSlots || []), { id: uid(), weekday: Number(weekday), start, end }].sort(
+        (a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start)
+      );
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), { ...boardConfig, classSlots });
+    },
+    [boardConfig, stableId]
+  );
+
+  // Borrar una franja deja ids huérfanos en students[].schedule; se ignoran al leer, igual
+  // que las columnas periódicas borradas. Las clases ya dadas en esa franja sí se borran.
+  const deleteClassSlot = useCallback(
+    (id) => {
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        classSlots: (boardConfig.classSlots || []).filter((x) => x.id !== id),
+      });
+      batchDeleteQuery(query(stableCollection(stableId, "lessons"), where("slotId", "==", id)));
+    },
+    [boardConfig, stableId]
+  );
+
+  // Marca o desmarca una franja fija en el horario del alumno.
+  const toggleStudentSlot = useCallback(
+    (studentId, slotId) => {
+      const student = students.find((s) => s.id === studentId);
+      if (!student) return;
+      const current = Array.isArray(student.schedule) ? student.schedule : [];
+      const schedule = current.includes(slotId)
+        ? current.filter((x) => x !== slotId)
+        : [...current, slotId];
+      writeDoc(stableDoc(stableId, "students", studentId), { ...student, stableId, schedule });
+    },
+    [students, stableId]
+  );
+    // Genera el código corto del alumno: inicial del nombre + inicial del primer apellido
+  // (Lucía Martín → LM). Si ya existe, añade un número hasta encontrar uno libre.
+  const buildStudentCode = useCallback(
+    (name, surname, excludeId) => {
+      const letters = (
+        (name || "").trim().charAt(0) + (surname || "").trim().charAt(0)
+      )
+        .toUpperCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      const base = letters || "AL";
+      const taken = students.filter((s) => s.id !== excludeId).map((s) => s.code);
+      if (!taken.includes(base)) return base;
+      let n = 2;
+      while (taken.includes(base + n)) n++;
+      return base + n;
+    },
+    [students]
+  );
+
+  const addStudent = useCallback(
+    (student) => {
+      writeDoc(stableDoc(stableId, "students", student.id), cleanForFirestore({ ...student, stableId }));
+    },
+    [stableId]
+  );
+
+  const updateStudent = useCallback(
+    (student) => {
+      writeDoc(stableDoc(stableId, "students", student.id), cleanForFirestore({ ...student, stableId }));
+    },
+    [stableId]
+  );
+
+  // Borra el alumno y, en cascada, sus clases — una clase sin alumno no significa nada.
+  const deleteStudent = useCallback(
+    async (id) => {
+      await batchDeleteQuery(query(stableCollection(stableId, "lessons"), where("studentId", "==", id)));
+      await deleteDocRef(stableDoc(stableId, "students", id));
+    },
+    [stableId]
+  );
 
   const deleteBoardActivity = useCallback(
     (id) => {
@@ -1415,88 +1513,8 @@ export function StableDataProvider({ stableId, children }) {
       periodicBoardDates,
       boardAssignments,
       boardConfig,
-      addHorse,
-      updateHorse,
-      deleteHorse,
-      reorderHorses,
-      addTraining,
-      deleteTraining,
-      addHealthRecord,
-      updateHealthRecord,
-      deleteHealthRecord,
-      addHealthDocLink,
-      uploadHealthDocs,
-      uploadHorsePhoto,
-      uploadTeamMemberPhoto,
-      deleteHealthDoc,
-      addExpense,
-      updateExpense,
-      deleteExpense,
-      addExpenseSettlement,
-      updateHorseSale,
-      addTask,
-      updateTask,
-      deleteTask,
-      cycleTaskStatus,
-      cycleOccurrenceStatus,
-      setOccurrenceAssignee,
-      answerSessionAlert,
-      addTemplate,
-      updateTemplate,
-      deleteTemplate,
-      applyTemplate,
-      addTeamMember,
-      updateTeamMember,
-      deleteTeamMember,
-      toggleAbsence,
-      addStableExpense,
-      updateStableExpense,
-      deleteStableExpense,
-      setWeeklyPlanActivities,
-      toggleWeeklyPlanActivity,
-      setWeeklyPlanNote,
-      toggleWeeklyPlanCompleted,
-      repeatPreviousWeek,
-      eraseWeeklyPlanCell,
-      setWeeklyPlanVetLink,
-      setBoardPeriodic,
-      assignBoardHorse,
-      moveBoardAssignment,
-      removeBoardAssignment,
-            addBoardActivity,
-      setBoardActivityTone,
-      setBoardHidden,
-      setSchoolMode,
-      deleteBoardActivity,
-      addPeriodicColumn,
-      deletePeriodicColumn,
-      addWalker,
-      updateWalker,
-      deleteWalker,
-      addPaddock,
-      deletePaddock,
-      addPaddockSlot,
-      deletePaddockSlot,
-      confirmSmartOrderDraft,
-    }),
-    [
-      stableId,
-      horses,
-      trainings,
-      health,
-      expenses,
-      healthDocs,
-      team,
-      tasks,
-      sessionAlerts,
-      taskTemplates,
-      stableExpenses,
-      absences,
-      expenseSettlements,
-      weeklyPlans,
-      periodicBoardDates,
-      boardAssignments,
-      boardConfig,
+      students,
+      lessons,
       addHorse,
       updateHorse,
       deleteHorse,
@@ -1549,6 +1567,104 @@ export function StableDataProvider({ stableId, children }) {
       setBoardActivityTone,
       setBoardHidden,
       setSchoolMode,
+      buildStudentCode,
+      addStudent,
+      updateStudent,
+      deleteStudent,
+      addClassSlot,
+      deleteClassSlot,
+      toggleStudentSlot,
+      deleteBoardActivity,
+      addPeriodicColumn,
+      deletePeriodicColumn,
+      addWalker,
+      updateWalker,
+      deleteWalker,
+      addPaddock,
+      deletePaddock,
+      addPaddockSlot,
+      deletePaddockSlot,
+      confirmSmartOrderDraft,
+    }),
+    [
+      stableId,
+      horses,
+      trainings,
+      health,
+      expenses,
+      healthDocs,
+      team,
+      tasks,
+      sessionAlerts,
+      taskTemplates,
+      stableExpenses,
+      absences,
+      expenseSettlements,
+      weeklyPlans,
+      periodicBoardDates,
+      boardAssignments,
+      boardConfig,
+      students,
+      lessons,
+      addHorse,
+      updateHorse,
+      deleteHorse,
+      reorderHorses,
+      addTraining,
+      deleteTraining,
+      addHealthRecord,
+      updateHealthRecord,
+      deleteHealthRecord,
+      addHealthDocLink,
+      uploadHealthDocs,
+      uploadHorsePhoto,
+      uploadTeamMemberPhoto,
+      deleteHealthDoc,
+      addExpense,
+      updateExpense,
+      deleteExpense,
+      addExpenseSettlement,
+      updateHorseSale,
+      addTask,
+      updateTask,
+      deleteTask,
+      cycleTaskStatus,
+      cycleOccurrenceStatus,
+      setOccurrenceAssignee,
+      answerSessionAlert,
+      addTemplate,
+      updateTemplate,
+      deleteTemplate,
+      applyTemplate,
+      addTeamMember,
+      updateTeamMember,
+      deleteTeamMember,
+      toggleAbsence,
+      addStableExpense,
+      updateStableExpense,
+      deleteStableExpense,
+      setWeeklyPlanActivities,
+      toggleWeeklyPlanActivity,
+      setWeeklyPlanNote,
+      toggleWeeklyPlanCompleted,
+      repeatPreviousWeek,
+      eraseWeeklyPlanCell,
+      setWeeklyPlanVetLink,
+      setBoardPeriodic,
+      assignBoardHorse,
+      moveBoardAssignment,
+      removeBoardAssignment,
+      addBoardActivity,
+      setBoardActivityTone,
+      setBoardHidden,
+      setSchoolMode,
+      buildStudentCode,
+      addStudent,
+      updateStudent,
+      deleteStudent,
+      addClassSlot,
+      deleteClassSlot,
+      toggleStudentSlot,
       deleteBoardActivity,
       addPeriodicColumn,
       deletePeriodicColumn,

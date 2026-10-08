@@ -22,7 +22,17 @@ import { NotionSyncButton } from "../../notion/NotionSyncButton.jsx";
 // rendering and second-tap detail flow below, same known limitation as the reference
 // implementation.
 const VET_ACTIVITY_ID = "vet";
-
+const REORDER_ARROW = {
+  width: "1.45rem",
+  height: "1.25rem",
+  padding: 0,
+  lineHeight: 1,
+  fontSize: ".7rem",
+  border: "1px solid rgba(0,0,0,.18)",
+  borderRadius: ".3rem",
+  background: "transparent",
+  cursor: "pointer",
+};
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
@@ -260,14 +270,24 @@ export function WeeklyBoardGrid({ week }) {
                                 {sortedHorses.map((h, i) => (
                   <tr key={h.id}>
                     <th className="horse-col">
-                      {reordering ? (
-                        <div className="board-horse-name">
-                          <b>{h.name}</b>
-                          <span style={{ display: "flex", gap: ".15rem", marginLeft: "auto", flexShrink: 0 }}>
-                            <button className="ib" onClick={() => moveHorse(i, -1)} disabled={i === 0}>
+                                         {reordering ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: ".3rem", minWidth: 0 }}>
+                          <b style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {h.name}
+                          </b>
+                          <span style={{ display: "flex", flexDirection: "column", gap: ".12rem", flexShrink: 0 }}>
+                            <button
+                              style={{ ...REORDER_ARROW, opacity: i === 0 ? 0.35 : 1 }}
+                              onClick={() => moveHorse(i, -1)}
+                              disabled={i === 0}
+                            >
                               ↑
                             </button>
-                            <button className="ib" onClick={() => moveHorse(i, 1)} disabled={i === sortedHorses.length - 1}>
+                            <button
+                              style={{ ...REORDER_ARROW, opacity: i === sortedHorses.length - 1 ? 0.35 : 1 }}
+                              onClick={() => moveHorse(i, 1)}
+                              disabled={i === sortedHorses.length - 1}
+                            >
                               ↓
                             </button>
                           </span>

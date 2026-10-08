@@ -1259,6 +1259,74 @@ export function StableDataProvider({ stableId, children }) {
     },
     [students, stableId]
   );
+    // Una clase se identifica por alumno + fecha + franja, así que lleva id determinista,
+  // mismo criterio que las celdas de la pizarra semanal.
+  const setLessonHorse = useCallback(
+    (studentId, date, slotId, hid) => {
+      const id = `${studentId}__${date}__${slotId}`;
+      const existing = lessons.find((l) => l.id === id);
+      if (!hid && !existing) return;
+      writeDoc(stableDoc(stableId, "lessons", id), cleanForFirestore({
+        id,
+        stableId,
+        studentId,
+        date,
+        slotId,
+        hid: hid || null,
+        status: existing?.status === "absent" ? "ok" : existing?.status || "ok",
+        extra: existing?.extra || false,
+      }));
+    },
+    [lessons, stableId]
+  );
+
+  // Marca o desmarca la falta. Al marcar ausente se suelta el poni: si el niño no viene,
+  // ese poni queda libre para otro.
+  const toggleLessonAbsent = useCallback(
+    (studentId, date, slotId) => {
+      const id = `${studentId}__${date}__${slotId}`;
+      const existing = lessons.find((l) => l.id === id);
+      const absent = existing?.status !== "absent";
+      writeDoc(stableDoc(stableId, "lessons", id), cleanForFirestore({
+        id,
+        stableId,
+        studentId,
+        date,
+        slotId,
+        hid: absent ? null : existing?.hid || null,
+        status: absent ? "absent" : "ok",
+        extra: existing?.extra || false,
+      }));
+    },
+    [lessons, stableId]
+  );
+
+  // Añade un alumno a una franja a la que no va habitualmente (recuperación, cambio de
+  // hora puntual). No toca su horario fijo.
+  const addExtraLesson = useCallback(
+    (studentId, date, slotId) => {
+      const id = `${studentId}__${date}__${slotId}`;
+      if (lessons.some((l) => l.id === id)) return;
+      writeDoc(stableDoc(stableId, "lessons", id), cleanForFirestore({
+        id,
+        stableId,
+        studentId,
+        date,
+        slotId,
+        hid: null,
+        status: "ok",
+        extra: true,
+      }));
+    },
+    [lessons, stableId]
+  );
+
+  const removeLesson = useCallback(
+    (studentId, date, slotId) => {
+      deleteDocRef(stableDoc(stableId, "lessons", `${studentId}__${date}__${slotId}`));
+    },
+    [stableId]
+  );
     // Genera el código corto del alumno: inicial del nombre + inicial del primer apellido
   // (Lucía Martín → LM). Si ya existe, añade un número hasta encontrar uno libre.
   const buildStudentCode = useCallback(
@@ -1574,6 +1642,10 @@ export function StableDataProvider({ stableId, children }) {
       addClassSlot,
       deleteClassSlot,
       toggleStudentSlot,
+      setLessonHorse, 
+      toggleLessonAbsent, 
+      addExtraLesson,
+      removeLesson,
       deleteBoardActivity,
       addPeriodicColumn,
       deletePeriodicColumn,
@@ -1665,6 +1737,10 @@ export function StableDataProvider({ stableId, children }) {
       addClassSlot,
       deleteClassSlot,
       toggleStudentSlot,
+      setLessonHorse, 
+      toggleLessonAbsent, 
+      addExtraLesson,
+      removeLesson,
       deleteBoardActivity,
       addPeriodicColumn,
       deletePeriodicColumn,

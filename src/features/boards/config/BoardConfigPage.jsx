@@ -4,31 +4,55 @@ import { boardToneClass } from "../boardHelpers.js";
 import { WalkersConfig } from "./WalkersConfig.jsx";
 import { PaddocksConfig } from "./PaddocksConfig.jsx";
 
-// Ports rBoardConfig's shell, Activities and Periodic Columns sections
-// (public/legacy-app.js:1448-1460), replacing legacy's prompt()-based add flow with real
-// inline forms — the same real-form pattern used for every other "add X" flow in this port.
-// window.confirm is kept for deletes, matching every other destructive action ported so far.
-// No cascade cleanup of weeklyPlans/periodicBoardDates on delete — matches legacy's
-// intentional design (see docs/components/boards.md).
+// Los siete tonos que la pizarra sabe pintar (ver boardDefaults.js y las clases ba-* del CSS).
+const BOARD_TONES = [
+  { id: "green", label: "Verde" },
+  { id: "blue", label: "Azul" },
+  { id: "amber", label: "Ámbar" },
+  { id: "red", label: "Rojo" },
+  { id: "purple", label: "Morado" },
+  { id: "teal", label: "Turquesa" },
+  { id: "gray", label: "Gris" },
+];
+
+const RESOURCE_BOARDS = [
+  { key: "walker", label: "Caminador" },
+  { key: "paddock", label: "Paddocks" },
+];
+
 export function BoardConfigPage() {
-  const { boardConfig, addBoardActivity, deleteBoardActivity, addPeriodicColumn, deletePeriodicColumn } = useStableData();
+  const {
+    boardConfig,
+    addBoardActivity,
+    deleteBoardActivity,
+    setBoardActivityTone,
+    setBoardHidden,
+    addPeriodicColumn,
+    deletePeriodicColumn,
+  } = useStableData();
   const [newActivityCode, setNewActivityCode] = useState("");
   const [newActivityLabel, setNewActivityLabel] = useState("");
+  const [newActivityTone, setNewActivityTone] = useState("blue");
   const [newColumnLabel, setNewColumnLabel] = useState("");
+
+  const hiddenBoards = boardConfig.hiddenBoards || [];
 
   function submitActivity(e) {
     e.preventDefault();
     const code = newActivityCode.trim().toUpperCase();
     const label = newActivityLabel.trim();
     if (!code || !label) return;
-    addBoardActivity(code, label);
+    addBoardActivity(code, label, newActivityTone);
     setNewActivityCode("");
     setNewActivityLabel("");
+    setNewActivityTone("blue");
   }
+
   function removeActivity(id) {
     if (!window.confirm("¿Eliminar esta actividad de la configuración?")) return;
     deleteBoardActivity(id);
   }
+
   function submitColumn(e) {
     e.preventDefault();
     const label = newColumnLabel.trim();
@@ -36,6 +60,7 @@ export function BoardConfigPage() {
     addPeriodicColumn(label);
     setNewColumnLabel("");
   }
+
   function removeColumn(id) {
     if (!window.confirm("¿Eliminar esta columna? Las fechas guardadas dejarán de mostrarse.")) return;
     deletePeriodicColumn(id);
@@ -54,6 +79,33 @@ export function BoardConfigPage() {
       <section className="config-section">
         <div className="section-title">
           <div>
+            <h2>Pizarras activas</h2>
+            <p>Desmarca las que tu instalación no tenga. No se borra nada: puedes volver a activarlas cuando quieras.</p>
+          </div>
+        </div>
+        <div className="config-list">
+          {RESOURCE_BOARDS.map((b) => {
+            const hidden = hiddenBoards.includes(b.key);
+            return (
+              <div className="config-row" key={b.key}>
+                <span className="config-code">{hidden ? "✕" : "✓"}</span>
+                <div>
+                  <b>{b.label}</b>
+                  <small>{hidden ? "Oculta" : "Visible"}</small>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: ".4rem", flexShrink: 0 }}>
+                  <input type="checkbox" checked={!hidden} onChange={(e) => setBoardHidden(b.key, !e.target.checked)} />
+                  Usar
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="config-section">
+        <div className="section-title">
+          <div>
             <h2>Actividades</h2>
             <p>Abreviaturas que aparecen en la pizarra principal.</p>
           </div>
@@ -67,6 +119,16 @@ export function BoardConfigPage() {
             <label>Nombre</label>
             <input value={newActivityLabel} onChange={(e) => setNewActivityLabel(e.target.value)} placeholder="Nombre de la actividad" />
           </div>
+          <div className="fcol" style={{ maxWidth: "8rem" }}>
+            <label>Color</label>
+            <select value={newActivityTone} onChange={(e) => setNewActivityTone(e.target.value)}>
+              {BOARD_TONES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
           <button className="btn btsm" type="submit">
             + Añadir
           </button>
@@ -79,6 +141,17 @@ export function BoardConfigPage() {
                 <b>{a.label}</b>
                 <small>{a.id}</small>
               </div>
+              <select
+                value={a.tone || "blue"}
+                onChange={(e) => setBoardActivityTone(a.id, e.target.value)}
+                style={{ flexShrink: 0, maxWidth: "7rem" }}
+              >
+                {BOARD_TONES.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
               <button className="db" onClick={() => removeActivity(a.id)}>
                 ×
               </button>
@@ -119,8 +192,8 @@ export function BoardConfigPage() {
         </div>
       </section>
 
-      <WalkersConfig />
-      <PaddocksConfig />
+      {!hiddenBoards.includes("walker") && <WalkersConfig />}
+      {!hiddenBoards.includes("paddock") && <PaddocksConfig />}
     </>
   );
 }

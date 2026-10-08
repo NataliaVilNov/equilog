@@ -246,7 +246,8 @@ export function StudentsPage() {
         ) : !sorted.length ? (
           <EmptyState>No hay alumnos activos.</EmptyState>
         ) : (
-                     {sorted.map((s) => (
+          <div className="config-list">
+            {sorted.map((s) => (
               <div key={s.id}>
                 <div className="config-row" style={{ opacity: s.active === false ? 0.5 : 1 }}>
                   <span className={"config-code " + boardToneClass(s.tone)}>{s.code}</span>
@@ -292,7 +293,6 @@ export function StudentsPage() {
                   </div>
                 )}
               </div>
-            ))}
             ))}
           </div>
         )}

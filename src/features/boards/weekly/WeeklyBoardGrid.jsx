@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../../hooks/useStableData.js";
 import { useToast } from "../../../hooks/useToast.js";
+import { usePermissions } from "../../../hooks/usePermissions.js";
 import { td, addD, fD } from "../../../lib/date.js";
 import { uid } from "../../../lib/id.js";
 import { boardWeekDates, boardPlan, boardActivity, boardDateLabel } from "../boardHelpers.js";
@@ -60,14 +61,15 @@ export function WeeklyBoardGrid({ week }) {
     setWeeklyPlanVetLink,
     addHealthRecord,
     updateHealthRecord,
+        reorderHorses,
   } = useStableData();
   const { showToast } = useToast();
-
+  const { can } = usePermissions();
   const [activeTool, setActiveTool] = useState(null);
   const [noteTarget, setNoteTarget] = useState(null); // {hid, date} | null
   const [doneTarget, setDoneTarget] = useState(null); // {hid, date} | null
   const [vetTarget, setVetTarget] = useState(null); // {hid, date} | null
-
+  const [reordering, setReordering] = useState(false);
   const sortedHorses = sortHorsesByOrder(horses);
   const dates = boardWeekDates(week);
   const end = dates[6];
@@ -78,7 +80,13 @@ export function WeeklyBoardGrid({ week }) {
     params.set("week", addD(week, n * 7));
     navigate(`/boards?${params.toString()}`);
   }
-
+  function moveHorse(index, direction) {
+    const target = index + direction;
+    if (target < 0 || target >= sortedHorses.length) return;
+    const next = sortedHorses.slice();
+    [next[index], next[target]] = [next[target], next[index]];
+    reorderHorses(next.map((h) => h.id));
+  }
   function toggleTool(id) {
     const next = activeTool === id ? null : id;
     setActiveTool(next);
@@ -103,6 +111,7 @@ export function WeeklyBoardGrid({ week }) {
   }
 
   function clickCell(hid, date) {
+        if (reordering) return;
     if (!activeTool) {
       navigate(`/boards/cell/${hid}/${date}?week=${week}`);
       return;
@@ -202,6 +211,17 @@ export function WeeklyBoardGrid({ week }) {
         <button className="btn btg btsm" style={{ borderStyle: "dashed" }} onClick={handleRepeatPreviousWeek}>
           ↻ Repetir anterior
         </button>
+                {can("horses") && sortedHorses.length > 1 && (
+          <button
+            className="btn btg btsm"
+            onClick={() => {
+              setActiveTool(null);
+              setReordering((r) => !r);
+            }}
+          >
+            {reordering ? "✓ Listo" : "↕ Reordenar"}
+          </button>
+        )}
         <NotionSyncButton scope={{ from: week, to: end, plans: true }} label="Enviar semana a Notion" />
       </div>
 
@@ -237,26 +257,40 @@ export function WeeklyBoardGrid({ week }) {
                 </tr>
               </thead>
               <tbody>
-                            {sortedHorses.map((h) => (
+                                {sortedHorses.map((h, i) => (
                   <tr key={h.id}>
                     <th className="horse-col">
-                      <div
-                        className="board-horse-name"
-                        role="link"
-                        tabIndex={0}
-                        title={`Ver la ficha de ${h.name}`}
-                        style={{ cursor: "pointer" }}
-                        onClick={() => navigate(`/horses/${h.id}`)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            navigate(`/horses/${h.id}`);
-                          }
-                        }}
-                      >
-                        {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
-                        <b>{h.name}</b>
-                      </div>
+                      {reordering ? (
+                        <div className="board-horse-name">
+                          <b>{h.name}</b>
+                          <span style={{ display: "flex", gap: ".15rem", marginLeft: "auto", flexShrink: 0 }}>
+                            <button className="ib" onClick={() => moveHorse(i, -1)} disabled={i === 0}>
+                              ↑
+                            </button>
+                            <button className="ib" onClick={() => moveHorse(i, 1)} disabled={i === sortedHorses.length - 1}>
+                              ↓
+                            </button>
+                          </span>
+                        </div>
+                      ) : (
+                        <div
+                          className="board-horse-name"
+                          role="link"
+                          tabIndex={0}
+                          title={`Ver la ficha de ${h.name}`}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => navigate(`/horses/${h.id}`)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              navigate(`/horses/${h.id}`);
+                            }
+                          }}
+                        >
+                          {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
+                          <b>{h.name}</b>
+                        </div>
+                      )}
                     </th>
                     {dates.map((d) => (
                       <BoardCell

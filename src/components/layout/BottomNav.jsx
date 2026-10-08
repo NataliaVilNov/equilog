@@ -19,8 +19,8 @@ export function BottomNav() {
       <NavLink to="/horses" className={navLinkClassName}>
         <span className="ni">🐴</span>Caballos
       </NavLink>
-      <NavLink to="/day" className={navLinkClassName}>
-        <span className="ni">✓</span>Hoy
+            <NavLink to="/boards" className={navLinkClassName}>
+        <span className="ni">📋</span>Pizarra
       </NavLink>
       {can("team") && (
         <NavLink to="/team" className={navLinkClassName}>

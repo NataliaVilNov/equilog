@@ -273,6 +273,16 @@ service cloud.firestore {
       match /expenseSettlements/{id} {
         allow read, write: if isStableMember(stableId);
       }
+            // Modo escuela (boardConfig.schoolMode). Alumnos y clases: mismo criterio
+      // membership-only que las demás colecciones de pizarra — quien da la clase necesita
+      // poder asignar poni, y no hay clave de permisos propia para esto todavía.
+      match /students/{id} {
+        allow read, write: if isStableMember(stableId);
+      }
+
+      match /lessons/{id} {
+        allow read, write: if isStableMember(stableId);
+      }
     }
 
     // Collection-group rules for the collections nested under a horse (or a task) that the

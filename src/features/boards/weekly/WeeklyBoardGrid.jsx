@@ -240,11 +240,6 @@ export function WeeklyBoardGrid({ week }) {
                 {sortedHorses.map((h) => (
                   <tr key={h.id}>
                     <th className="horse-col">
-                      <div className="board-horse-name">
-                        {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
-                        <b>{h.name}</b>
-                      </div>
-                    </th>
                     {dates.map((d) => (
                       <BoardCell
                         key={d}

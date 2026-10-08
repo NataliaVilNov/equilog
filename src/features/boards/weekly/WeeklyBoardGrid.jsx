@@ -237,9 +237,27 @@ export function WeeklyBoardGrid({ week }) {
                 </tr>
               </thead>
               <tbody>
-                {sortedHorses.map((h) => (
+                            {sortedHorses.map((h) => (
                   <tr key={h.id}>
                     <th className="horse-col">
+                      <div
+                        className="board-horse-name"
+                        role="link"
+                        tabIndex={0}
+                        title={`Ver la ficha de ${h.name}`}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => navigate(`/horses/${h.id}`)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            navigate(`/horses/${h.id}`);
+                          }
+                        }}
+                      >
+                        {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
+                        <b>{h.name}</b>
+                      </div>
+                    </th>
                     {dates.map((d) => (
                       <BoardCell
                         key={d}

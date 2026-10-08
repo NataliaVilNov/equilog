@@ -1164,12 +1164,33 @@ export function StableDataProvider({ stableId, children }) {
   // delete, so neither gets an update mutator. Deleting one has no cascade cleanup of
   // weeklyPlans/periodicBoardDates that reference it — matches legacy's intentional design,
   // confirmed by its own confirm-dialog text ("Las fechas guardadas dejarán de mostrarse").
-  const addBoardActivity = useCallback(
-    (code, label) => {
+   const addBoardActivity = useCallback(
+    (code, label, tone) => {
       writeDoc(stableDoc(stableId, "boardConfig", "main"), {
         ...boardConfig,
-        activities: [...boardConfig.activities, { id: safeBoardId("act", label), code, label, tone: "blue" }],
+        activities: [...boardConfig.activities, { id: safeBoardId("act", label), code, label, tone: tone || "blue" }],
       });
+    },
+    [boardConfig, stableId]
+  );
+    // Cambia el tono de una actividad ya existente, sin tocar el resto de la configuración.
+  const setBoardActivityTone = useCallback(
+    (activityId, tone) => {
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        activities: boardConfig.activities.map((a) => (a.id === activityId ? { ...a, tone } : a)),
+      });
+    },
+    [boardConfig, stableId]
+  );
+
+  // Esconde o muestra una pizarra de recursos ("walker" / "paddock") para esta cuadra.
+  // Es solo visibilidad: las asignaciones y la configuración de huecos se conservan.
+  const setBoardHidden = useCallback(
+    (key, hidden) => {
+      const current = Array.isArray(boardConfig.hiddenBoards) ? boardConfig.hiddenBoards : [];
+      const next = hidden ? [...new Set([...current, key])] : current.filter((k) => k !== key);
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), { ...boardConfig, hiddenBoards: next });
     },
     [boardConfig, stableId]
   );
@@ -1513,6 +1534,8 @@ export function StableDataProvider({ stableId, children }) {
       moveBoardAssignment,
       removeBoardAssignment,
       addBoardActivity,
+      setBoardActivityTone,
+      setBoardHidden,
       deleteBoardActivity,
       addPeriodicColumn,
       deletePeriodicColumn,

@@ -8,7 +8,7 @@ import { MonthBoardGrid } from "./month/MonthBoardGrid.jsx";
 import { ResourceBoardPage } from "./resource/ResourceBoardPage.jsx";
 import { SchoolBoardPage } from "./school/SchoolBoardPage.jsx";
 import { BoardConfigPage } from "./config/BoardConfigPage.jsx";
-import { StudentsPage } from "../students/StudentsPage.jsx";
+
 
 const TABS = [
   { key: "weekly", label: "Principal" },
@@ -16,8 +16,7 @@ const TABS = [
   { key: "walker", label: "Caminador" },
   { key: "paddock", label: "Paddocks" },
   { key: "classes", label: "Clases" },
-  { key: "students", label: "Alumnos" },
-  { key: "config", label: "Configurar" },
+    { key: "config", label: "Configurar" },
 ];
 
 // Ports rBoards (public/legacy-app.js:1348-1357). No permission gate — matches legacy
@@ -30,7 +29,7 @@ export function BoardsPage() {
   const { boardConfig } = useStableData();
   const hiddenBoards = boardConfig.hiddenBoards || [];
   const tabs = TABS.filter((t) => {
-    if (t.key === "students" || t.key === "classes") return !!boardConfig.schoolMode;
+    if (t.key === "classes") return !!boardConfig.schoolMode;
     return !hiddenBoards.includes(t.key);
   });
   const requestedTab = searchParams.get("tab") || "weekly";
@@ -62,7 +61,6 @@ export function BoardsPage() {
       {tab === "walker" && <ResourceBoardPage type="walker" date={date} />}
       {tab === "paddock" && <ResourceBoardPage type="paddock" date={date} />}
       {tab === "classes" && <SchoolBoardPage date={date} />}
-      {tab === "students" && <StudentsPage />}
       {tab === "config" && <BoardConfigPage />}
     </div>
   );

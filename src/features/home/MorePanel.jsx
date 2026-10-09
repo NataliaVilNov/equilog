@@ -2,6 +2,7 @@ import { useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import { ModalContext } from "../../contexts/ModalContext.jsx";
 import { usePermissions } from "../../hooks/usePermissions.js";
+import { useStableData } from "../../hooks/useStableData.js";
 
 // Ports the #more-panel markup + openMorePanel/closeMorePanel
 // (index.html:140-145, public/legacy-app.js:1470-1488). This was sketched in the original
@@ -10,6 +11,7 @@ import { usePermissions } from "../../hooks/usePermissions.js";
 // openModal("morePanel") into a void with no listener the whole migration.
 export function MorePanel() {
   const { openModal, closeModal } = useContext(ModalContext) || {};
+ const { boardConfig } = useStableData();
   const { can } = usePermissions();
   const navigate = useNavigate();
 
@@ -34,6 +36,13 @@ export function MorePanel() {
       title: "Cuadra",
       sub: "Tareas y gastos generales",
       onClick: () => goTo("/cuadra?tab=tareas"),
+      
+    },
+        boardConfig.schoolMode && {
+      icon: "🧒",
+      title: "Alumnos",
+      sub: "Fichas y horarios de la escuela",
+      onClick: () => goTo("/students"),
     },
     { icon: "🔔", title: "Alertas", sub: "Avisos y recordatorios", onClick: () => goTo("/alerts") },
     can("stats") && { icon: "▥", title: "Estadísticas", sub: "Actividad y finanzas", onClick: () => goTo("/stats") },

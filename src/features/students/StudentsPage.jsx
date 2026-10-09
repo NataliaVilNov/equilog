@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useMemo, useState } from "react";
 import { useStableData } from "../../hooks/useStableData.js";
 import { useToast } from "../../hooks/useToast.js";
@@ -29,6 +30,7 @@ function fieldsFromStudent(s) {
 export function StudentsPage() {
   const { students, addStudent, updateStudent, deleteStudent, buildStudentCode,boardConfig, toggleStudentSlot } = useStableData();
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const [editingId, setEditingId] = useState(null);
   const [fields, setFields] = useState(emptyFields);
   const [codeTouched, setCodeTouched] = useState(false);
@@ -121,7 +123,16 @@ export function StudentsPage() {
   }
 
   return (
-    <>
+       <div className="view">
+      <div className="vh">
+        <button className="ib" onClick={() => navigate("/home")}>
+          ←
+        </button>
+        <div>
+          <span className="ey">Escuela</span>
+          <h1>Alumnos</h1>
+        </div>
+      </div>
       <div className="config-intro">
         <div>
           <span className="ey">Escuela</span>
@@ -297,6 +308,6 @@ export function StudentsPage() {
           </div>
         )}
       </section>
-    </>
+    </div>
   );
 }

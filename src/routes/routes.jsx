@@ -30,6 +30,7 @@ import { BoardCellPage } from "../features/boards/weekly/BoardCellPage.jsx";
 import { SmartOrderPage } from "../features/smart-order/SmartOrderPage.jsx";
 import { StatsPage } from "../features/stats/StatsPage.jsx";
 import { TrainingReportPage } from "../features/reports/TrainingReportPage.jsx";
+import { StudentsPage } from "../features/students/StudentsPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -73,6 +74,7 @@ export function AppRoutes() {
         <Route path="/team/:mid/day" element={<MemberDayPage />} />
         <Route path="/boards" element={<BoardsPage />} />
         <Route path="/boards/cell/:hid/:date" element={<BoardCellPage />} />
+         <Route path="/students" element={<StudentsPage />} />
         <Route element={<PermissionRoute requires={["tasks", "health", "expenses"]} />}>
           <Route path="/smart-order" element={<SmartOrderPage />} />
         </Route>

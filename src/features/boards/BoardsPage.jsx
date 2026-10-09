@@ -6,7 +6,6 @@ import { Tabs } from "../../components/Tabs.jsx";
 import { WeeklyBoardGrid } from "./weekly/WeeklyBoardGrid.jsx";
 import { MonthBoardGrid } from "./month/MonthBoardGrid.jsx";
 import { ResourceBoardPage } from "./resource/ResourceBoardPage.jsx";
-import { SchoolBoardPage } from "./school/SchoolBoardPage.jsx";
 import { BoardConfigPage } from "./config/BoardConfigPage.jsx";
 import { SchoolWeekGrid } from "./school/SchoolWeekGrid.jsx";
 
@@ -16,8 +15,7 @@ const TABS = [
   { key: "month", label: "Mes" },
   { key: "walker", label: "Caminador" },
   { key: "paddock", label: "Paddocks" },
-  { key: "classes", label: "Clases" },
-  { key: "schoolweek", label: "Semana clases" },
+   { key: "schoolweek", label: "Clases" },
   { key: "config", label: "Configurar" },
 ];
 
@@ -31,7 +29,7 @@ export function BoardsPage() {
   const { boardConfig } = useStableData();
   const hiddenBoards = boardConfig.hiddenBoards || [];
   const tabs = TABS.filter((t) => {
-        if (t.key === "classes" || t.key === "schoolweek") return !!boardConfig.schoolMode;
+            if (t.key === "schoolweek") return !!boardConfig.schoolMode;
     return !hiddenBoards.includes(t.key);
   });
   const requestedTab = searchParams.get("tab") || "weekly";
@@ -62,8 +60,7 @@ export function BoardsPage() {
       {tab === "month" && <MonthBoardGrid />}
       {tab === "walker" && <ResourceBoardPage type="walker" date={date} />}
       {tab === "paddock" && <ResourceBoardPage type="paddock" date={date} />}
-      {tab === "classes" && <SchoolBoardPage date={date} />}
-      {tab === "schoolweek" && <SchoolWeekGrid week={week} />}
+       {tab === "schoolweek" && <SchoolWeekGrid week={week} />}
       {tab === "config" && <BoardConfigPage />}
     </div>
   );

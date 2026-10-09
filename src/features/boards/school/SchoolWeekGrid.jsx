@@ -9,20 +9,6 @@ import { EmptyState } from "../../../components/EmptyState.jsx";
 
 const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 
-const CARD = {
-  display: "block",
-  width: "100%",
-  textAlign: "left",
-  border: "1px solid rgba(0,0,0,.1)",
-  borderLeftWidth: ".22rem",
-  borderRadius: ".4rem",
-  padding: ".32rem .4rem",
-  marginBottom: ".28rem",
-  background: "var(--cardbg, rgba(255,255,255,.6))",
-  cursor: "pointer",
-  lineHeight: 1.25,
-};
-
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
@@ -196,23 +182,23 @@ export function SchoolWeekGrid({ week }) {
                     {!daySlots.length ? (
                       <span className="plan-empty">·</span>
                     ) : (
-                      daySlots.map((slot) => {
+                        daySlots.map((slot) => {
                         const coming = comingCount(slot, d);
                         const isOpen = open && open.slot.id === slot.id && open.date === d;
                         return (
                           <button
                             key={slot.id}
-                            className={boardToneClass(teacherTone(team, slot.teacherId))}
-                            style={{ ...CARD, outline: isOpen ? "2px solid currentColor" : "none" }}
+                            className={
+                              "class-card " +
+                              boardToneClass(teacherTone(team, slot.teacherId)) +
+                              (isOpen ? " is-open" : "")
+                            }
                             onClick={() => setOpen(isOpen ? null : { slot, date: d })}
+                            title={slotLabel(slot, team)}
                           >
-                            <b style={{ fontSize: ".74rem", display: "block" }}>{slot.start}</b>
-                            <span style={{ fontSize: ".68rem", opacity: 0.85, display: "block" }}>
-                              {slotLabel(slot, team) || "Sin profesor"}
-                            </span>
-                            <span style={{ fontSize: ".68rem", fontWeight: 600 }}>
-                              {coming} {coming === 1 ? "alumno" : "alumnos"}
-                            </span>
+                            <b>{slot.start}</b>
+                            <span className="class-group">{slotLabel(slot, team) || "Sin profesor"}</span>
+                            <span className="class-count">{coming}</span>
                           </button>
                         );
                       })

@@ -4,7 +4,9 @@ import { boardActivity, boardToneClass } from "../boardHelpers.js";
 // logic added alongside the multi-tool rework doesn't balloon that file. Renders the
 // assigned activities (chevron-separated, same convention the single-activity version
 // already used), a checkmark/strikethrough for done ones, a note preview line, and a
-// pending/linked badge on the VET activity if present.
+// pending/linked badge on the VET activity if present. En modo escuela añade debajo los
+// codigos de los alumnos que montan ese caballo ese dia (lessons, solo lectura: las clases
+// se gestionan desde la pestana Clases).
 export function BoardCell({
   date,
   isToday,
@@ -12,6 +14,7 @@ export function BoardCell({
   plan,
   boardActivities,
   vetActivityId,
+  riders = [],
   onClick,
 }) {
   const activities = (plan && plan.activities) || [];
@@ -19,6 +22,7 @@ export function BoardCell({
   const note = (plan && plan.note) || "";
   const vetHealthId = plan && plan.vetHealthId;
   const allDone = activities.length > 0 && completed.length === activities.length;
+  const hasContent = activities.length || note || riders.length;
 
   const className =
     "plan-cell" +
@@ -28,39 +32,49 @@ export function BoardCell({
 
   return (
     <td key={date} className={className} onClick={onClick}>
-      {activities.length ? (
-        <>
-          <div className="plan-sequence">
-            {activities.map((id, i) => {
-              const a = boardActivity(boardActivities, id);
-              const isDone = completed.includes(id);
-              return (
-                <span key={id}>
-                  <span
-                    className={
-                      "plan-code " + boardToneClass(a.tone) + (isDone ? " cell-done" : "") + (activeTool === id ? " quick-hit" : "")
-                    }
-                    title={a.label}
-                  >
-                    {isDone ? "✓" : a.code}
-                  </span>
-                  {id === vetActivityId && (
-                    <em className={"vet-badge " + (vetHealthId ? "vet-linked" : "vet-pending")}>
-                      {vetHealthId ? "✓" : "?"}
-                    </em>
-                  )}
-                  {i < activities.length - 1 && <i>+</i>}
+      {activities.length > 0 && (
+        <div className="plan-sequence">
+          {activities.map((id, i) => {
+            const a = boardActivity(boardActivities, id);
+            const isDone = completed.includes(id);
+            return (
+              <span key={id}>
+                <span
+                  className={
+                    "plan-code " +
+                    boardToneClass(a.tone) +
+                    (isDone ? " cell-done" : "") +
+                    (activeTool === id ? " quick-hit" : "")
+                  }
+                  title={a.label}
+                >
+                  {isDone ? "✓" : a.code}
                 </span>
-              );
-            })}
-          </div>
-          {note && <div className="cell-note">{note}</div>}
-        </>
-      ) : note ? (
-        <div className="cell-note">{note}</div>
-      ) : (
-        <span className="plan-empty">·</span>
+                {id === vetActivityId && (
+                  <em className={"vet-badge " + (vetHealthId ? "vet-linked" : "vet-pending")}>
+                    {vetHealthId ? "✓" : "?"}
+                  </em>
+                )}
+                {i < activities.length - 1 && <i>+</i>}
+              </span>
+            );
+          })}
+        </div>
       )}
+      {riders.length > 0 && (
+        <div className="plan-sequence">
+          {riders.map((r, i) => (
+            <span key={r.id}>
+              <span className={"plan-code " + boardToneClass(r.tone)} title={r.name + " · " + r.time}>
+                {r.code}
+              </span>
+              {i < riders.length - 1 && <i>+</i>}
+            </span>
+          ))}
+        </div>
+      )}
+      {note && <div className="cell-note">{note}</div>}
+      {!hasContent && <span className="plan-empty">·</span>}
     </td>
   );
 }

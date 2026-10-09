@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../../hooks/useStableData.js";
 import { useToast } from "../../../hooks/useToast.js";
@@ -71,7 +71,9 @@ export function WeeklyBoardGrid({ week }) {
     setWeeklyPlanVetLink,
     addHealthRecord,
     updateHealthRecord,
-        reorderHorses,
+    reorderHorses,
+    students,
+    lessons,
   } = useStableData();
   const { showToast } = useToast();
   const { can } = usePermissions();
@@ -84,7 +86,40 @@ export function WeeklyBoardGrid({ week }) {
   const dates = boardWeekDates(week);
   const end = dates[6];
   const today = td();
+  // Índice de clases de la semana por caballo+día, para pintar los códigos de los alumnos
+  // en la celda. Las faltas no cuentan: si el niño no viene, el poni no trabaja.
+  const ridersByCell = useMemo(() => {
+    if (!boardConfig.schoolMode) return {};
+    const slotById = {};
+    (boardConfig.classSlots || []).forEach((s) => (slotById[s.id] = s));
+    const map = {};
+    lessons.forEach((l) => {
+      if (!l.hid || l.status === "absent" || !dates.includes(l.date)) return;
+      const student = students.find((s) => s.id === l.studentId);
+      if (!student) return;
+      const key = `${l.hid}__${l.date}`;
+      if (!map[key]) map[key] = [];
+      map[key].push({
+        id: l.id,
+        code: student.code,
+        tone: student.tone,
+        name: `${student.name} ${student.surname || ""}`.trim(),
+        time: slotById[l.slotId] ? slotById[l.slotId].start : "",
+      });
+    });
+    Object.values(map).forEach((arr) => arr.sort((a, b) => a.time.localeCompare(b.time)));
+    return map;
+  }, [lessons, students, boardConfig.schoolMode, boardConfig.classSlots, dates]);
 
+  // Montas de la semana por caballo, para el contador de la columna de la izquierda.
+  const ridesPerHorse = useMemo(() => {
+    const counts = {};
+    Object.entries(ridersByCell).forEach(([key, arr]) => {
+      const hid = key.split("__")[0];
+      counts[hid] = (counts[hid] || 0) + arr.length;
+    });
+    return counts;
+  }, [ridersByCell]);
   function shiftWeek(n) {
     const params = new URLSearchParams(searchParams);
     params.set("week", addD(week, n * 7));
@@ -308,7 +343,14 @@ export function WeeklyBoardGrid({ week }) {
                           }}
                         >
                           {h.photo ? <img src={h.photo.url} alt="" /> : <span>🐴</span>}
-                          <b>{h.name}</b>
+                                                    <b>
+                            {h.name}
+                            {boardConfig.schoolMode && ridesPerHorse[h.id] ? (
+                              <small style={{ opacity: 0.6, marginLeft: ".3rem", fontWeight: 400 }}>
+                                {ridesPerHorse[h.id]}×
+                              </small>
+                            ) : null}
+                          </b>
                         </div>
                       )}
                     </th>
@@ -321,6 +363,7 @@ export function WeeklyBoardGrid({ week }) {
                         plan={boardPlan(weeklyPlans, h.id, d)}
                         boardActivities={boardConfig.activities}
                         vetActivityId={VET_ACTIVITY_ID}
+                        riders={ridersByCell[`${h.id}__${d}`] || []}
                         onClick={() => clickCell(h.id, d)}
                       />
                     ))}

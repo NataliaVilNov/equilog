@@ -1223,12 +1223,37 @@ export function StableDataProvider({ stableId, children }) {
     // Franjas de clase del modo escuela. A diferencia de paddockSlots, cada franja lleva su
   // día (weekday 1=lunes … 7=domingo): cada escuela tiene su propio horario y no coincide
   // de un día a otro. Se ordenan por día y hora al insertar.
+    // Franjas de clase del modo escuela. A diferencia de paddockSlots, cada franja lleva su
+  // dia (weekday 1=lunes … 7=domingo): cada escuela tiene su propio horario y no coincide
+  // de un dia a otro. Puede haber varias franjas el mismo dia a la misma hora: son grupos
+  // simultaneos con profesores distintos, no duplicados.
   const addClassSlot = useCallback(
-    (weekday, start, end) => {
-      const classSlots = [...(boardConfig.classSlots || []), { id: uid(), weekday: Number(weekday), start, end }].sort(
-        (a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start)
-      );
+    (weekday, start, end, groupName, teacherId) => {
+      const classSlots = [
+        ...(boardConfig.classSlots || []),
+        {
+          id: uid(),
+          weekday: Number(weekday),
+          start,
+          end,
+          groupName: groupName || "",
+          teacherId: teacherId || null,
+        },
+      ].sort((a, b) => a.weekday - b.weekday || a.start.localeCompare(b.start));
       writeDoc(stableDoc(stableId, "boardConfig", "main"), { ...boardConfig, classSlots });
+    },
+    [boardConfig, stableId]
+  );
+
+  // Cambia el grupo o el profesor de una franja ya creada, sin tocar dia ni horas.
+  const updateClassSlot = useCallback(
+    (id, { groupName, teacherId }) => {
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), {
+        ...boardConfig,
+        classSlots: (boardConfig.classSlots || []).map((s) =>
+          s.id === id ? { ...s, groupName: groupName || "", teacherId: teacherId || null } : s
+        ),
+      });
     },
     [boardConfig, stableId]
   );
@@ -1640,6 +1665,7 @@ export function StableDataProvider({ stableId, children }) {
       updateStudent,
       deleteStudent,
       addClassSlot,
+      updateClassSlot,
       deleteClassSlot,
       toggleStudentSlot,
       setLessonHorse, 
@@ -1735,6 +1761,7 @@ export function StableDataProvider({ stableId, children }) {
       updateStudent,
       deleteStudent,
       addClassSlot,
+      updateClassSlot,
       deleteClassSlot,
       toggleStudentSlot,
       setLessonHorse, 

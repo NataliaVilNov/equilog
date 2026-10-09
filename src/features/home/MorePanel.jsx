@@ -12,7 +12,7 @@ import { useStableData } from "../../hooks/useStableData.js";
 export function MorePanel() {
   const { openModal, closeModal } = useContext(ModalContext) || {};
  const { boardConfig } = useStableData();
-  const { can } = usePermissions();
+  const { can, isAdmin } = usePermissions();
   const navigate = useNavigate();
 
   function handleClose() {
@@ -49,6 +49,12 @@ export function MorePanel() {
     can("health") && { icon: "N", title: "Notion", sub: "Enviar registros y plan a Notion", onClick: () => openPanel("notionPanel") },
     { icon: "👤", title: "Mi perfil", sub: "Datos personales y sesión", onClick: () => openPanel("userPanel") },
     { icon: "⇄", title: "Cambiar de cuadra", sub: "Abrir otra cuadra", onClick: () => openPanel("stablePanel") },
+        isAdmin && {
+      icon: "🔧",
+      title: "Reparar permisos",
+      sub: "Conectar cuentas con sus fichas de equipo",
+      onClick: () => goTo("/fix-links"),
+    },
   ].filter(Boolean);
 
   return (

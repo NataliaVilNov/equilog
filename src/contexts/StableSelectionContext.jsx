@@ -144,11 +144,23 @@ export function StableSelectionProvider({ children }) {
     [user, profile, switchStable]
   );
 
-  // Ports linkUserToTeamMember (public/legacy-app.js:595-617): now a single targeted field
+    // Ports linkUserToTeamMember (public/legacy-app.js:595-617): now a single targeted field
   // update on the team member's own doc instead of a read-modify-write of the whole stable.
+  //
+  // Además escribe el documento puente memberLinks/{uid}. El cliente encuentra su ficha de
+  // equipo buscando por los campos uid/userId/authUid, pero firestore.rules no sabe buscar
+  // por campos: solo sabe ir a una ruta exacta. Sin el puente, las reglas no encuentran la
+  // ficha y acaban aplicando los permisos por defecto en vez de los configurados.
   const linkUserToTeamMember = useCallback(
     async (stableId, teamMemberId, linkedName) => {
       if (!user || !stableId || !teamMemberId) return;
+      // El puente primero: mientras la ficha siga sin reclamar, las reglas dejan crearlo.
+      await setDoc(doc(db, "stables", stableId, "memberLinks", user.uid), {
+        teamMemberId,
+        uid: user.uid,
+        email: user.email || "",
+        linkedAt: new Date().toISOString(),
+      });
       await updateDoc(doc(db, "stables", stableId, "team", teamMemberId), {
         uid: user.uid,
         userId: user.uid,
@@ -329,6 +341,11 @@ export function StableSelectionProvider({ children }) {
       );
     } catch (_e) {
       // non-fatal, mirrors legacy behavior: don't block leaving the stable
+    }
+        try {
+      await deleteDoc(doc(db, "stables", activeStable.id, "memberLinks", user.uid));
+    } catch (_e) {
+      // non-fatal: el puente sin ficha detrás no concede nada por sí solo
     }
     await updateDoc(doc(db, "stables", activeStable.id), {
       memberIds: arrayRemove(user.uid),

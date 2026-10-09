@@ -32,6 +32,7 @@ import { StatsPage } from "../features/stats/StatsPage.jsx";
 import { TrainingReportPage } from "../features/reports/TrainingReportPage.jsx";
 import { StudentsPage } from "../features/students/StudentsPage.jsx";
 import { HealthSeedPage } from "../features/horses/HealthSeedPage.jsx";
+import { MemberLinksFixPage } from "../features/team/MemberLinksFixPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -44,6 +45,7 @@ export function AppRoutes() {
       </Route>
       <Route element={<ProtectedRoute />}>
         <Route path="/home" element={<HomePage />} />
+        <Route path="/fix-links" element={<MemberLinksFixPage />} />
         <Route path="/horses" element={<HorseListPage />} />
                 <Route path="/health-seed" element={<HealthSeedPage />} />
         <Route path="/horses/:hid" element={<HorseDetailPage />} />

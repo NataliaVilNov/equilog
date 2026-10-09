@@ -6,11 +6,12 @@ import { boardToneClass } from "../boardHelpers.js";
 
 // Opened by tapping a day square in MonthBoardGrid: everything that day in one place. Tasks
 // reuse TaskCard directly (it already handles status-cycling, occurrence reassignment,
-// edit-navigation and delete); the activities/health sections are read-only summaries with a
-// jump into the weekly board or the cell editor, and "+ Nueva tarea" is the create entry
+// edit-navigation and delete); the classes/activities/health sections are read-only summaries
+// with a jump into the weekly board or the cell editor, and "+ Nueva tarea" is the create entry
 // point that used to live as a badge inside every square.
 export function MonthDayTasksSheet({
   date,
+  classes = [],
   tasks,
   plans,
   healthDue,
@@ -20,10 +21,27 @@ export function MonthDayTasksSheet({
   onOpenWeek,
   onOpenCell,
 }) {
-  const empty = !tasks.length && !plans.length && !healthDue.length;
+  const empty = !classes.length && !tasks.length && !plans.length && !healthDue.length;
   return (
     <SlideUpSheet title={fDL(date)} onClose={onClose}>
       {empty && <div className="month-sheet-empty">Nada previsto este día.</div>}
+
+      {classes.length > 0 && (
+        <div className="month-sheet-section">
+          <h3>Clases</h3>
+          {classes.map((c) => (
+            <div key={c.id} className={"month-sheet-row static " + boardToneClass(c.tone)}>
+              <b>
+                {c.start}–{c.end} · {c.groupName || "Clase"}
+              </b>
+              <small>
+                {c.teacherName ? c.teacherName + " · " : ""}
+                {c.count} alumno{c.count !== 1 ? "s" : ""}
+              </small>
+            </div>
+          ))}
+        </div>
+      )}
 
       {tasks.length > 0 && (
         <div className="month-sheet-section">

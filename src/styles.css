@@ -364,4 +364,17 @@ input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(70,82,63,.10)}
   .day-short {
     display: inline;
   }
+}/* Franjas finas de color en el calendario mensual (clases, salud, tareas) */
+.month-day{min-height:114px}
+.month-lines{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+.month-line{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.62rem;line-height:1.32;padding:.04rem .28rem;border-radius:4px;border-left:3px solid #BCD0E3;background:#EAF0F8;color:#365F85;font-weight:600}
+.month-line b{font-weight:800;margin-right:.24rem;opacity:.85}
+.month-line.is-done{background:#F2F0EC!important;color:#8C867C!important;border-color:#C9C3B9!important;text-decoration:line-through;font-weight:600}
+.month-legend{display:flex;flex-wrap:wrap;gap:.3rem;margin:-.35rem 0 .9rem}
+.month-legend span{display:inline-flex;align-items:center;gap:.3rem;font-size:.62rem;font-weight:700;padding:.16rem .55rem;border-radius:999px;border:1px solid}
+.month-legend i{width:.5rem;height:.5rem;border-radius:50%;background:currentColor;flex-shrink:0}
+@media(max-width:600px){
+  .month-day{min-height:96px}
+  .month-line{font-size:.54rem;padding:.02rem .18rem;border-left-width:2px}
+  .month-line b{display:none}
 }

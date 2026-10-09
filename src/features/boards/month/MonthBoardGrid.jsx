@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../../hooks/useStableData.js";
 import { useTaskOccurrences } from "../../../hooks/useTaskOccurrences.js";
 import { usePermissions } from "../../../hooks/usePermissions.js";
 import { td, addMonth, monthLabel } from "../../../lib/date.js";
-import { activityById } from "../../../lib/constants.js";
+import { activityById, healthTypeById } from "../../../lib/constants.js";
 import { getMonthGrid, MONTH_GRID_WEEKDAY_LABELS as WEEKDAY_LABELS } from "../../../lib/monthGrid.js";
 import { boardPlan, boardActivity, boardToneClass } from "../boardHelpers.js";
 import { sortHorsesByOrder } from "../../horses/horseOrder.js";
@@ -12,19 +12,37 @@ import { visibleTasksForUser } from "../../tasks/taskHelpers.js";
 import { EmptyState } from "../../../components/EmptyState.jsx";
 import { MonthDayTasksSheet } from "./MonthDayTasksSheet.jsx";
 
-// How many task chips a day square shows before collapsing the rest into "+N más".
-const MAX_CHIPS = 3;
+// How many coloured lines a day square shows before collapsing the rest into "+N más".
+const MAX_LINES = 4;
+
+// Tono de la franja según el tipo de tarea, para que lo importante se distinga de un vistazo.
+const TASK_TONES = {
+  vet: "ba-red",
+  herrador: "ba-amber",
+  prueba: "ba-teal",
+  concurso: "ba-purple",
+};
+
+// Los miembros del equipo no guardan color propio, así que el de cada profesor se deduce de su
+// posición en la lista: estable mientras no se reordene el equipo y distinto para cada uno.
+const TEACHER_TONES = ["ba-teal", "ba-purple", "ba-blue", "ba-amber", "ba-green", "ba-red", "ba-gray"];
+
+// Día de la semana de una fecha "YYYY-MM-DD" en el formato de classSlots (1=lunes…7=domingo).
+function weekdayOf(date) {
+  const d = new Date(`${date}T12:00:00`).getDay();
+  return d === 0 ? 7 : d;
+}
 
 // Month-at-a-glance view of the weekly board — not part of the reference app this feature
 // was reworked from (it only has a weekly view). Laid out like a Google Calendar month: a
 // left column with each row's ISO week number (tap → that week on the weekly tab), day squares
-// listing that day's tasks as compact chips, and a tap on a square opening a sheet with
-// everything for the day (see MonthDayTasksSheet). Shares its date math with the team absence
-// calendar (lib/monthGrid.js).
+// listing the day's classes, health due dates and tasks as thin coloured lines, and a tap on a
+// square opening a sheet with everything for the day (see MonthDayTasksSheet). Shares its date
+// math with the team absence calendar (lib/monthGrid.js).
 export function MonthBoardGrid() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { stableId, horses, tasks, weeklyPlans, boardConfig, health } = useStableData();
+  const { stableId, horses, tasks, weeklyPlans, boardConfig, health, students, team } = useStableData();
   const { isAdmin, myTeamMember, can } = usePermissions();
   const [openDate, setOpenDate] = useState(null);
 
@@ -44,8 +62,34 @@ export function MonthBoardGrid() {
     const d = t.occurrenceDate || t.startDate;
     (tasksByDate[d] ||= []).push(t);
   });
-  // Timed tasks first (by time), untimed ones after, so the chips read like a day agenda.
+  // Timed tasks first (by time), untimed ones after, so the lines read like a day agenda.
   Object.values(tasksByDate).forEach((list) => list.sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99")));
+
+  // Las clases del mes salen del horario semanal (boardConfig.classSlots), no de la colección
+  // lessons: el mes solo necesita saber qué clases toca cada día, no quién monta qué poni.
+  // La clave del mapa se normaliza a número por si weekday viniera guardado como texto.
+  const slotsByWeekday = useMemo(() => {
+    const map = {};
+    const actives = (students || []).filter((s) => s.active !== false);
+    const teamList = team || [];
+    (boardConfig.classSlots || []).forEach((slot) => {
+      const idx = teamList.findIndex((t) => t.id === slot.teacherId);
+      const teacher = idx >= 0 ? teamList[idx] : null;
+      const wd = Number(slot.weekday);
+      map[wd] ||= [];
+      map[wd].push({
+        ...slot,
+        teacherName: teacher ? teacher.name : "",
+        toneClass: idx >= 0 ? TEACHER_TONES[idx % TEACHER_TONES.length] : "ba-gray",
+        count: actives.filter((s) => (s.schedule || []).includes(slot.id)).length,
+      });
+    });
+    Object.values(map).forEach((list) => list.sort((a, b) => (a.start || "").localeCompare(b.start || "")));
+    return map;
+  }, [boardConfig.classSlots, students, team]);
+
+  // Las clases no son de un caballo concreto, así que solo se pintan en la vista de todos.
+  const showClasses = mode === "all" && (boardConfig.classSlots || []).length > 0;
 
   function setParam(key, value) {
     const params = new URLSearchParams(searchParams);
@@ -67,6 +111,16 @@ export function MonthBoardGrid() {
 
   function openWeek(monday) {
     navigate(`/boards?tab=weekly&week=${monday}`);
+  }
+
+  function classesForDay(ds) {
+    if (!showClasses) return [];
+    return slotsByWeekday[weekdayOf(ds)] || [];
+  }
+
+  // Todas las clases del día, para el panel de detalle (también en vista de un caballo).
+  function allClassesForDay(ds) {
+    return slotsByWeekday[weekdayOf(ds)] || [];
   }
 
   // Horses whose plan for `ds` has content, limited to the selected horse in "one" mode.
@@ -95,11 +149,55 @@ export function MonthBoardGrid() {
       });
   }
 
+  // Une clases, salud y tareas en una sola lista de franjas ordenada por hora.
+  function linesForDay(ds) {
+    const lines = [];
+
+    classesForDay(ds).forEach((s) => {
+      const group = s.groupName || s.teacherName || "Clase";
+      lines.push({
+        key: "c" + s.id,
+        tone: s.toneClass,
+        time: s.start,
+        label: group + (s.count ? ` · ${s.count}` : ""),
+        title: `${s.start}–${s.end} · ${group}${s.teacherName ? " · " + s.teacherName : ""}`,
+      });
+    });
+
+    healthDueOn(ds).forEach((r) => {
+      const type = healthTypeById(r.type);
+      lines.push({
+        key: "h" + r.id,
+        tone: "ba-amber",
+        time: "",
+        label: `${type.i} ${r.label || type.l}${r.horseName ? " · " + r.horseName : ""}`,
+        title: `${r.label || type.l}${r.horseName ? " · " + r.horseName : ""}`,
+      });
+    });
+
+    (tasksByDate[ds] || []).forEach((t) => {
+      const horse = t.horseId ? horses.find((h) => h.id === t.horseId) : null;
+      const act = activityById(t.activity);
+      const label = `${act.i} ${act.l}${horse ? " · " + horse.name : ""}`;
+      lines.push({
+        key: "t" + t.id + (t.occurrenceDate || ""),
+        tone: TASK_TONES[t.activity] || "",
+        time: t.time || "",
+        done: t.status === "done",
+        label,
+        title: (t.time ? t.time + " " : "") + label,
+      });
+    });
+
+    lines.sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99"));
+    return lines;
+  }
+
   function renderDay(ds) {
     const isToday = ds === td();
-    const dayTasks = tasksByDate[ds] || [];
-    const shown = dayTasks.length > MAX_CHIPS ? dayTasks.slice(0, MAX_CHIPS - 1) : dayTasks;
-    const hidden = dayTasks.length - shown.length;
+    const lines = linesForDay(ds);
+    const shown = lines.length > MAX_LINES ? lines.slice(0, MAX_LINES - 1) : lines;
+    const hidden = lines.length - shown.length;
     const plans = plansForDay(ds);
     const onePlan = mode === "one" ? plans[0] : null;
 
@@ -118,20 +216,14 @@ export function MonthBoardGrid() {
         }}
       >
         <span className="month-day-num">{Number(ds.slice(8))}</span>
-        {shown.map((t) => {
-          const horse = t.horseId ? horses.find((h) => h.id === t.horseId) : null;
-          const label = activityById(t.activity).l + (horse ? " · " + horse.name : "");
-          return (
-            <span
-              key={t.id + (t.occurrenceDate || "")}
-              className={"month-chip" + (t.status === "done" ? " is-done" : "")}
-              title={(t.time ? t.time + " " : "") + label}
-            >
-              {t.time && <b>{t.time}</b>}
-              {label}
+        <span className="month-lines">
+          {shown.map((l) => (
+            <span key={l.key} className={"month-line " + l.tone + (l.done ? " is-done" : "")} title={l.title}>
+              {l.time && <b>{l.time}</b>}
+              {l.label}
             </span>
-          );
-        })}
+          ))}
+        </span>
         {hidden > 0 && <span className="month-more">+{hidden} más</span>}
         {onePlan ? (
           <span className="month-codes">
@@ -192,6 +284,28 @@ export function MonthBoardGrid() {
         </div>
       </div>
 
+      <div className="month-legend">
+        {showClasses &&
+          (team || []).map((t, i) => (
+            <span key={t.id} className={TEACHER_TONES[i % TEACHER_TONES.length]}>
+              <i />
+              {t.name}
+            </span>
+          ))}
+        <span className="ba-amber">
+          <i />
+          Herraje y vacunas
+        </span>
+        <span className="ba-red">
+          <i />
+          Veterinario
+        </span>
+        <span className="ba-purple">
+          <i />
+          Concurso
+        </span>
+      </div>
+
       <div className="month-board">
         <div className="month-head">
           <span className="month-wk-head">Sem</span>
@@ -212,6 +326,7 @@ export function MonthBoardGrid() {
       {openDate && (
         <MonthDayTasksSheet
           date={openDate}
+          classes={allClassesForDay(openDate)}
           tasks={tasksByDate[openDate] || []}
           plans={plansForDay(openDate)}
           healthDue={healthDueOn(openDate)}

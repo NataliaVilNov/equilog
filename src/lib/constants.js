@@ -24,6 +24,8 @@ export const AK = [
   { id: "bano", l: "Baño", i: "🚿", r: false },
   { id: "vet", l: "Veterinario", i: "🩺", r: false },
   { id: "herrador", l: "Herrador", i: "🔨", r: false },
+  { id: "prueba", l: "Prueba de caballo", i: "👀", r: false },
+  { id: "concurso", l: "Concurso", i: "🏆", r: true },
   { id: "otro", l: "Otro", i: "📌", r: false },
 ];
 

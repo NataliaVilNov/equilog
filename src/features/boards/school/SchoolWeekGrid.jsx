@@ -5,6 +5,7 @@ import { useToast } from "../../../hooks/useToast.js";
 import { addD, fD, fDL, td } from "../../../lib/date.js";
 import { boardWeekDates, boardToneClass } from "../boardHelpers.js";
 import { teacherTone, teacherName, slotLabel } from "./schoolHelpers.js";
+import { classesOnDate } from "../../../lib/classExceptions.js";
 import { EmptyState } from "../../../components/EmptyState.jsx";
 
 const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -47,10 +48,10 @@ export function SchoolWeekGrid({ week }) {
     navigate("/boards?" + params.toString());
   }
 
-  function slotsOfDay(dayIndex) {
-    return slots
-      .filter((s) => s.weekday === dayIndex + 1)
-      .sort((a, b) => a.start.localeCompare(b.start) || (a.groupName || "").localeCompare(b.groupName || ""));
+   // Las clases reales de un día: el horario semanal corregido con las excepciones puntuales
+  // (festivos, clases anuladas, clases traídas de otro día) que se marcan en la vista de mes.
+  function entriesOfDay(date) {
+    return classesOnDate(slots, boardConfig.classExceptions, date);
   }
 
   // Alumnos de una clase: los fijos por horario mas los puntuales apuntados ese dia.
@@ -172,7 +173,7 @@ export function SchoolWeekGrid({ week }) {
           <tbody>
             <tr>
               {dates.map((d, i) => {
-                const daySlots = slotsOfDay(i);
+                const daySlots = entriesOfDay(d);
                 return (
                   <td
                     key={d}
@@ -182,23 +183,30 @@ export function SchoolWeekGrid({ week }) {
                     {!daySlots.length ? (
                       <span className="plan-empty">·</span>
                     ) : (
-                        daySlots.map((slot) => {
+                                              daySlots.map((entry) => {
+                        const slot = entry.slot;
                         const coming = comingCount(slot, d);
                         const isOpen = open && open.slot.id === slot.id && open.date === d;
                         return (
                           <button
-                            key={slot.id}
+                            key={slot.id + (entry.movedFrom || "")}
                             className={
                               "class-card " +
                               boardToneClass(teacherTone(team, slot.teacherId)) +
-                              (isOpen ? " is-open" : "")
+                              (isOpen ? " is-open" : "") +
+                              (entry.cancelled ? " is-off" : "")
                             }
+                            disabled={entry.cancelled}
                             onClick={() => setOpen(isOpen ? null : { slot, date: d })}
-                            title={slotLabel(slot, team)}
+                            title={
+                              slotLabel(slot, team) +
+                              (entry.cancelled ? (entry.movedTo ? " · movida" : " · anulada") : "") +
+                              (entry.movedFrom ? " · traída de otro día" : "")
+                            }
                           >
-                            <b>{slot.start}</b>
+                            <b>{entry.start}</b>
                             <span className="class-group">{slotLabel(slot, team) || "Sin profesor"}</span>
-                            <span className="class-count">{coming}</span>
+                            <span className="class-count">{entry.cancelled ? "—" : coming}</span>
                           </button>
                         );
                       })

@@ -1,17 +1,23 @@
+import { useState } from "react";
 import { SlideUpSheet } from "../../../components/SlideUpSheet.jsx";
 import { TaskCard } from "../../tasks/TaskCard.jsx";
-import { fDL } from "../../../lib/date.js";
+import { fD, fDL } from "../../../lib/date.js";
 import { healthTypeById } from "../../../lib/constants.js";
 import { boardToneClass } from "../boardHelpers.js";
 
 // Opened by tapping a day square in MonthBoardGrid: everything that day in one place. Tasks
 // reuse TaskCard directly (it already handles status-cycling, occurrence reassignment,
-// edit-navigation and delete); the classes/activities/health sections are read-only summaries
-// with a jump into the weekly board or the cell editor, and "+ Nueva tarea" is the create entry
-// point that used to live as a badge inside every square.
+// edit-navigation and delete); the classes section is where a bank holiday or a one-off
+// change to the weekly timetable is made, and activities/health are read-only summaries with
+// a jump into the weekly board or the cell editor.
 export function MonthDayTasksSheet({
   date,
   classes = [],
+  dayOff,
+  canEditClasses,
+  onToggleDayOff,
+  onToggleClassOff,
+  onMoveClass,
   tasks,
   plans,
   healthDue,
@@ -21,7 +27,27 @@ export function MonthDayTasksSheet({
   onOpenWeek,
   onOpenCell,
 }) {
+  // Franja que se está moviendo ahora mismo, con el destino que va eligiendo el usuario.
+  const [moving, setMoving] = useState(null);
+
   const empty = !classes.length && !tasks.length && !plans.length && !healthDue.length;
+
+  function startMove(c) {
+    setMoving({ slotId: c.slot.id, toDate: date, toStart: c.start, toEnd: c.end });
+  }
+
+  function confirmMove() {
+    onMoveClass(moving.slotId, moving.toDate, moving.toStart, moving.toEnd);
+    setMoving(null);
+  }
+
+  function statusText(c) {
+    if (c.movedTo) return "Movida al " + fD(c.movedTo);
+    if (c.cancelled) return c.reason || "Anulada";
+    if (c.movedFrom) return "Traída del " + fD(c.movedFrom);
+    return c.teacher || "";
+  }
+
   return (
     <SlideUpSheet title={fDL(date)} onClose={onClose}>
       {empty && <div className="month-sheet-empty">Nada previsto este día.</div>}
@@ -29,17 +55,87 @@ export function MonthDayTasksSheet({
       {classes.length > 0 && (
         <div className="month-sheet-section">
           <h3>Clases</h3>
-          {classes.map((c) => (
-            <div key={c.id} className={"month-sheet-row static " + boardToneClass(c.tone)}>
-              <b>
-                {c.start}–{c.end} · {c.groupName || "Clase"}
-              </b>
-              <small>
-                {c.teacherName ? c.teacherName + " · " : ""}
-                {c.count} alumno{c.count !== 1 ? "s" : ""}
-              </small>
-            </div>
-          ))}
+
+          {canEditClasses && (
+            <button
+              type="button"
+              className={"btn btsm btbl " + (dayOff ? "btr" : "btg")}
+              style={{ marginBottom: ".5rem" }}
+              onClick={() => onToggleDayOff(dayOff ? "" : "Festivo")}
+            >
+              {dayOff ? "Quitar el festivo: volver a dar clase" : "Marcar día sin clases (festivo)"}
+            </button>
+          )}
+
+          {classes.map((c) => {
+            const key = c.slot.id + (c.movedFrom || "");
+            const isMoving = moving && moving.slotId === c.slot.id && !c.movedFrom;
+            return (
+              <div key={key} className={"month-class-row " + c.tone + (c.cancelled ? " is-off" : "")}>
+                <div className="month-class-info">
+                  <b>
+                    {c.start}–{c.end} · {c.slot.groupName || c.teacher || "Clase"}
+                  </b>
+                  <small>
+                    {statusText(c)}
+                    {c.count ? ` · ${c.count} alumno${c.count !== 1 ? "s" : ""}` : ""}
+                  </small>
+                </div>
+
+                {canEditClasses && !dayOff && !c.movedFrom && (
+                  <div className="month-class-actions">
+                    <button type="button" className="btn btsm btg" onClick={() => onToggleClassOff(c.slot.id, "")}>
+                      {c.cancelled ? "Recuperar" : "Anular"}
+                    </button>
+                    {!c.cancelled && (
+                      <button type="button" className="btn btsm btaz" onClick={() => startMove(c)}>
+                        Mover
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {isMoving && (
+                  <div className="fb" style={{ margin: ".5rem 0 0", width: "100%" }}>
+                    <div className="frow">
+                      <div className="fcol">
+                        <label>Nuevo día</label>
+                        <input
+                          type="date"
+                          value={moving.toDate}
+                          onChange={(e) => setMoving({ ...moving, toDate: e.target.value })}
+                        />
+                      </div>
+                      <div className="fcol">
+                        <label>Empieza</label>
+                        <input
+                          type="time"
+                          value={moving.toStart}
+                          onChange={(e) => setMoving({ ...moving, toStart: e.target.value })}
+                        />
+                      </div>
+                      <div className="fcol">
+                        <label>Acaba</label>
+                        <input
+                          type="time"
+                          value={moving.toEnd}
+                          onChange={(e) => setMoving({ ...moving, toEnd: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div className="month-class-actions" style={{ marginTop: ".5rem" }}>
+                      <button type="button" className="btn btsm bts" onClick={confirmMove}>
+                        Confirmar
+                      </button>
+                      <button type="button" className="btn btsm btg" onClick={() => setMoving(null)}>
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

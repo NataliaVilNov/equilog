@@ -86,6 +86,7 @@ function normalizeBoardConfig(raw) {
     if (!Array.isArray(cfg[k])) cfg[k] = defaults[k];
   });
     if (typeof cfg.schoolMode !== "boolean") cfg.schoolMode = false;
+      if (!Array.isArray(cfg.classExceptions)) cfg.classExceptions = [];
   // Backfills the "vet" activity onto stables created before the weekly board's VET flow
   // existed — new stables already get it from boardDefaults() above.
   if (!cfg.activities.some((a) => a.id === "vet")) {
@@ -1270,7 +1271,61 @@ export function StableDataProvider({ stableId, children }) {
     },
     [boardConfig, stableId]
   );
+  // Festivo: ningún grupo tiene clase ese día. Vuelve a pulsarse para quitarlo. No borra las
+  // clases ya apuntadas (lessons): si se deshace el festivo, reaparecen tal cual estaban.
+  const toggleDayOff = useCallback(
+    (date, reason) => {
+      const current = boardConfig.classExceptions || [];
+      const existing = current.find((e) => e.kind === "off" && e.date === date && !e.slotId);
+      const classExceptions = existing
+        ? current.filter((e) => e !== existing)
+        : [...current, { id: uid(), kind: "off", date, slotId: null, reason: reason || "" }];
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), { ...boardConfig, classExceptions });
+    },
+    [boardConfig, stableId]
+  );
 
+  // Anula o recupera una clase suelta. Si la clase estaba movida a otro día, esto deshace
+  // también el traslado: una clase no puede estar movida y anulada a la vez.
+  const toggleClassOff = useCallback(
+    (date, slotId, reason) => {
+      const current = boardConfig.classExceptions || [];
+      const existing = current.find((e) => e.date === date && e.slotId === slotId);
+      const classExceptions = existing
+        ? current.filter((e) => e !== existing)
+        : [...current, { id: uid(), kind: "off", date, slotId, reason: reason || "" }];
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), { ...boardConfig, classExceptions });
+    },
+    [boardConfig, stableId]
+  );
+
+  // Pasa una clase a otro día y, si hace falta, a otra hora. Con toDate vacío se deshace el
+  // traslado. Los ponis y las faltas se guardan contra la fecha nueva, así que no hay nada
+  // que migrar: la clase del día de destino empieza en blanco.
+  const moveClass = useCallback(
+    (date, slotId, toDate, toStart, toEnd, reason) => {
+      const current = (boardConfig.classExceptions || []).filter(
+        (e) => !(e.date === date && e.slotId === slotId)
+      );
+      const classExceptions = toDate
+        ? [
+            ...current,
+            {
+              id: uid(),
+              kind: "move",
+              date,
+              slotId,
+              toDate,
+              toStart: toStart || null,
+              toEnd: toEnd || null,
+              reason: reason || "",
+            },
+          ]
+        : current;
+      writeDoc(stableDoc(stableId, "boardConfig", "main"), { ...boardConfig, classExceptions });
+    },
+    [boardConfig, stableId]
+  );
   // Marca o desmarca una franja fija en el horario del alumno.
   const toggleStudentSlot = useCallback(
     (studentId, slotId) => {
@@ -1668,6 +1723,9 @@ export function StableDataProvider({ stableId, children }) {
       updateClassSlot,
       deleteClassSlot,
       toggleStudentSlot,
+      toggleDayOff,
+      toggleClassOff,
+      moveClass,
       setLessonHorse, 
       toggleLessonAbsent, 
       addExtraLesson,
@@ -1764,6 +1822,9 @@ export function StableDataProvider({ stableId, children }) {
       updateClassSlot,
       deleteClassSlot,
       toggleStudentSlot,
+      toggleDayOff,
+      toggleClassOff,
+      moveClass,
       setLessonHorse, 
       toggleLessonAbsent, 
       addExtraLesson,

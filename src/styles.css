@@ -378,3 +378,15 @@ input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(70,82,63,.10)}
   .month-line{font-size:.54rem;padding:.02rem .18rem;border-left-width:2px}
   .month-line b{display:none}
 }
+/* Festivos y cambios puntuales en el horario de clases */
+.month-day.is-off{background:#FBF4F2}
+.month-off-tag{align-self:flex-start;font-size:.54rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#A8423B;background:#FCE8E6;border-radius:999px;padding:.02rem .36rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.month-class-row{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;border:1px solid;border-left-width:.25rem;border-radius:12px;padding:.55rem .7rem;margin-bottom:.4rem}
+.month-class-row.is-off{opacity:.55}
+.month-class-row.is-off .month-class-info b{text-decoration:line-through}
+.month-class-info{flex:1;min-width:8rem}
+.month-class-info b{display:block;font-size:.8rem}
+.month-class-info small{display:block;font-size:.68rem;opacity:.8}
+.month-class-actions{display:flex;gap:.35rem;flex-shrink:0}
+.class-card.is-off{opacity:.45;cursor:default}
+.class-card.is-off b{text-decoration:line-through}

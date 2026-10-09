@@ -397,3 +397,11 @@ input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(70,82,63,.10)}
 .health-alert-row.is-overdue .health-alert-icon{background:#FEE2E2}
 .health-alert-arrow{color:#C9C2B4;font-size:1.1rem;flex-shrink:0}
 .health-alerts-more{display:block;font-size:.68rem;color:var(--gr);padding-left:.2rem}
+/* Tabla de puesta al día del histórico de salud */
+.seed-table th,.seed-table td{min-width:132px;height:auto;padding:.4rem}
+.seed-table .horse-col{min-width:120px;max-width:120px}
+.seed-table .horse-col b{display:block;font-size:.8rem}
+.seed-table .horse-col small{display:block;font-size:.6rem;color:var(--gr);font-weight:500}
+.seed-input{min-height:38px!important;padding:.35rem .45rem!important;font-size:.78rem!important;border-radius:8px!important}
+.seed-actions{display:grid;gap:.5rem;margin-top:1rem}
+@media(max-width:600px){.seed-table th,.seed-table td{min-width:118px}.seed-table .horse-col{min-width:94px;max-width:94px}}

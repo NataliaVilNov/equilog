@@ -28,16 +28,21 @@ export function HealthAlertsCard() {
   if (!due.length) {
     if (never.length >= (horses.length || 1) * 2) {
       return (
-        <div className="empty-soft" style={{ marginBottom: "1rem" }}>
-          <span>🩺</span>
-          <div>
-            <b>Aún no puedo avisarte de nada</b>
-            <p>
-              Apunta el último herraje, vacuna o desparasitación de cada caballo y empezaré a
-              avisarte cuando toque repetirlos.
-            </p>
-          </div>
-        </div>
+                  <button
+            type="button"
+            className="empty-soft"
+            style={{ marginBottom: "1rem", width: "100%", textAlign: "left", border: 0 }}
+            onClick={() => navigate("/health-seed")}
+          >
+            <span>🩺</span>
+            <div>
+              <b>Aún no puedo avisarte de nada</b>
+              <p>
+                Apunta la última vez que herraste, vacunaste o desparasitaste a cada caballo y
+                empezaré a avisarte cuando toque repetirlo. Pulsa para rellenarlo de una vez.
+              </p>
+            </div>
+          </button>
       );
     }
     return null;

@@ -31,6 +31,7 @@ import { SmartOrderPage } from "../features/smart-order/SmartOrderPage.jsx";
 import { StatsPage } from "../features/stats/StatsPage.jsx";
 import { TrainingReportPage } from "../features/reports/TrainingReportPage.jsx";
 import { StudentsPage } from "../features/students/StudentsPage.jsx";
+import { HealthSeedPage } from "../features/horses/HealthSeedPage.jsx";
 
 export function AppRoutes() {
   return (
@@ -44,6 +45,7 @@ export function AppRoutes() {
       <Route element={<ProtectedRoute />}>
         <Route path="/home" element={<HomePage />} />
         <Route path="/horses" element={<HorseListPage />} />
+                <Route path="/health-seed" element={<HealthSeedPage />} />
         <Route path="/horses/:hid" element={<HorseDetailPage />} />
         <Route element={<PermissionRoute requires="horses" />}>
           <Route path="/horses/new" element={<HorseFormPage />} />

@@ -13,6 +13,7 @@ import { upcomingHealthAlerts, pendingSessionAlerts, visibleAlertsForUser } from
 import { TaskCard } from "../tasks/TaskCard.jsx";
 import { AlertCard } from "../alerts/AlertCard.jsx";
 import { visibleQuickActions } from "./homeShortcuts.js";
+import { HealthAlertsCard } from "../horses/HealthAlertsCard.jsx";
 
 function capitalize(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
@@ -74,7 +75,7 @@ export function HomePage() {
         </div>
         <div className="home-date">{capitalize(fDL(today))}</div>
       </section>
-
+      <HealthAlertsCard />
       {urgent > 0 && (
         <button className="attention-card" onClick={() => navigate("/alerts")}>
           <span className="attention-icon">!</span>

@@ -451,7 +451,53 @@ export function StableDataProvider({ stableId, children }) {
     },
     [health, stableId]
   );
-
+  // Puesta al día del histórico de salud: escribe de una vez la última fecha de cada cuidado
+  // de cada caballo, más su ciclo propio de herraje. Pensado para estrenar la cuadra, cuando
+  // los avisos de cuidados pendientes no tienen de dónde calcular.
+  //
+  // `rows` es [{ hid, dates: { herraje, vacuna, despar, dientes }, shoeingDays }]. Las fechas
+  // vacías se ignoran: un caballo del que no se sabe cuándo se vacunó se queda sin aviso, que
+  // es mejor que inventarse una fecha y avisar en falso.
+  //
+  // A diferencia del formulario de salud, estos registros NO crean un gasto asociado: son
+  // histórico de hace meses, no facturas por pagar.
+  const seedHealthHistory = useCallback(
+    (rows) => {
+      const batch = writeBatch(db);
+      let written = 0;
+      (rows || []).forEach((row) => {
+        const horse = horses.find((h) => h.id === row.hid);
+        const weeks = Number(row.shoeingDays);
+        if (horse && weeks > 0 && weeks * 7 !== horse.shoeingDays) {
+          batch.update(stableDoc(stableId, "horses", row.hid), { shoeingDays: weeks * 7 });
+        }
+        Object.entries(row.dates || {}).forEach(([type, date]) => {
+          if (!date) return;
+          const id = uid();
+          batch.set(
+            stableDoc(stableId, "horses", row.hid, "health", id),
+            cleanForFirestore({
+              id,
+              stableId,
+              hid: row.hid,
+              type,
+              label: "",
+              date,
+              nxt: null,
+              notes: "Histórico inicial",
+              amount: 0,
+              payStatus: "pagado",
+              payee: "",
+            })
+          );
+          written++;
+        });
+      });
+      commitBatch(batch);
+      return written;
+    },
+    [horses, stableId]
+  );
   // Ports addHealthDocLink (public/legacy-app.js:1116-1130).
   const addHealthDocLink = useCallback(
     ({ hid, category, date, notes, title, url, userId }) => {
@@ -1673,6 +1719,7 @@ export function StableDataProvider({ stableId, children }) {
       updateHealthRecord,
       deleteHealthRecord,
       addHealthDocLink,
+      seedHealthHistory,
       uploadHealthDocs,
       uploadHorsePhoto,
       uploadTeamMemberPhoto,
@@ -1772,6 +1819,7 @@ export function StableDataProvider({ stableId, children }) {
       updateHealthRecord,
       deleteHealthRecord,
       addHealthDocLink,
+      seedHealthHistory,
       uploadHealthDocs,
       uploadHorsePhoto,
       uploadTeamMemberPhoto,

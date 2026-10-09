@@ -11,12 +11,13 @@ export const HK = [
   { id: "herraje", l: "Herraje", i: "🔨" },
   { id: "vacuna", l: "Vacuna", i: "💉" },
   { id: "despar", l: "Despar.", i: "🧪" },
+  { id: "dientes", l: "Dientes", i: "🦷" },
   { id: "otro", l: "Otro", i: "📋" },
 ];
 
 export const AK = [
   { id: "monta", l: "Monta", i: "🐎", r: true },
-  { id: "longe", l: "Longe", i: "🔄", r: true },
+  { id: "cuerda", l: "Cuerda", i: "🔄", r: true },
   { id: "trabajo_suave", l: "T.Suave", i: "🌿", r: true },
   { id: "paddock", l: "Paddock", i: "🟩", r: false },
   { id: "caminador", l: "Caminador", i: "🔁", r: false },
@@ -64,6 +65,6 @@ export function expenseCategoryById(id) {
 // expense category used for its auto-created linked expense.
 export function catFromHealthType(type) {
   if (type === "herraje") return "herrador";
-  if (type === "vacuna" || type === "despar") return "vet";
+  if (type === "vacuna" || type === "despar" || type === "dientes") return "vet";
   return "vet";
 }

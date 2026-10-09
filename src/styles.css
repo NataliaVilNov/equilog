@@ -378,15 +378,22 @@ input:focus,textarea:focus,select:focus{box-shadow:0 0 0 3px rgba(70,82,63,.10)}
   .month-line{font-size:.54rem;padding:.02rem .18rem;border-left-width:2px}
   .month-line b{display:none}
 }
-/* Festivos y cambios puntuales en el horario de clases */
-.month-day.is-off{background:#FBF4F2}
-.month-off-tag{align-self:flex-start;font-size:.54rem;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#A8423B;background:#FCE8E6;border-radius:999px;padding:.02rem .36rem;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.month-class-row{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;border:1px solid;border-left-width:.25rem;border-radius:12px;padding:.55rem .7rem;margin-bottom:.4rem}
-.month-class-row.is-off{opacity:.55}
-.month-class-row.is-off .month-class-info b{text-decoration:line-through}
-.month-class-info{flex:1;min-width:8rem}
-.month-class-info b{display:block;font-size:.8rem}
-.month-class-info small{display:block;font-size:.68rem;opacity:.8}
-.month-class-actions{display:flex;gap:.35rem;flex-shrink:0}
-.class-card.is-off{opacity:.45;cursor:default}
-.class-card.is-off b{text-decoration:line-through}
+/* Barra de acciones de la clase abierta y marca de festivo en la rejilla semanal */
+.class-edit-bar{display:flex;flex-wrap:wrap;gap:.35rem;margin:.5rem 0}
+.day-off{background:#FBF4F2}
+.day-off-tag{display:block;font-size:.5rem;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:#A8423B;background:#FCE8E6;border-radius:999px;padding:.02rem .3rem;margin-bottom:.22rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Avisos de cuidados pendientes (herraje, vacunas, desparasitación, dientes) */
+.health-alerts{background:#FFFEFB;border:1px solid var(--li);border-radius:15px;padding:.85rem;margin-bottom:1rem;box-shadow:var(--shadow-sm)}
+.health-alerts-head{display:flex;justify-content:space-between;align-items:baseline;gap:.6rem;margin-bottom:.55rem}
+.health-alerts-head b{font-size:.82rem;color:var(--ti)}
+.health-alerts-head small{font-size:.68rem;color:var(--gr);font-weight:700}
+.health-alert-row{display:flex;align-items:center;gap:.65rem;width:100%;text-align:left;background:#FBFDF9;border:1px solid #E8E1D6;border-radius:12px;padding:.55rem .65rem;margin-bottom:.35rem;font:inherit}
+.health-alert-row.is-overdue{background:#FFF6F4;border-color:#F1C7C2}
+.health-alert-row>div{flex:1;min-width:0}
+.health-alert-row b{display:block;font-size:.8rem;color:var(--ti)}
+.health-alert-row small{display:block;font-size:.69rem;color:var(--gr)}
+.health-alert-row.is-overdue small{color:#A8423B;font-weight:700}
+.health-alert-icon{width:31px;height:31px;border-radius:9px;background:var(--vl);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.health-alert-row.is-overdue .health-alert-icon{background:#FEE2E2}
+.health-alert-arrow{color:#C9C2B4;font-size:1.1rem;flex-shrink:0}
+.health-alerts-more{display:block;font-size:.68rem;color:var(--gr);padding-left:.2rem}

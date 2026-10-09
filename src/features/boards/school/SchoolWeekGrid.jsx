@@ -2,10 +2,11 @@ import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useStableData } from "../../../hooks/useStableData.js";
 import { useToast } from "../../../hooks/useToast.js";
+import { usePermissions } from "../../../hooks/usePermissions.js";
 import { addD, fD, fDL, td } from "../../../lib/date.js";
+import { classesOnDate, dayOffOn } from "../../../lib/classExceptions.js";
 import { boardWeekDates, boardToneClass } from "../boardHelpers.js";
 import { teacherTone, teacherName, slotLabel } from "./schoolHelpers.js";
-import { classesOnDate } from "../../../lib/classExceptions.js";
 import { EmptyState } from "../../../components/EmptyState.jsx";
 
 const DAY_LABELS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
@@ -18,7 +19,8 @@ function capitalize(s) {
 // pueden coincidir en hora — son grupos simultaneos con profesores distintos — asi que la
 // columna es una pila ordenada por hora, no una rejilla de franjas fijas. Al abrir una
 // clase, su panel es editable: sustituye a la antigua pizarra diaria, que mostraba lo
-// mismo un dia a la vez.
+// mismo un dia a la vez. El horario fijo (classSlots) se corrige con las excepciones
+// puntuales de boardConfig.classExceptions, que se marcan tanto aqui como en la vista de mes.
 export function SchoolWeekGrid({ week }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -32,13 +34,21 @@ export function SchoolWeekGrid({ week }) {
     toggleLessonAbsent,
     addExtraLesson,
     removeLesson,
+    toggleDayOff,
+    toggleClassOff,
+    moveClass,
   } = useStableData();
   const { showToast } = useToast();
+  const { can } = usePermissions();
   const [open, setOpen] = useState(null);
+  // Destino que se va eligiendo al mover una clase; null mientras no se esta moviendo nada.
+  const [moving, setMoving] = useState(null);
 
   const dates = boardWeekDates(week);
   const today = td();
   const slots = boardConfig.classSlots || [];
+  const exceptions = boardConfig.classExceptions || [];
+  const canEdit = can("stable");
   const activeStudents = useMemo(() => students.filter((s) => s.active !== false), [students]);
   const teachers = useMemo(() => [...new Set(slots.map((s) => s.teacherId).filter(Boolean))], [slots]);
 
@@ -48,10 +58,10 @@ export function SchoolWeekGrid({ week }) {
     navigate("/boards?" + params.toString());
   }
 
-   // Las clases reales de un día: el horario semanal corregido con las excepciones puntuales
-  // (festivos, clases anuladas, clases traídas de otro día) que se marcan en la vista de mes.
+  // Las clases reales de un dia: el horario semanal corregido con las excepciones puntuales
+  // (festivos, clases anuladas, clases traidas de otro dia).
   function entriesOfDay(date) {
-    return classesOnDate(slots, boardConfig.classExceptions, date);
+    return classesOnDate(slots, exceptions, date);
   }
 
   // Alumnos de una clase: los fijos por horario mas los puntuales apuntados ese dia.
@@ -111,6 +121,34 @@ export function SchoolWeekGrid({ week }) {
     removeLesson(student.id, open.date, open.slot.id);
   }
 
+  function handleOpen(entry, date) {
+    const isOpen = open && open.slot.id === entry.slot.id && open.date === date;
+    setMoving(null);
+    setOpen(isOpen ? null : { slot: entry.slot, date, entry });
+  }
+
+  function handleToggleDayOff() {
+    const off = dayOffOn(exceptions, open.date);
+    toggleDayOff(open.date, off ? "" : "Festivo");
+    showToast(off ? "Día recuperado" : "Día marcado sin clases");
+  }
+
+  function handleToggleClassOff() {
+    toggleClassOff(open.date, open.slot.id, "");
+    showToast(open.entry.cancelled ? "Clase recuperada" : "Clase anulada");
+  }
+
+  function startMove() {
+    setMoving({ toDate: open.date, toStart: open.entry.start, toEnd: open.entry.end });
+  }
+
+  function confirmMove() {
+    moveClass(open.date, open.slot.id, moving.toDate, moving.toStart, moving.toEnd, "");
+    setMoving(null);
+    setOpen(null);
+    showToast("Clase movida al " + fD(moving.toDate));
+  }
+
   if (!slots.length) {
     return (
       <EmptyState icon="📅">
@@ -121,10 +159,14 @@ export function SchoolWeekGrid({ week }) {
     );
   }
 
+  const openOff = open ? dayOffOn(exceptions, open.date) : null;
   const openRoster = open ? rosterFor(open.slot, open.date) : [];
   const openBusy = open ? busyInSlot(open.slot.id, open.date) : new Set();
   const openLoad = open ? loadOn(open.date) : {};
   const notInClass = open ? activeStudents.filter((s) => !openRoster.some((r) => r.id === s.id)) : [];
+  // Una clase traida de otro dia se edita en su dia de origen, no aqui: si no, "mover lo
+  // movido" acabaria creando cadenas de excepciones imposibles de deshacer.
+  const openEditable = open && canEdit && !open.entry.movedFrom;
 
   return (
     <>
@@ -172,18 +214,20 @@ export function SchoolWeekGrid({ week }) {
           </thead>
           <tbody>
             <tr>
-              {dates.map((d, i) => {
-                const daySlots = entriesOfDay(d);
+              {dates.map((d) => {
+                const entries = entriesOfDay(d);
+                const off = dayOffOn(exceptions, d);
                 return (
                   <td
                     key={d}
-                    className={"plan-cell" + (d === today ? " is-today" : "")}
+                    className={"plan-cell" + (d === today ? " is-today" : "") + (off ? " day-off" : "")}
                     style={{ verticalAlign: "top", padding: ".3rem" }}
                   >
-                    {!daySlots.length ? (
+                    {off && <span className="day-off-tag">{off.reason || "Festivo"}</span>}
+                    {!entries.length ? (
                       <span className="plan-empty">·</span>
                     ) : (
-                                              daySlots.map((entry) => {
+                      entries.map((entry) => {
                         const slot = entry.slot;
                         const coming = comingCount(slot, d);
                         const isOpen = open && open.slot.id === slot.id && open.date === d;
@@ -196,15 +240,17 @@ export function SchoolWeekGrid({ week }) {
                               (isOpen ? " is-open" : "") +
                               (entry.cancelled ? " is-off" : "")
                             }
-                            disabled={entry.cancelled}
-                            onClick={() => setOpen(isOpen ? null : { slot, date: d })}
+                            onClick={() => handleOpen(entry, d)}
                             title={
                               slotLabel(slot, team) +
                               (entry.cancelled ? (entry.movedTo ? " · movida" : " · anulada") : "") +
                               (entry.movedFrom ? " · traída de otro día" : "")
                             }
                           >
-                            <b>{entry.start}</b>
+                            <b>
+                              {entry.start}
+                              {entry.movedFrom ? " ↪" : ""}
+                            </b>
                             <span className="class-group">{slotLabel(slot, team) || "Sin profesor"}</span>
                             <span className="class-count">{entry.cancelled ? "—" : coming}</span>
                           </button>
@@ -224,14 +270,19 @@ export function SchoolWeekGrid({ week }) {
           <div className="resource-title">
             <div>
               <span className={"resource-icon " + boardToneClass(teacherTone(team, open.slot.teacherId))}>
-                {open.slot.start.slice(0, 2)}
+                {open.entry.start.slice(0, 2)}
               </span>
               <div>
                 <h2>
-                  {open.slot.start}–{open.slot.end}
+                  {open.entry.start}–{open.entry.end}
                   {slotLabel(open.slot, team) ? " · " + slotLabel(open.slot, team) : ""}
                 </h2>
-                <small>{capitalize(fDL(open.date))}</small>
+                <small>
+                  {capitalize(fDL(open.date))}
+                  {open.entry.movedTo ? " · movida al " + fD(open.entry.movedTo) : ""}
+                  {open.entry.movedFrom ? " · traída del " + fD(open.entry.movedFrom) : ""}
+                  {open.entry.cancelled && !open.entry.movedTo ? " · anulada" : ""}
+                </small>
               </div>
             </div>
             <button className="ib" onClick={() => setOpen(null)} aria-label="Cerrar">
@@ -239,7 +290,86 @@ export function SchoolWeekGrid({ week }) {
             </button>
           </div>
 
-          {!openRoster.length ? (
+          {openEditable && (
+            <div className="class-edit-bar">
+              <button type="button" className={"btn btsm " + (openOff ? "btr" : "btg")} onClick={handleToggleDayOff}>
+                {openOff ? "Quitar festivo" : "Día sin clases"}
+              </button>
+              {!openOff && (
+                <>
+                  <button type="button" className="btn btsm btg" onClick={handleToggleClassOff}>
+                    {open.entry.cancelled && !open.entry.movedTo ? "Recuperar clase" : "Anular clase"}
+                  </button>
+                  {open.entry.movedTo ? (
+                    <button
+                      type="button"
+                      className="btn btsm btaz"
+                      onClick={() => {
+                        moveClass(open.date, open.slot.id, "", "", "", "");
+                        setOpen(null);
+                        showToast("Traslado deshecho");
+                      }}
+                    >
+                      Deshacer traslado
+                    </button>
+                  ) : (
+                    !open.entry.cancelled && (
+                      <button type="button" className="btn btsm btaz" onClick={startMove}>
+                        Mover a otro día
+                      </button>
+                    )
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {moving && (
+            <div className="fb" style={{ marginTop: ".5rem" }}>
+              <div className="frow">
+                <div className="fcol">
+                  <label>Nuevo día</label>
+                  <input
+                    type="date"
+                    value={moving.toDate}
+                    onChange={(e) => setMoving({ ...moving, toDate: e.target.value })}
+                  />
+                </div>
+                <div className="fcol">
+                  <label>Empieza</label>
+                  <input
+                    type="time"
+                    value={moving.toStart}
+                    onChange={(e) => setMoving({ ...moving, toStart: e.target.value })}
+                  />
+                </div>
+                <div className="fcol">
+                  <label>Acaba</label>
+                  <input
+                    type="time"
+                    value={moving.toEnd}
+                    onChange={(e) => setMoving({ ...moving, toEnd: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="class-edit-bar" style={{ marginTop: ".5rem" }}>
+                <button type="button" className="btn btsm bts" onClick={confirmMove}>
+                  Confirmar
+                </button>
+                <button type="button" className="btn btsm btg" onClick={() => setMoving(null)}>
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {open.entry.cancelled ? (
+            <p style={{ fontSize: ".82rem", opacity: 0.7, padding: ".5rem 0" }}>
+              {open.entry.movedTo
+                ? "Esta clase se da el " + fD(open.entry.movedTo) + ". Los ponis se asignan allí."
+                : "Clase anulada. Recupérala para volver a pasar lista."}
+            </p>
+          ) : !openRoster.length ? (
             <p style={{ fontSize: ".82rem", opacity: 0.7, padding: ".5rem 0" }}>Nadie apuntado a esta clase.</p>
           ) : (
             <div className="config-list">
@@ -292,7 +422,7 @@ export function SchoolWeekGrid({ week }) {
             </div>
           )}
 
-          {notInClass.length > 0 && (
+          {!open.entry.cancelled && notInClass.length > 0 && (
             <div className="fb" style={{ marginTop: ".5rem" }}>
               <div className="fcol">
                 <label>Añadir alumno puntual</label>

@@ -20,14 +20,10 @@ export function TeamPage() {
   const today = td();
   const todaysTasks = tasksForDate(tasks, today);
 
+  // El botón solo se pinta para fichas sin vincular, y createMemberInvite vuelve a
+  // comprobarlo por su cuenta. Ya no hay window.confirm() de "¿crear otro código?": el
+  // código es único por integrante y se reutiliza, así que no hay nada que confirmar.
   async function handleInvite(member) {
-    const linked = !!(member.uid || member.userId || member.authUid);
-    if (
-      linked &&
-      !window.confirm(`${member.name} ya parece vinculado a un usuario. ¿Crear otro código igualmente?`)
-    ) {
-      return;
-    }
     try {
       const code = await createMemberInvite(member);
       try {
@@ -37,7 +33,7 @@ export function TeamPage() {
         showToast("Código para " + member.name + ": " + code);
       }
     } catch (err) {
-      showToast("Error creando invitación: " + err.message);
+      showToast(err.message);
     }
   }
 
@@ -111,9 +107,11 @@ export function TeamPage() {
                   Hoy
                 </div>
                 <div style={{ display: "flex", gap: ".25rem", justifyContent: "flex-end" }}>
-                  <button className="btn btsm btg" onClick={() => handleInvite(m)}>
-                    Invitar
-                  </button>
+                  {!linked && (
+                    <button className="btn btsm btg" onClick={() => handleInvite(m)}>
+                      Invitar
+                    </button>
+                  )}
                   <button className="btn btsm" onClick={() => navigate(`/team/${m.id}/edit`)}>
                     Editar
                   </button>

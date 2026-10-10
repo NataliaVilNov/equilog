@@ -251,12 +251,46 @@ export function StableSelectionProvider({ children }) {
   // deleteStable/leaveStable leaving window.confirm() to StablePanel). Takes the full
   // member object rather than an id, since StableSelectionContext has no access to
   // StableDataContext's `team` slice to look one up itself.
+    // Ports createMemberInvite (public/legacy-app.js:737-767), minus the clipboard/toast UI,
+  // which is the caller's job (same split as deleteStable/leaveStable leaving window.confirm()
+  // to StablePanel). Takes the full member object rather than an id, since
+  // StableSelectionContext has no access to StableDataContext's `team` slice.
+  //
+  // El código ahora es ESTABLE: se guarda en la ficha del integrante, en el campo inviteCode,
+  // y se reutiliza mientras siga siendo válido. Antes cada pulsación generaba uno nuevo, así
+  // que se acumulaban códigos sueltos, todos funcionando a la vez, y no había forma de saber
+  // cuál le habías dado a quién.
+  //
+  // Y no se crea invitación para una ficha que ya tiene cuenta vinculada: esa persona ya está
+  // dentro, y un código nuevo solo serviría para que entrara alguien más en su lugar.
   const createMemberInvite = useCallback(
     async (member) => {
       if (!user || !activeStable) throw new Error("No hay cuadra activa");
       if (!canManageStable(activeStable, user)) {
         throw new Error("Solo el administrador puede crear invitaciones vinculadas");
       }
+      if (member.uid || member.userId || member.authUid) {
+        throw new Error(
+          (member.name || "Este integrante") +
+            " ya tiene una cuenta vinculada. Para volver a invitarle, antes debe abandonar la cuadra."
+        );
+      }
+
+      // ¿Ya tenía código? Se comprueba que el documento siga existiendo y que siga apuntando
+      // a esta cuadra y a esta ficha, por si quedó de una configuración anterior.
+      const existing = (member.inviteCode || "").trim().toUpperCase();
+      if (existing) {
+        try {
+          const snap = await getDoc(doc(db, "inviteCodes", existing));
+          const d = snap.exists() ? snap.data() : null;
+          if (d && d.stableId === activeStable.id && d.teamMemberId === member.id) {
+            return existing;
+          }
+        } catch (_e) {
+          // si no se puede leer, se genera uno nuevo más abajo
+        }
+      }
+
       const code = Math.random().toString(36).slice(2, 8).toUpperCase();
       await setDoc(doc(db, "inviteCodes", code), {
         stableId: activeStable.id,
@@ -265,6 +299,9 @@ export function StableSelectionProvider({ children }) {
         teamMemberName: member.name || "",
         createdBy: user.uid,
         created: new Date().toISOString(),
+      });
+      await updateDoc(doc(db, "stables", activeStable.id, "team", member.id), {
+        inviteCode: code,
       });
       return code;
     },

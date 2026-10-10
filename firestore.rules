@@ -71,23 +71,51 @@ service cloud.firestore {
     }
 
     // Per-member fine-grained permissions live on stables/{stableId}/team/{memberId}.permissions
-    // (11 boolean keys, mirroring PERMISSION_KEYS in src/lib/permissions.js). A team doc is only
-    // recognized as "mine" here when its own document ID equals the caller's auth uid — the
-    // client additionally matches a doc via uid/userId/authUid fields (usePermissions.js), which
-    // rules can't replicate (get() only resolves an exact path, not a field search). Existing
-    // team docs (random uid()-generated IDs) won't match until backfilled to use the caller's
-    // uid as the doc ID; until then, those members fall through to defaultPermFor()'s defaults
-    // instead of their configured permissions — a fail-closed gap, not a fail-open one.
+    // (11 boolean keys, mirroring PERMISSION_KEYS in src/lib/permissions.js).
+    //
+    // Finding WHICH team doc belongs to the caller is the hard part: the client matches by the
+    // uid/userId/authUid FIELDS (usePermissions.js), and rules can't search by field — get()
+    // only resolves an exact path. Two paths are therefore accepted here:
+    //
+    //   1. team/{caller uid} — a team doc whose own ID is the caller's uid.
+    //   2. memberLinks/{caller uid}.teamMemberId — a pointer doc naming the caller's team doc.
+    //
+    // (2) exists because team doc IDs are referenced all over the data (classSlots.teacherId,
+    // tasks.assignedTo, absences.pid…), so re-keying a team doc to the owner's uid would break
+    // every one of those references. The pointer leaves the IDs alone.
+    //
+    // A member with neither still falls through to defaultPermFor() below — fail-closed in the
+    // sense that nothing is silently granted beyond today's defaults, but note that those
+    // defaults are BROADER than a restricted member's configured permissions. Linking is what
+    // makes the configured permissions real.
     function myTeamDocPath(stableId) {
       return /databases/$(database)/documents/stables/$(stableId)/team/$(request.auth.uid);
     }
 
-    function hasTeamDoc(stableId) {
+    function myLinkPath(stableId) {
+      return /databases/$(database)/documents/stables/$(stableId)/memberLinks/$(request.auth.uid);
+    }
+
+    function linkedTeamDocPath(stableId) {
+      return /databases/$(database)/documents/stables/$(stableId)/team/$(get(myLinkPath(stableId)).data.teamMemberId);
+    }
+
+    function hasDirectTeamDoc(stableId) {
       return exists(myTeamDocPath(stableId));
     }
 
+    function hasLinkedTeamDoc(stableId) {
+      return exists(myLinkPath(stableId)) && exists(linkedTeamDocPath(stableId));
+    }
+
+    function hasTeamDoc(stableId) {
+      return hasDirectTeamDoc(stableId) || hasLinkedTeamDoc(stableId);
+    }
+
     function myTeamPerms(stableId) {
-      return get(myTeamDocPath(stableId)).data.permissions;
+      return hasDirectTeamDoc(stableId)
+        ? get(myTeamDocPath(stableId)).data.permissions
+        : get(linkedTeamDocPath(stableId)).data.permissions;
     }
 
     // Mirrors defaultTeamPermissions() in src/lib/permissions.js — keep both in sync.
@@ -116,26 +144,59 @@ service cloud.firestore {
       return isStableAdmin(stableId) || allowed == null || request.auth.uid in allowed;
     }
 
-    // Lets a non-admin self-link an UNLINKED team doc to their own account — the join-by-code
-    // flow (StableSelectionContext.linkUserToTeamMember) writes uid/userId/authUid onto a
-    // team doc an admin already created, as the newly-joined (non-admin) user themselves, so
-    // the plain admin-only team write rule below would otherwise block the entire self-service
-    // join flow. Scoped narrowly so it can't be used to re-open the privilege-escalation gap
-    // that admin-only rule closes: only applies while the doc has no uid/userId/authUid yet
-    // (an already-linked doc can't be hijacked), the caller may only point those three fields
-    // at their OWN uid (can't link someone else's identity into this slot), and permissions/
-    // role must stay byte-for-byte unchanged (can't self-grant anything through this path).
+    // True when a team doc has not been claimed by any account yet. Written defensively: a
+    // team doc created before the linking fields existed has no uid/userId/authUid key at
+    // all, and a bare `data.uid == null` on a missing key denies instead of reading as null.
+    function teamDocUnclaimed(d) {
+      return (!('uid' in d) || d.uid == null)
+        && (!('userId' in d) || d.userId == null)
+        && (!('authUid' in d) || d.authUid == null);
+    }
+
+    // Lets a non-admin self-link a team doc to their own account — the join-by-code flow
+    // (StableSelectionContext.linkUserToTeamMember) writes uid/userId/authUid onto a team doc
+    // an admin already created, as the newly-joined (non-admin) user themselves, so the plain
+    // admin-only team write rule below would otherwise block the entire self-service join flow.
+    //
+    // La ficha debe estar sin reclamar O ser ya suya. Sin esa segunda rama, usar un segundo
+    // código de invitación para la misma ficha fallaba con "Missing or insufficient
+    // permissions": la primera vinculación dejaba la ficha reclamada y la segunda chocaba
+    // contra ella. Revincularse con la ficha propia no concede nada nuevo.
+    //
+    // El resto sigue igual de cerrado que antes: los tres campos solo pueden apuntar al uid
+    // de quien escribe (no puedes meter la identidad de otro en esa ficha) y el cambio no
+    // puede tocar ninguna clave que no sea de vinculación, así que permissions y role quedan
+    // fuera de alcance. Se comprueba con affectedKeys en vez de comparando campo a campo:
+    // comparar permissions directamente deniega cuando la ficha ni siquiera tiene ese campo.
     function isSelfLinking(stableId) {
       return isStableMember(stableId)
-        && resource.data.uid == null && resource.data.userId == null && resource.data.authUid == null
+        && (
+          teamDocUnclaimed(resource.data)
+          || ('uid' in resource.data && resource.data.uid == request.auth.uid)
+        )
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.authUid == request.auth.uid
-        && request.resource.data.permissions == resource.data.permissions
-        && request.resource.data.role == resource.data.role;
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['uid', 'userId', 'authUid', 'email', 'linkedName', 'linkedAt', 'linkedEmail']);
     }
 
-       match /inviteCodes/{code} {
+    // The pointer doc from paragraph (2) above. A member may create their OWN pointer, and
+    // only at a team doc that is either still unclaimed or already theirs — so the pointer
+    // can't be aimed at a teammate's slot to inherit their permissions. It carries no
+    // permissions of its own: everything still comes from the team doc it names.
+    function isClaimingOwnLink(stableId, linkUid) {
+      return isStableMember(stableId)
+        && linkUid == request.auth.uid
+        && request.resource.data.teamMemberId is string
+        && exists(/databases/$(database)/documents/stables/$(stableId)/team/$(request.resource.data.teamMemberId))
+        && (
+          teamDocUnclaimed(get(/databases/$(database)/documents/stables/$(stableId)/team/$(request.resource.data.teamMemberId)).data)
+          || get(/databases/$(database)/documents/stables/$(stableId)/team/$(request.resource.data.teamMemberId)).data.uid == request.auth.uid
+        );
+    }
+
+    match /inviteCodes/{code} {
       // `read` cubre dos cosas distintas: leer UN documento (get) y listar la colección
       // entera (list). Con `allow read: if signedIn()` cualquier usuario registrado podía
       // descargarse de golpe todos los códigos de invitación con su stableId asociado.
@@ -152,8 +213,7 @@ service cloud.firestore {
       // Borrar un código: solo el propietario o un administrador de esa cuadra. La rama
       // del !exists() es para códigos huérfanos, los de una cuadra ya eliminada: deleteStable
       // borra primero la cuadra y después su código, así que para cuando llega aquí la cuadra
-      // ya no está y no hay administrador a quien preguntar. Sin esa rama, ese borrado
-      // fallaría y los códigos se irían acumulando sin que nadie pudiera limpiarlos.
+      // ya no está y no hay administrador a quien preguntar.
       allow delete: if signedIn()
         && resource.data.stableId is string
         && (
@@ -207,10 +267,7 @@ service cloud.firestore {
 
         // Direct per-horse expense reads, used by the non-admin per-horse listeners in
         // StableDataContext.jsx (see the collectionGroup expenses block below for why
-        // non-admins can't use the single stable-wide collectionGroup listener). Uses the
-        // real path-bound stableId/hid here rather than resource.data fields, so there's no
-        // ambiguity about whether Firestore can prove this against the listener's query the
-        // way there is for the collectionGroup case.
+        // non-admins can't use the single stable-wide collectionGroup listener).
         match /expenses/{expenseId} {
           allow read: if isStableMember(stableId) && isHorseRelated(stableId, hid);
         }
@@ -222,16 +279,23 @@ service cloud.firestore {
         allow delete: if myPerm(stableId, 'deleteItems');
       }
 
-      // Non-admin team-doc writes are blocked entirely (not just privileged fields): today the
+      // Non-admin team-doc writes are blocked entirely (not just privileged fields): the
       // client lets ANY member with team:true edit ANY teammate's doc, including .permissions
-      // and .role — a privilege-escalation path. Restricting all writes to owner/admin closes it
-      // without depending on the doc-ID-equals-uid convention above (which most existing team
-      // docs don't satisfy yet). The one deliberate carve-out is isSelfLinking (above), needed
-      // for the join-by-code flow to work for non-admins at all.
+      // and .role — a privilege-escalation path. Restricting all writes to owner/admin closes
+      // it. The one deliberate carve-out is isSelfLinking (above), needed for the join-by-code
+      // flow to work for non-admins at all.
       match /team/{memberId} {
         allow read: if isStableMember(stableId);
         allow create, delete: if isStableOwnerOrAdmin(stableId);
         allow update: if isStableOwnerOrAdmin(stableId) || isSelfLinking(stableId);
+      }
+
+      // Pointer docs: memberLinks/{uid}.teamMemberId names that account's team doc. Holds no
+      // permissions itself — it only tells the rules above where to look.
+      match /memberLinks/{linkUid} {
+        allow read: if isStableMember(stableId);
+        allow create, update: if isStableOwnerOrAdmin(stableId) || isClaimingOwnLink(stableId, linkUid);
+        allow delete: if isStableOwnerOrAdmin(stableId) || linkUid == request.auth.uid;
       }
 
       match /taskTemplates/{tid} {
@@ -264,10 +328,9 @@ service cloud.firestore {
         allow read, write: if isStableMember(stableId);
       }
 
-      // Notion export. integrations/notion holds only NON-secret ids (database/data-source id,
-      // the page it lives under) — the Notion token never goes to Firestore — and is written
-      // by an admin when they connect Notion. notionLinks/{key} remembers which Notion page
-      // each health record / board cell was sent to, so re-sending updates instead of
+      // Notion export. integrations/notion holds only NON-secret ids — the Notion token never
+      // goes to Firestore — and is written by an admin when they connect Notion. notionLinks
+      // remembers which Notion page each record was sent to, so re-sending updates instead of
       // duplicating; any member with the health permission may sync, hence membership-only.
       match /integrations/{docId} {
         allow read: if isStableMember(stableId);
@@ -289,7 +352,8 @@ service cloud.firestore {
       match /expenseSettlements/{id} {
         allow read, write: if isStableMember(stableId);
       }
-            // Modo escuela (boardConfig.schoolMode). Alumnos y clases: mismo criterio
+
+      // Modo escuela (boardConfig.schoolMode). Alumnos y clases: mismo criterio
       // membership-only que las demás colecciones de pizarra — quien da la clase necesita
       // poder asignar poni, y no hay clave de permisos propia para esto todavía.
       match /students/{id} {
@@ -331,14 +395,10 @@ service cloud.firestore {
       // Admin is its own OR branch, not folded into isHorseRelated, so it stays provable from
       // the query's own stableId filter alone: Firestore rejects an entire collectionGroup
       // `list` request outright if the rule can't be proven true for every possible result
-      // using only the query's where() clauses — it does not filter non-matching documents
-      // out of a list result the way a get() does. isStableAdmin(...) depends only on
-      // resource.data.stableId, which IS the query's filter field (StableDataContext.jsx
-      // filters this collectionGroup by stableId alone), so an admin's existing single
-      // stable-wide listener keeps working unchanged. isHorseRelated(...) additionally
-      // depends on resource.data.hid, which the query does NOT filter on — a non-admin's
-      // request would fail that same proof, so non-admins read expenses through separate
-      // per-horse listeners instead (see docs/DATABASE.md and StableDataContext.jsx).
+      // using only the query's where() clauses. isStableAdmin(...) depends only on
+      // resource.data.stableId, which IS the query's filter field. isHorseRelated(...)
+      // additionally depends on resource.data.hid, which the query does NOT filter on, so
+      // non-admins read expenses through separate per-horse listeners instead.
       allow read: if isStableAdmin(resource.data.stableId)
         || (isStableMember(resource.data.stableId)
             && isHorseRelated(resource.data.stableId, resource.data.hid));
@@ -348,8 +408,7 @@ service cloud.firestore {
         && isHorseRelated(resource.data.stableId, resource.data.hid);
       // Deliberately gated by 'expenses' alone, not 'deleteItems': 'expenses' is default-true
       // for new team members, so also requiring deleteItems (default-false) would silently
-      // revoke a capability existing non-admin members already have today. Matches current
-      // client behavior exactly (see docs/BACKLOG.md).
+      // revoke a capability existing non-admin members already have today.
       allow delete: if myPerm(resource.data.stableId, 'expenses')
         && isHorseRelated(resource.data.stableId, resource.data.hid);
     }

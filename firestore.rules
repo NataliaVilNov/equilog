@@ -135,15 +135,31 @@ service cloud.firestore {
         && request.resource.data.role == resource.data.role;
     }
 
-    match /inviteCodes/{code} {
-      allow read: if signedIn();
+       match /inviteCodes/{code} {
+      // `read` cubre dos cosas distintas: leer UN documento (get) y listar la colección
+      // entera (list). Con `allow read: if signedIn()` cualquier usuario registrado podía
+      // descargarse de golpe todos los códigos de invitación con su stableId asociado.
+      // Se permite solo el get: para leer un código hay que saberlo de antemano, que es
+      // justo lo que hace joinByCode.
+      allow get: if signedIn();
+      allow list: if false;
 
       allow create: if signedIn()
         && request.resource.data.stableId is string
         && request.auth.uid in stableDoc(request.resource.data.stableId).data.memberIds
         && stableDoc(request.resource.data.stableId).data.members[request.auth.uid].role == "admin";
 
-      allow delete: if signedIn();
+      // Borrar un código: solo el propietario o un administrador de esa cuadra. La rama
+      // del !exists() es para códigos huérfanos, los de una cuadra ya eliminada: deleteStable
+      // borra primero la cuadra y después su código, así que para cuando llega aquí la cuadra
+      // ya no está y no hay administrador a quien preguntar. Sin esa rama, ese borrado
+      // fallaría y los códigos se irían acumulando sin que nadie pudiera limpiarlos.
+      allow delete: if signedIn()
+        && resource.data.stableId is string
+        && (
+          !exists(/databases/$(database)/documents/stables/$(resource.data.stableId))
+          || isStableOwnerOrAdmin(resource.data.stableId)
+        );
 
       allow update: if false;
     }

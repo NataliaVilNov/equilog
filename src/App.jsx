@@ -6,6 +6,7 @@ import {
   StableSelectionProvider,
 } from "./contexts/StableSelectionContext.jsx";
 import { StableDataProvider } from "./contexts/StableDataContext.jsx";
+import { CollaboratorsProvider } from "./contexts/CollaboratorsContext.jsx";
 import { ToastProvider } from "./contexts/ToastContext.jsx";
 import { ModalContext, ModalProvider } from "./contexts/ModalContext.jsx";
 import { AppHeader } from "./components/layout/AppHeader.jsx";
@@ -53,16 +54,19 @@ export default function App() {
   return (
     <AuthProvider>
       <StableSelectionProvider>
-        <StableDataScope>
-          <ToastProvider>
-            <ModalProvider>
-              <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-                <AppShell />
-              </BrowserRouter>
-            </ModalProvider>
-          </ToastProvider>
-        </StableDataScope>
+        <CollaboratorsProvider>
+          <StableDataScope>
+            <ToastProvider>
+              <ModalProvider>
+                <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                  <AppShell />
+                </BrowserRouter>
+              </ModalProvider>
+            </ToastProvider>
+          </StableDataScope>
+        </CollaboratorsProvider>
       </StableSelectionProvider>
     </AuthProvider>
   );
+}
 }

@@ -445,6 +445,20 @@ service cloud.firestore {
       allow create, update: if myPerm(request.resource.data.stableId, 'tasks');
       allow delete: if myPerm(resource.data.stableId, 'deleteItems');
     }
+        // El colaborador canjeando su propia invitación. La invitación pendiente es la fuente de
+    // la verdad: la cuadra y los caballos tienen que coincidir con los que puso el
+    // administrador, y el uid tiene que ser el suyo.
+    function isRedeemingOwnInvite() {
+      let code = request.resource.data.redeemedCode;
+      let pending = get(/databases/$(database)/documents/access/$('pending__' + code)).data;
+      return code is string
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status == 'active'
+        && pending.status == 'pending'
+        && request.resource.data.stableId == pending.stableId
+        && request.resource.data.horseIds == pending.horseIds
+        && request.resource.data.type == pending.type;
+    }
     // Accesos de colaboradores externos (veterinario, herrador, propietario…). Vive en el
     // nivel superior, no dentro de la cuadra, para que un veterinario pueda consultar todas
     // sus cuadras de una vez: dentro de cada cuadra tendría que saber de antemano en cuáles
@@ -452,13 +466,37 @@ service cloud.firestore {
     //
     // De momento solo escribe y lee el administrador de la cuadra. La parte de que el
     // colaborador lea lo suyo y entre con el código viene en el paso siguiente.
+       // Accesos de colaboradores externos (veterinario, herrador, propietario…). Vive en el
+    // nivel superior, no dentro de la cuadra, para que un veterinario pueda consultar todas
+    // sus cuadras de una vez: dentro de cada cuadra tendría que saber de antemano en cuáles
+    // está, que es justo lo que no sabe.
+    //
+    // Una invitación pendiente se llama pending__CÓDIGO, así que solo quien tiene el código
+    // puede ir a esa ruta exacta. Igual que con inviteCodes, listar está prohibido, así que
+    // conocer el nombre del documento es la prueba de que te lo dieron.
     match /access/{accessId} {
-      allow read: if signedIn()
-        && resource.data.stableId is string
-        && isStableOwnerOrAdmin(resource.data.stableId);
-      allow create: if signedIn()
-        && request.resource.data.stableId is string
-        && isStableOwnerOrAdmin(request.resource.data.stableId);
+      // El administrador consulta los de su cuadra; el colaborador, los suyos. Las dos
+      // consultas filtran por el mismo campo que comprueba la regla, que es lo que Firestore
+      // necesita para poder autorizarlas.
+      allow list: if signedIn() && (
+        (resource.data.stableId is string && isStableOwnerOrAdmin(resource.data.stableId))
+        || resource.data.uid == request.auth.uid
+      );
+
+      // Un get suelto se permite a cualquiera que sepa el nombre del documento: es como se
+      // lee la invitación pendiente antes de canjearla.
+      allow get: if signedIn();
+
+      // Crear: el administrador invita; o el propio colaborador canjea su invitación, y en
+      // ese caso todo lo que escribe tiene que salir de la invitación pendiente. No puede
+      // inventarse la cuadra ni ampliarse los caballos: se comparan contra el documento
+      // pendiente, que él no puede modificar.
+      allow create: if signedIn() && (
+        (request.resource.data.stableId is string
+          && isStableOwnerOrAdmin(request.resource.data.stableId))
+        || isRedeemingOwnInvite()
+      );
+
       allow update, delete: if signedIn()
         && resource.data.stableId is string
         && isStableOwnerOrAdmin(resource.data.stableId);

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { collection, query, where, onSnapshot, doc, setDoc, deleteDoc, updateDoc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebaseClient.js";
-import { pendingAccessDocId } from "../lib/collaboratorTypes.js";
+import { accessDocId, pendingAccessDocId } from "../lib/collaboratorTypes.js";
 import { AuthContext } from "./AuthContext.jsx";
 import { StableSelectionContext } from "./StableSelectionContext.jsx";
 
@@ -62,14 +62,70 @@ export function CollaboratorsProvider({ children }) {
   const setCollaboratorHorses = useCallback(async (accessId, horseIds) => {
     await updateDoc(doc(db, "access", accessId), { horseIds });
   }, []);
+  // Canjea un código de colaborador. Lo llama joinByCode cuando el código no está en
+  // inviteCodes, así que quien ejecuta esto NO es el administrador, es el propio colaborador.
+  //
+  // El documento pendiente se nombra con el código, y por eso cualquiera que lo tenga puede
+  // ir a esa ruta exacta y leerlo. Ahí está la prueba de que se lo dieron: la colección no se
+  // puede listar, igual que inviteCodes.
+  //
+  // Se crea el definitivo ANTES de borrar el pendiente. Si fallara el borrado, queda una
+  // invitación huérfana que el administrador puede quitar a mano; al revés se perdería el
+  // acceso entero sin forma de recuperarlo.
+  const redeemCollaboratorCode = useCallback(
+    async (rawCode) => {
+      if (!user) throw new Error("Inicia sesión primero");
+      const code = (rawCode || "").trim().toUpperCase();
+      const pendingRef = doc(db, "access", pendingAccessDocId(code));
+      const snap = await getDoc(pendingRef);
+      if (!snap.exists()) return null;
+      const d = snap.data() || {};
+      if (d.status !== "pending" || !d.stableId) return null;
+
+      const finalId = accessDocId(d.stableId, user.uid);
+      await setDoc(doc(db, "access", finalId), {
+        status: "active",
+        redeemedCode: code,
+        stableId: d.stableId,
+        stableName: d.stableName || "",
+        type: d.type || "other",
+        name: d.name || "",
+        email: (user.email || d.email || "").toLowerCase(),
+        horseIds: d.horseIds || [],
+        uid: user.uid,
+        invitedBy: d.invitedBy || null,
+        invitedAt: d.invitedAt || null,
+        acceptedAt: new Date().toISOString(),
+      });
+      try {
+        await deleteDoc(pendingRef);
+      } catch (_e) {
+        // non-fatal: el acceso ya está creado
+      }
+      return { stableId: d.stableId, stableName: d.stableName || "", type: d.type || "other" };
+    },
+    [user]
+  );
 
   const removeCollaborator = useCallback(async (accessId) => {
     await deleteDoc(doc(db, "access", accessId));
   }, []);
 
-  const value = useMemo(
-    () => ({ collaborators, inviteCollaborator, setCollaboratorHorses, removeCollaborator }),
-    [collaborators, inviteCollaborator, setCollaboratorHorses, removeCollaborator]
+   const value = useMemo(
+    () => ({
+      collaborators,
+      inviteCollaborator,
+      setCollaboratorHorses,
+      removeCollaborator,
+      redeemCollaboratorCode,
+    }),
+    [
+      collaborators,
+      inviteCollaborator,
+      setCollaboratorHorses,
+      removeCollaborator,
+      redeemCollaboratorCode,
+    ]
   );
 
   return <CollaboratorsContext.Provider value={value}>{children}</CollaboratorsContext.Provider>;

@@ -7,6 +7,7 @@ import { td } from "../../lib/date.js";
 import { tasksForDate } from "../tasks/taskHelpers.js";
 import { EmptyState } from "../../components/EmptyState.jsx";
 import { Fab } from "../../components/layout/Fab.jsx";
+import { CollaboratorsSection } from "./CollaboratorsSection.jsx";
 
 // Ports rTeam (public/legacy-app.js:3279-3297). The FAB (add member) matches render()'s
 // `canPerm('team') && nm==="team"` fab block (public/legacy-app.js ~1531) — implicit here
@@ -121,6 +122,7 @@ export function TeamPage() {
           );
         })
       )}
+            <CollaboratorsSection />
       <Fab onClick={() => navigate("/team/new")} />
     </div>
   );

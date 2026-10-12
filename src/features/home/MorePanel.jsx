@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ModalContext } from "../../contexts/ModalContext.jsx";
 import { usePermissions } from "../../hooks/usePermissions.js";
 import { useStableData } from "../../hooks/useStableData.js";
+import { useCollaborators } from "../../contexts/CollaboratorsContext.jsx";
 
 // Ports the #more-panel markup + openMorePanel/closeMorePanel
 // (index.html:140-145, public/legacy-app.js:1470-1488). This was sketched in the original
@@ -13,6 +14,8 @@ export function MorePanel() {
   const { openModal, closeModal } = useContext(ModalContext) || {};
  const { boardConfig } = useStableData();
   const { can, isAdmin } = usePermissions();
+    const { myAccesses } = useCollaborators();
+  const hasCollabAccess = (myAccesses || []).some((a) => a.status === "active");
   const navigate = useNavigate();
 
   function handleClose() {
@@ -49,7 +52,16 @@ export function MorePanel() {
     can("health") && { icon: "N", title: "Notion", sub: "Enviar registros y plan a Notion", onClick: () => openPanel("notionPanel") },
     { icon: "👤", title: "Mi perfil", sub: "Datos personales y sesión", onClick: () => openPanel("userPanel") },
     { icon: "⇄", title: "Cambiar de cuadra", sub: "Abrir otra cuadra", onClick: () => openPanel("stablePanel") },
-        isAdmin && {
+        // Solo para quien además colabora en otra cuadra. Quien entra únicamente como colaborador
+    // aterriza ahí directamente y nunca llega a ver este panel: esto es para el caso mixto,
+    // alguien con cuadra propia que además lleva caballos de otras.
+    hasCollabAccess && {
+      icon: "🤝",
+      title: "Mis colaboraciones",
+      sub: "Caballos de otras cuadras a los que tienes acceso",
+      onClick: () => goTo("/colaborador"),
+    },    
+    isAdmin && {
       icon: "🔧",
       title: "Reparar permisos",
       sub: "Conectar cuentas con sus fichas de equipo",

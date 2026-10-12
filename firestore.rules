@@ -260,7 +260,7 @@ service cloud.firestore {
 
       allow update: if signedIn() && (
         isOwnerOrAdmin()
-        || isJoiningSelf()
+        || isJoiningSelf(stableId)
         || isLeavingSelf()
       );
 

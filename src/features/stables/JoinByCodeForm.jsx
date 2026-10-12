@@ -26,8 +26,10 @@ export function JoinByCodeForm() {
     setMessage("");
     setSubmitting(true);
     try {
-      if (redeemCollaboratorCode) {
+            if (redeemCollaboratorCode) {
+        console.log("DIAG buscando colaborador con código:", code.trim().toUpperCase());
         const collab = await redeemCollaboratorCode(code);
+        console.log("DIAG resultado:", collab);
         if (collab) {
           setCode("");
           setMessage(

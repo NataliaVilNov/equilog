@@ -27,10 +27,8 @@ export function JoinByCodeForm() {
     setSubmitting(true);
     try {
             if (redeemCollaboratorCode) {
-        console.log("DIAG buscando colaborador con código:", code.trim().toUpperCase());
-        const collab = await redeemCollaboratorCode(code);
-        console.log("DIAG resultado:", collab);
-        if (collab) {
+                const collab = await redeemCollaboratorCode(code);
+                if (collab) {
           setCode("");
           setMessage(
             "Acceso concedido en " + (collab.stableName || "la cuadra") + ". Ya puedes ver sus caballos."

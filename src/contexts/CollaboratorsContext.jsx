@@ -20,7 +20,7 @@ export function CollaboratorsProvider({ children }) {
   const stableId = activeStable ? activeStable.id : null;
 
   const [collaborators, setCollaborators] = useState([]);
-
+  const [myAccesses, setMyAccesses] = useState([]);
   useEffect(() => {
     if (!stableId || !user) {
       setCollaborators([]);
@@ -33,7 +33,21 @@ export function CollaboratorsProvider({ children }) {
       () => setCollaborators([])
     );
   }, [stableId, user]);
-
+  // Los accesos de ESTE usuario como colaborador, en todas las cuadras a la vez. Es el motivo
+  // por el que access vive en el nivel superior: una veterinaria con cinco clientes los ve de
+  // una consulta, sin saber de antemano en qué cuadras está.
+  useEffect(() => {
+    if (!user) {
+      setMyAccesses([]);
+      return;
+    }
+    const q = query(collection(db, "access"), where("uid", "==", user.uid));
+    return onSnapshot(
+      q,
+      (snap) => setMyAccesses(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+      () => setMyAccesses([])
+    );
+  }, [user]);
   // Crea la invitación. Todavía no hay uid de la otra persona, así que el documento se
   // nombra con el código y queda en estado "pending". Al aceptarlo se creará el definitivo.
   const inviteCollaborator = useCallback(
@@ -111,9 +125,10 @@ export function CollaboratorsProvider({ children }) {
     await deleteDoc(doc(db, "access", accessId));
   }, []);
 
-   const value = useMemo(
+     const value = useMemo(
     () => ({
       collaborators,
+      myAccesses,
       inviteCollaborator,
       setCollaboratorHorses,
       removeCollaborator,
@@ -121,6 +136,7 @@ export function CollaboratorsProvider({ children }) {
     }),
     [
       collaborators,
+      myAccesses,
       inviteCollaborator,
       setCollaboratorHorses,
       removeCollaborator,

@@ -30,9 +30,7 @@ export function JoinByCodeForm() {
                 const collab = await redeemCollaboratorCode(code);
                 if (collab) {
           setCode("");
-          setMessage(
-            "Acceso concedido en " + (collab.stableName || "la cuadra") + ". Ya puedes ver sus caballos."
-          );
+                    navigate("/colaborador");
           return;
         }
       }

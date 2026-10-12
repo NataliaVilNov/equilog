@@ -33,6 +33,7 @@ import { TrainingReportPage } from "../features/reports/TrainingReportPage.jsx";
 import { StudentsPage } from "../features/students/StudentsPage.jsx";
 import { HealthSeedPage } from "../features/horses/HealthSeedPage.jsx";
 import { MemberLinksFixPage } from "../features/team/MemberLinksFixPage.jsx";
+import { CollabHomePage } from "../features/collab/CollabHomePage.jsx";
 
 export function AppRoutes() {
   return (
@@ -40,8 +41,11 @@ export function AppRoutes() {
       <Route element={<GuestRoute />}>
         <Route path="/login" element={<AuthScreen />} />
       </Route>
-      <Route element={<ProtectedRoute requireStable={false} />}>
+            <Route element={<ProtectedRoute requireStable={false} />}>
         <Route path="/stables" element={<StableListScreen />} />
+        {/* Un colaborador no es miembro de ninguna cuadra, así que su pantalla no puede
+            exigir cuadra activa: nunca va a tener una. */}
+        <Route path="/colaborador" element={<CollabHomePage />} />
       </Route>
       <Route element={<ProtectedRoute />}>
         <Route path="/home" element={<HomePage />} />

@@ -280,7 +280,13 @@ service cloud.firestore {
         // Firestore can't restrict individual fields within one document. The restriction on
         // a horse's profile fields is a client-side UI gate only (docs/components/horses.md);
         // allowedUids here only ever gates writes.
-        allow read: if isStableMember(stableId);
+                // Se separan get y list a propósito. Un colaborador externo puede leer sus caballos
+        // uno a uno (su pantalla los pide por id, sacados de su propio documento de access),
+        // pero no puede LISTAR la colección: para autorizar un list, Firestore exige poder
+        // demostrar la regla con los filtros de la consulta, y "los caballos que me marcaron"
+        // no es un filtro que exista en el documento del caballo.
+        allow get: if isStableMember(stableId) || canSeeHorse(stableId, hid);
+        allow list: if isStableMember(stableId);
 
         allow create: if myPerm(stableId, 'horses')
           && (isStableAdmin(stableId)
@@ -409,9 +415,18 @@ service cloud.firestore {
     }
 
     match /{path=**}/health/{healthId} {
-      allow read: if isStableMember(resource.data.stableId);
-      allow create: if myPerm(request.resource.data.stableId, 'health');
-      allow update: if myPerm(resource.data.stableId, 'health');
+            // Igual que con los caballos: el colaborador lee y escribe los registros de SUS
+      // caballos, pero no puede listar la colección entera. Su pantalla consulta la salud
+      // caballo a caballo, por ruta directa.
+      allow get: if isStableMember(resource.data.stableId)
+        || canSeeHorse(resource.data.stableId, resource.data.hid);
+      allow list: if isStableMember(resource.data.stableId);
+      allow create: if myPerm(request.resource.data.stableId, 'health')
+        || (isVetFor(request.resource.data.stableId)
+            && canSeeHorse(request.resource.data.stableId, request.resource.data.hid));
+      allow update: if myPerm(resource.data.stableId, 'health')
+        || (isVetFor(resource.data.stableId)
+            && canSeeHorse(resource.data.stableId, resource.data.hid));
       allow delete: if myPerm(resource.data.stableId, 'deleteItems');
     }
 
@@ -452,6 +467,31 @@ service cloud.firestore {
         // El colaborador canjeando su propia invitación. La invitación pendiente es la fuente de
     // la verdad: la cuadra y los caballos tienen que coincidir con los que puso el
     // administrador, y el uid tiene que ser el suyo.
+        // Acceso de colaborador externo. Vive en access/{stableId}__{uid}, un id determinista a
+    // propósito: las reglas solo saben ir a una ruta exacta, no buscar por campos.
+    function myAccessPath(stableId) {
+      return /databases/$(database)/documents/access/$(stableId + '__' + request.auth.uid);
+    }
+
+    function hasAccess(stableId) {
+      return signedIn()
+        && exists(myAccessPath(stableId))
+        && get(myAccessPath(stableId)).data.status == 'active';
+    }
+
+    // Un colaborador solo alcanza los caballos que el administrador le marcó. Comprueba
+    // contra el acceso, no contra el caballo: así marcar o desmarcar un caballo es un solo
+    // cambio en un solo documento, y el colaborador no puede tocarlo (solo lo escribe el
+    // administrador).
+    function canSeeHorse(stableId, hid) {
+      return hasAccess(stableId) && hid in get(myAccessPath(stableId)).data.horseIds;
+    }
+
+    // De momento solo el veterinario escribe, y solo en salud. El resto de tipos se pueden
+    // crear y guardar, pero su acceso todavía no abre nada: sus reglas no están escritas.
+    function isVetFor(stableId) {
+      return hasAccess(stableId) && get(myAccessPath(stableId)).data.type == 'vet';
+    }
     function isRedeemingOwnInvite() {
       let code = request.resource.data.redeemedCode;
       let pending = get(/databases/$(database)/documents/access/$('pending__' + code)).data;
@@ -501,9 +541,16 @@ service cloud.firestore {
         || isRedeemingOwnInvite()
       );
 
-      allow update, delete: if signedIn()
+            // El colaborador puede retirar su propio acceso; cambiar los caballos, solo el
+      // administrador.
+      allow update: if signedIn()
         && resource.data.stableId is string
         && isStableOwnerOrAdmin(resource.data.stableId);
+      allow delete: if signedIn()
+        && (
+          (resource.data.stableId is string && isStableOwnerOrAdmin(resource.data.stableId))
+          || resource.data.uid == request.auth.uid
+        );
     }
     match /users/{userId} {
       allow read, write: if signedIn()

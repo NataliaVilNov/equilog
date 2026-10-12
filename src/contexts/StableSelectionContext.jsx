@@ -29,7 +29,6 @@ export function StableSelectionProvider({ children }) {
   const [stables, setStables] = useState([]);
   const [activeStableId, setActiveStableId] = useState(null);
   const [activeStable, setActiveStable] = useState(null);
-  const [pendingJoin, setPendingJoin] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -283,28 +282,8 @@ export function StableSelectionProvider({ children }) {
     [user, profile, linkUserToTeamMember, switchStable]
   );
 
-  // Ports confirmJoinAs (public/legacy-app.js:619-637).
-  const confirmJoinAs = useCallback(
-    async (teamMemberId) => {
-      if (!pendingJoin) throw new Error("No hay invitación pendiente");
-      const memberName =
-        (profile && profile.name) || (user && user.displayName) || (user && user.email) || "";
-      const selected = teamMemberId
-        ? (pendingJoin.team || []).find((m) => m.id === teamMemberId)
-        : null;
-      if (teamMemberId) {
-        await linkUserToTeamMember(pendingJoin.stableId, teamMemberId, memberName);
-      }
-      const stableId = pendingJoin.stableId;
-      setPendingJoin(null);
-      await switchStable(stableId);
-      return selected ? selected.name : null;
-    },
-    [pendingJoin, profile, user, linkUserToTeamMember, switchStable]
-  );
-
-  const cancelJoin = useCallback(() => setPendingJoin(null), []);
-
+  
+ 
   // Ports createMemberInvite (public/legacy-app.js:737-767), minus the "already linked?"
   // confirm dialog and the clipboard/toast UI, which are the caller's job (same split as
   // deleteStable/leaveStable leaving window.confirm() to StablePanel). Takes the full
@@ -450,20 +429,17 @@ export function StableSelectionProvider({ children }) {
     await exitActiveStable();
   }, [user, activeStable, exitActiveStable]);
 
-  const value = useMemo(
+    const value = useMemo(
     () => ({
       stables,
       activeStableId,
       activeStable,
-      pendingJoin,
       loading,
       error,
       refreshStables,
       switchStable,
       createStable,
       joinByCode,
-      confirmJoinAs,
-      cancelJoin,
       deleteStable,
       leaveStable,
       exitActiveStable,
@@ -473,15 +449,12 @@ export function StableSelectionProvider({ children }) {
       stables,
       activeStableId,
       activeStable,
-      pendingJoin,
       loading,
       error,
       refreshStables,
       switchStable,
       createStable,
       joinByCode,
-      confirmJoinAs,
-      cancelJoin,
       deleteStable,
       leaveStable,
       exitActiveStable,

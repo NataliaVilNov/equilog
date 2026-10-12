@@ -12,7 +12,6 @@ import { AppHeader } from "./components/layout/AppHeader.jsx";
 import { BottomNav } from "./components/layout/BottomNav.jsx";
 import { Toast } from "./components/Toast.jsx";
 import { StablePanel } from "./features/stables/StablePanel.jsx";
-import { JoinTeamModal } from "./features/stables/JoinTeamModal.jsx";
 import { MorePanel } from "./features/home/MorePanel.jsx";
 import { UserPanel } from "./features/profile/UserPanel.jsx";
 import { NotionPanel } from "./features/notion/NotionPanel.jsx";
@@ -45,7 +44,6 @@ function AppShell() {
       {showChrome && isModalOpen && isModalOpen("morePanel") && <MorePanel />}
       {showChrome && isModalOpen && isModalOpen("userPanel") && <UserPanel />}
       {showChrome && isModalOpen && isModalOpen("notionPanel") && <NotionPanel />}
-      <JoinTeamModal />
       <Toast />
     </>
   );

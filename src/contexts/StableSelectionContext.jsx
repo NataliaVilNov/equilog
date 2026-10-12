@@ -60,13 +60,35 @@ export function StableSelectionProvider({ children }) {
   // Ports _fbSwitchStable (public/legacy-app.js:367-427), minus D loading and legacy
   // screen switching — StableDataContext reacts to activeStableId, and routing owns
   // which screen is shown.
+   // Ports _fbSwitchStable (public/legacy-app.js:367-427), minus D loading and legacy
+  // screen switching — StableDataContext reacts to activeStableId, and routing owns
+  // which screen is shown.
+  //
+  // Las reglas ya no dejan leer una cuadra de la que no eres miembro, así que "la cuadra ya
+  // no existe" y "te han sacado de la cuadra" llegan ahora como el mismo permiso denegado.
+  // Antes se distinguían leyendo el documento y mirando memberIds. Ahora se tratan igual:
+  // se olvida la cuadra y se vuelve a la lista. Sin este catch, un usuario al que han sacado
+  // de su última cuadra se quedaría atascado viendo un error en cada arranque, porque
+  // lastStable nunca llegaría a borrarse.
   const switchStable = useCallback(
     async (stableId) => {
       if (!user) return;
       setLoading(true);
       setError(null);
       try {
-        const snap = await getDoc(doc(db, "stables", stableId));
+        let snap;
+        try {
+          snap = await getDoc(doc(db, "stables", stableId));
+        } catch (e) {
+          if (e && e.code === "permission-denied") {
+            await setDoc(doc(db, "users", user.uid), { lastStable: null }, { merge: true });
+            setActiveStableId(null);
+            setActiveStable(null);
+            setError(new Error("Ya no tienes acceso a esa cuadra"));
+            return;
+          }
+          throw e;
+        }
         if (!snap.exists()) {
           await setDoc(doc(db, "users", user.uid), { lastStable: null }, { merge: true });
           setActiveStableId(null);
@@ -176,6 +198,18 @@ export function StableSelectionProvider({ children }) {
   // Ports joinByCode (public/legacy-app.js:496-559): joins the stable, then either
   // auto-links (a direct per-member invite) or hands back pendingJoin so the caller can
   // show the "which team member are you" picker, mirroring _pendingJoin/showJoinTeamModal.
+   // Ports joinByCode (public/legacy-app.js:496-559): joins the stable, then either
+  // auto-links (a direct per-member invite) or hands back pendingJoin so the caller can
+  // show the "which team member are you" picker, mirroring _pendingJoin/showJoinTeamModal.
+  //
+  // Ya no se lee el documento de la cuadra para sacar de ahí sus datos: las reglas solo dejan
+  // leerlo a sus miembros, y quien llega con un código todavía no lo es. El nombre de la
+  // cuadra, que es lo único que se usaba, ya viene en el documento del código.
+  //
+  // La lectura se conserva, pero con otro propósito: averiguar si YA eras miembro. Si lo eres,
+  // se lee bien; si no, da permiso denegado, y ese fallo es justamente la respuesta. Hace
+  // falta saberlo porque isJoiningSelf deniega el alta de quien ya está dentro, así que
+  // reintentarla con un segundo código rompería el flujo.
   const joinByCode = useCallback(
     async (rawCode) => {
       if (!user) throw new Error("Inicia sesión primero");
@@ -189,23 +223,37 @@ export function StableSelectionProvider({ children }) {
       if (!stableId) throw new Error("Código sin cuadra asociada");
 
       const stableRef = doc(db, "stables", stableId);
-      const stableSnap = await getDoc(stableRef);
-      if (!stableSnap.exists()) throw new Error("La cuadra ya no existe");
-      const stableData = stableSnap.data() || {};
       const memberName = (profile && profile.name) || user.displayName || user.email || "";
 
-      if (!(stableData.memberIds || []).includes(user.uid)) {
-        await updateDoc(stableRef, {
-          memberIds: arrayUnion(user.uid),
-          [`members.${user.uid}`]: {
-            name: memberName,
-            email: user.email || "",
-            role: "miembro",
-            teamMemberId: codeData.teamMemberId || null,
-            teamName: codeData.teamMemberName || null,
-            joined: new Date().toISOString(),
-          },
-        });
+      let alreadyMember = false;
+      try {
+        const snap = await getDoc(stableRef);
+        alreadyMember = snap.exists() && (snap.data().memberIds || []).includes(user.uid);
+      } catch (_e) {
+        // Permiso denegado: todavía no eres miembro, que es lo normal al llegar con un código.
+      }
+
+      if (!alreadyMember) {
+        try {
+          await updateDoc(stableRef, {
+            memberIds: arrayUnion(user.uid),
+            [`members.${user.uid}`]: {
+              name: memberName,
+              email: user.email || "",
+              role: "miembro",
+              teamMemberId: codeData.teamMemberId || null,
+              teamName: codeData.teamMemberName || null,
+              joined: new Date().toISOString(),
+            },
+          });
+        } catch (e) {
+          if (e && e.code === "permission-denied") {
+            throw new Error(
+              "No se ha podido entrar en la cuadra. Puede que el código ya no sea válido."
+            );
+          }
+          throw e;
+        }
       }
 
       const teamSnap = await getDocs(collection(db, "stables", stableId, "team"));
@@ -217,6 +265,9 @@ export function StableSelectionProvider({ children }) {
         return { status: "linked", memberName: codeData.teamMemberName || "integrante" };
       }
 
+      // JoinTeamModal solo usa stableData.name. Lo demás ya no está disponible aquí, y
+      // tampoco hacía falta.
+      const stableData = { id: stableId, name: codeData.name || "" };
       const pending = { code, codeData, stableId, stableData, team };
       setPendingJoin(pending);
       return { status: "needs-member-selection", pendingJoin: pending };

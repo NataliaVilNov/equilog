@@ -225,7 +225,11 @@ service cloud.firestore {
     }
 
     match /stables/{stableId} {
-      allow read: if signedIn();
+            // Antes esto era `allow read: if signedIn()`, que dejaba a cualquier usuario registrado
+      // leer cualquier cuadra, incluido su mapa `members` con los nombres y correos de todo
+      // el equipo. La consulta de refreshStables (memberIds array-contains uid) sigue
+      // funcionando, porque Firestore puede demostrar esta regla a partir de ese mismo filtro.
+      allow read: if signedIn() && request.auth.uid in resource.data.memberIds;
 
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid

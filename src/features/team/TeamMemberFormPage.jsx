@@ -5,6 +5,7 @@ import { useToast } from "../../hooks/useToast.js";
 import { uid } from "../../lib/id.js";
 import { EM } from "../../lib/constants.js";
 import { defaultTeamPermissions } from "../../lib/permissions.js";
+import { TEAM_ROLES, OTHER_ROLE } from "../../lib/teamRoles.js";
 
 const PERM_OPTS = [
   ["horses", "Añadir/editar caballos", "Puede crear caballos y editar datos básicos"],
@@ -38,7 +39,12 @@ export function TeamMemberFormPage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [emoji, setEmoji] = useState(member ? member.emoji || "👤" : "👤");
   const [name, setName] = useState(member ? member.name || "" : "");
-  const [role, setRole] = useState(member ? member.role || "" : "");
+    // Una ficha antigua puede traer un rol escrito a mano que no esté en la lista. En ese caso
+  // se abre en "Otro" con su texto intacto, para no borrarle nada al guardar.
+  const initialRole = member ? member.role || "" : "";
+  const initialIsKnown = !initialRole || TEAM_ROLES.includes(initialRole);
+  const [roleChoice, setRoleChoice] = useState(initialIsKnown ? initialRole : OTHER_ROLE);
+  const [roleOther, setRoleOther] = useState(initialIsKnown ? "" : initialRole);
   const [aliases, setAliases] = useState(member ? member.aliases || member.alias || "" : "");
   const [phone, setPhone] = useState(member ? member.phone || "" : "");
   const [email, setEmail] = useState(member ? member.email || "" : "");
@@ -73,16 +79,17 @@ export function TeamMemberFormPage() {
     setPermissions((prev) => ({ ...prev, [key]: !prev[key] }));
   }
 
-  function handleSubmit() {
+   function handleSubmit() {
     const trimmedName = name.trim();
     if (!trimmedName) {
       showToast("Nombre obligatorio");
       return;
     }
+    const finalRole = roleChoice === OTHER_ROLE ? roleOther.trim() : roleChoice;
     const record = {
       id,
       name: trimmedName,
-      role: role.trim(),
+      role: finalRole,
       aliases: aliases.trim(),
       phone: phone.trim(),
       email: email.trim(),
@@ -148,9 +155,28 @@ export function TeamMemberFormPage() {
         <label>Nombre *</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Laura García" />
       </div>
-      <div className="f">
+            <div className="f">
         <label>Rol</label>
-        <input value={role} onChange={(e) => setRole(e.target.value)} placeholder="Mozo de cuadra" />
+        <select value={roleChoice} onChange={(e) => setRoleChoice(e.target.value)}>
+          <option value="">Sin especificar</option>
+          {TEAM_ROLES.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+          <option value={OTHER_ROLE}>Otro…</option>
+        </select>
+        {roleChoice === OTHER_ROLE && (
+          <input
+            value={roleOther}
+            onChange={(e) => setRoleOther(e.target.value)}
+            placeholder="Escribe el puesto"
+            style={{ marginTop: ".4rem" }}
+          />
+        )}
+        <small style={{ color: "var(--gr)", fontSize: ".72rem" }}>
+          Solo descriptivo. Lo que puede hacer cada persona se decide en los permisos de abajo.
+        </small>
       </div>
       <div className="f">
         <label>Alias / mote para órdenes</label>

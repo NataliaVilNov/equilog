@@ -445,7 +445,24 @@ service cloud.firestore {
       allow create, update: if myPerm(request.resource.data.stableId, 'tasks');
       allow delete: if myPerm(resource.data.stableId, 'deleteItems');
     }
-
+    // Accesos de colaboradores externos (veterinario, herrador, propietario…). Vive en el
+    // nivel superior, no dentro de la cuadra, para que un veterinario pueda consultar todas
+    // sus cuadras de una vez: dentro de cada cuadra tendría que saber de antemano en cuáles
+    // está, que es justo lo que no sabe.
+    //
+    // De momento solo escribe y lee el administrador de la cuadra. La parte de que el
+    // colaborador lea lo suyo y entre con el código viene en el paso siguiente.
+    match /access/{accessId} {
+      allow read: if signedIn()
+        && resource.data.stableId is string
+        && isStableOwnerOrAdmin(resource.data.stableId);
+      allow create: if signedIn()
+        && request.resource.data.stableId is string
+        && isStableOwnerOrAdmin(request.resource.data.stableId);
+      allow update, delete: if signedIn()
+        && resource.data.stableId is string
+        && isStableOwnerOrAdmin(resource.data.stableId);
+    }
     match /users/{userId} {
       allow read, write: if signedIn()
         && request.auth.uid == userId;

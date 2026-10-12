@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "../../contexts/AuthContext.jsx";
 import { StableSelectionContext } from "../../contexts/StableSelectionContext.jsx";
@@ -9,17 +9,30 @@ import { useToast } from "../../hooks/useToast.js";
 // Ports the #stable-panel markup + openStablePanel/closeStablePanel, plus the
 // delete/leave stable actions surfaced from it (index.html:106-119,
 // public/legacy-app.js:701-724, 783-874).
+//
+// El panel lista ahora las demás cuadras del usuario y permite saltar a una de un toque,
+// en vez de obligar a pasar por /stables. Ese botón se queda de todas formas, porque la
+// pantalla de lista es además donde se crea una cuadra o se entra con un código.
 export function StablePanel() {
   const { user } = useContext(AuthContext) || {};
-  const { activeStable, deleteStable, leaveStable } = useContext(StableSelectionContext) || {};
+  const { activeStable, stables, refreshStables, switchStable, deleteStable, leaveStable } =
+    useContext(StableSelectionContext) || {};
   const { closeModal } = useContext(ModalContext) || {};
   const { showToast } = useToast();
   const navigate = useNavigate();
+
+  // La lista en memoria puede venir de hace rato: si has creado o abandonado una cuadra
+  // desde otro dispositivo, aquí no se habría enterado. Se pide al abrir el panel, pero sin
+  // vaciar lo que ya hay, así que mientras llega se ve la lista anterior en vez de un hueco.
+  useEffect(() => {
+    if (refreshStables) refreshStables();
+  }, [refreshStables]);
 
   if (!activeStable || !user) return null;
 
   const members = Object.entries(activeStable.members || {});
   const canManage = canManageStable(activeStable, user);
+  const others = (stables || []).filter((s) => s.id !== activeStable.id);
 
   function handleClose() {
     if (closeModal) closeModal("stablePanel");
@@ -28,6 +41,18 @@ export function StablePanel() {
   function handleSwitch() {
     handleClose();
     navigate("/stables");
+  }
+
+  // Cerrar el panel antes de cambiar, no después: switchStable provoca que toda la app
+  // vuelva a cargar los datos de la otra cuadra, y no conviene que eso pase con el panel
+  // todavía montado encima.
+  async function handlePick(stableId) {
+    handleClose();
+    try {
+      await switchStable(stableId);
+    } catch (err) {
+      showToast("No se ha podido cambiar de cuadra: " + err.message);
+    }
   }
 
   async function handleDelete() {
@@ -117,8 +142,66 @@ export function StablePanel() {
             </div>
           ))}
         </div>
+
+        {others.length > 0 && (
+          <div style={{ marginBottom: ".75rem" }}>
+            <div
+              style={{
+                fontSize: ".62rem",
+                letterSpacing: ".1em",
+                textTransform: "uppercase",
+                color: "var(--gr)",
+                fontWeight: 800,
+                marginBottom: ".4rem",
+              }}
+            >
+              Ir a otra cuadra
+            </div>
+            {others.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => handlePick(s.id)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: ".6rem",
+                  background: "none",
+                  border: "1px solid var(--li)",
+                  borderRadius: "12px",
+                  padding: ".6rem .75rem",
+                  marginBottom: ".3rem",
+                  cursor: "pointer",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span
+                    style={{
+                      display: "block",
+                      fontWeight: 700,
+                      fontSize: ".88rem",
+                      color: "var(--ti)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {s.name || "Sin nombre"}
+                  </span>
+                  <span style={{ display: "block", fontSize: ".72rem", color: "var(--gr)" }}>
+                    {(s.memberIds || []).length} miembro
+                    {(s.memberIds || []).length !== 1 ? "s" : ""}
+                  </span>
+                </span>
+                <span style={{ color: "var(--v)", fontSize: "1.1rem", flexShrink: 0 }}>→</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <button className="btn btbl btg" onClick={handleSwitch} style={{ marginBottom: ".4rem", width: "100%" }}>
-          ← Cambiar de cuadra
+          ← Ver todas / crear / unirme
         </button>
         {canManage ? (
           <button className="btn btr btbl" onClick={handleDelete} style={{ marginBottom: ".4rem", width: "100%" }}>

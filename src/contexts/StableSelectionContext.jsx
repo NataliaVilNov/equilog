@@ -134,10 +134,16 @@ export function StableSelectionProvider({ children }) {
   }, [user, profile, switchStable]);
 
   // Ports doCreateStable (public/legacy-app.js:464-492).
+   // Ports doCreateStable (public/legacy-app.js:464-492).
+  //
+  // Ya no se crea un código general de cuadra. Era un código sin destinatario, que no
+  // caducaba y que servía para entrar a cualquiera que lo tuviera: el agujero que permitía
+  // colarse en una cuadra ajena y, una vez dentro, elegir de una lista por quién hacerse
+  // pasar. Ahora se entra solo con una invitación creada para un integrante concreto
+  // (createMemberInvite), así que quien entra ya viene identificado desde el propio código.
   const createStable = useCallback(
     async ({ name, description }) => {
       if (!user || !name || !name.trim()) throw new Error("El nombre es obligatorio");
-      const inviteCode = Math.random().toString(36).slice(2, 8).toUpperCase();
       const stableRef = await addDoc(collection(db, "stables"), {
         name: name.trim(),
         description: (description || "").trim(),
@@ -151,15 +157,9 @@ export function StableSelectionProvider({ children }) {
             joined: new Date().toISOString(),
           },
         },
-        inviteCode,
         created: serverTimestamp(),
       });
       await setDoc(doc(db, "stables", stableRef.id, "boardConfig", "main"), boardDefaults());
-      await setDoc(doc(db, "inviteCodes", inviteCode), {
-        stableId: stableRef.id,
-        name: name.trim(),
-        created: serverTimestamp(),
-      });
       await switchStable(stableRef.id);
       return stableRef.id;
     },
@@ -167,6 +167,13 @@ export function StableSelectionProvider({ children }) {
   );
 
     // Ports linkUserToTeamMember (public/legacy-app.js:595-617): now a single targeted field
+  // update on the team member's own doc instead of a read-modify-write of the whole stable.
+  //
+  // Además escribe el documento puente memberLinks/{uid}. El cliente encuentra su ficha de
+  // equipo buscando por los campos uid/userId/authUid, pero firestore.rules no sabe buscar
+  // por campos: solo sabe ir a una ruta exacta. Sin el puente, las reglas no encuentran la
+  // ficha y acaban aplicando los permisos por defecto en vez de los configurados.
+  // Ports linkUserToTeamMember (public/legacy-app.js:595-617): now a single targeted field
   // update on the team member's own doc instead of a read-modify-write of the whole stable.
   //
   // Además escribe el documento puente memberLinks/{uid}. El cliente encuentra su ficha de
@@ -210,6 +217,13 @@ export function StableSelectionProvider({ children }) {
   // se lee bien; si no, da permiso denegado, y ese fallo es justamente la respuesta. Hace
   // falta saberlo porque isJoiningSelf deniega el alta de quien ya está dentro, así que
   // reintentarla con un segundo código rompería el flujo.
+   // Ports joinByCode (public/legacy-app.js:496-559). Ahora exige que el código nombre a un
+  // integrante: sin teamMemberId no se entra. El modal JoinTeamModal, que preguntaba "¿qué
+  // integrante eres?" y dejaba elegir de una lista, ya no llega a mostrarse nunca.
+  //
+  // Se guarda joinedWithCode en el apartado del nuevo miembro porque las reglas no pueden
+  // comprobar lo que alguien sabe, solo lo que escribe: al traer el código en la propia
+  // escritura, la regla puede ir a buscarlo y verificar que existe y apunta aquí.
   const joinByCode = useCallback(
     async (rawCode) => {
       if (!user) throw new Error("Inicia sesión primero");
@@ -221,6 +235,11 @@ export function StableSelectionProvider({ children }) {
       const codeData = codeSnap.data() || {};
       const stableId = codeData.stableId;
       if (!stableId) throw new Error("Código sin cuadra asociada");
+      if (!codeData.teamMemberId) {
+        throw new Error(
+          "Este código es antiguo y ya no sirve. Pide al responsable de la cuadra que te envíe una invitación nueva."
+        );
+      }
 
       const stableRef = doc(db, "stables", stableId);
       const memberName = (profile && profile.name) || user.displayName || user.email || "";
@@ -241,8 +260,9 @@ export function StableSelectionProvider({ children }) {
               name: memberName,
               email: user.email || "",
               role: "miembro",
-              teamMemberId: codeData.teamMemberId || null,
+              teamMemberId: codeData.teamMemberId,
               teamName: codeData.teamMemberName || null,
+              joinedWithCode: code,
               joined: new Date().toISOString(),
             },
           });
@@ -256,21 +276,9 @@ export function StableSelectionProvider({ children }) {
         }
       }
 
-      const teamSnap = await getDocs(collection(db, "stables", stableId, "team"));
-      const team = teamSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-      if (codeData.teamMemberId) {
-        await linkUserToTeamMember(stableId, codeData.teamMemberId, memberName);
-        await switchStable(stableId);
-        return { status: "linked", memberName: codeData.teamMemberName || "integrante" };
-      }
-
-      // JoinTeamModal solo usa stableData.name. Lo demás ya no está disponible aquí, y
-      // tampoco hacía falta.
-      const stableData = { id: stableId, name: codeData.name || "" };
-      const pending = { code, codeData, stableId, stableData, team };
-      setPendingJoin(pending);
-      return { status: "needs-member-selection", pendingJoin: pending };
+      await linkUserToTeamMember(stableId, codeData.teamMemberId, memberName);
+      await switchStable(stableId);
+      return { status: "linked", memberName: codeData.teamMemberName || "integrante" };
     },
     [user, profile, linkUserToTeamMember, switchStable]
   );

@@ -31,14 +31,37 @@ service cloud.firestore {
       return isOwner() || isAdmin();
     }
 
-    function isJoiningSelf() {
+        // El código de invitación que trae quien se une, guardado en su propio apartado del mapa
+    // members. Las reglas no pueden comprobar lo que alguien SABE, solo lo que escribe: al
+    // viajar el código en la escritura, aquí se puede ir a buscarlo y verificarlo.
+    function joinCodeIsValid(stableId) {
+      let code = request.resource.data.members[request.auth.uid].joinedWithCode;
+      return code is string
+        && exists(/databases/$(database)/documents/inviteCodes/$(code))
+        && get(/databases/$(database)/documents/inviteCodes/$(code)).data.stableId == stableId
+        && get(/databases/$(database)/documents/inviteCodes/$(code)).data.teamMemberId is string;
+    }
+
+    // Antes esta función solo comprobaba que el código de la cuadra no cambiara, cosa que
+    // cualquiera puede cumplir sin conocerlo: bastaba con reenviar el valor que ya había.
+    // O sea que cualquier usuario registrado podía añadirse a cualquier cuadra. Ahora hay que
+    // presentar un código de invitación real, y como la colección inviteCodes ya no se puede
+    // listar, tenerlo es la prueba de que te lo dieron.
+    //
+    // De paso se cierra otro agujero: quien se unía escribía su propio apartado en el mapa
+    // members sin control ninguno, así que podía ponerse role "admin" en la misma operación.
+    // Ahora ese rol queda fijado y el resto de la cuadra tiene que quedar intacta.
+    function isJoiningSelf(stableId) {
       return signedIn()
         && !(request.auth.uid in resource.data.memberIds)
         && request.auth.uid in request.resource.data.memberIds
-        && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.inviteCode == resource.data.inviteCode
-        && request.resource.data.name == resource.data.name
-        && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1;
+        && request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['memberIds', 'members'])
+        && request.resource.data.members.diff(resource.data.members).affectedKeys()
+             .hasOnly([request.auth.uid])
+        && request.resource.data.members[request.auth.uid].role == "miembro"
+        && joinCodeIsValid(stableId);
     }
 
     function isLeavingSelf() {

@@ -27,9 +27,8 @@ export function useAccessHorses(stableId, horseIds) {
           const snap = await getDoc(doc(db, "stables", stableId, "horses", hid));
           return snap.exists() ? { id: snap.id, ...snap.data() } : null;
                 } catch (e) {
-          console.log("DIAG fallo leyendo caballo", hid, e.code, e.message);
-          return null;
-        }
+                  return null;
+                 }
       })
     ).then((list) => {
       if (!cancelled) {

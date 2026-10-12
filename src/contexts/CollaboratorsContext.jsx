@@ -1,5 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { collection, query, where, onSnapshot, doc, getDoc, setDoc, deleteDoc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  onSnapshot,
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  updateDoc,
+} from "firebase/firestore";
 import { db } from "../lib/firebaseClient.js";
 import { accessDocId, pendingAccessDocId } from "../lib/collaboratorTypes.js";
 import { AuthContext } from "./AuthContext.jsx";
@@ -21,6 +31,10 @@ export function CollaboratorsProvider({ children }) {
 
   const [collaborators, setCollaborators] = useState([]);
   const [myAccesses, setMyAccesses] = useState([]);
+  const [myAccessesLoaded, setMyAccessesLoaded] = useState(false);
+
+  // Los colaboradores de la cuadra activa, para que el administrador los gestione desde la
+  // pantalla de Equipo.
   useEffect(() => {
     if (!stableId || !user) {
       setCollaborators([]);
@@ -33,21 +47,33 @@ export function CollaboratorsProvider({ children }) {
       () => setCollaborators([])
     );
   }, [stableId, user]);
-  // Los accesos de ESTE usuario como colaborador, en todas las cuadras a la vez. Es el motivo
-  // por el que access vive en el nivel superior: una veterinaria con cinco clientes los ve de
-  // una consulta, sin saber de antemano en qué cuadras está.
+
+  // Los accesos de ESTE usuario como colaborador, en todas las cuadras a la vez.
+  //
+  // myAccessesLoaded distingue "todavía no sé" de "sé que no tiene ninguno". Sin esa
+  // diferencia, ProtectedRoute mandaría a la lista de cuadras a quien aún no ha terminado de
+  // cargar, y un colaborador nunca llegaría a su pantalla.
   useEffect(() => {
     if (!user) {
       setMyAccesses([]);
+      setMyAccessesLoaded(false);
       return;
     }
+    setMyAccessesLoaded(false);
     const q = query(collection(db, "access"), where("uid", "==", user.uid));
     return onSnapshot(
       q,
-      (snap) => setMyAccesses(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-      () => setMyAccesses([])
+      (snap) => {
+        setMyAccesses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setMyAccessesLoaded(true);
+      },
+      () => {
+        setMyAccesses([]);
+        setMyAccessesLoaded(true);
+      }
     );
   }, [user]);
+
   // Crea la invitación. Todavía no hay uid de la otra persona, así que el documento se
   // nombra con el código y queda en estado "pending". Al aceptarlo se creará el definitivo.
   const inviteCollaborator = useCallback(
@@ -76,12 +102,15 @@ export function CollaboratorsProvider({ children }) {
   const setCollaboratorHorses = useCallback(async (accessId, horseIds) => {
     await updateDoc(doc(db, "access", accessId), { horseIds });
   }, []);
-  // Canjea un código de colaborador. Lo llama joinByCode cuando el código no está en
-  // inviteCodes, así que quien ejecuta esto NO es el administrador, es el propio colaborador.
+
+  // Canjea un código de colaborador. Lo llama la pantalla de unirse cuando el código no está
+  // en inviteCodes, así que quien ejecuta esto NO es el administrador, es el propio
+  // colaborador.
   //
-  // El documento pendiente se nombra con el código, y por eso cualquiera que lo tenga puede
-  // ir a esa ruta exacta y leerlo. Ahí está la prueba de que se lo dieron: la colección no se
-  // puede listar, igual que inviteCodes.
+  // redeemedCode viaja dentro del documento nuevo porque las reglas no pueden comprobar lo
+  // que alguien sabe, solo lo que escribe: con el código ahí, la regla va a buscar la
+  // invitación pendiente y verifica que la cuadra y los caballos son los que puso el
+  // administrador, no los que se invente quien canjea.
   //
   // Se crea el definitivo ANTES de borrar el pendiente. Si fallara el borrado, queda una
   // invitación huérfana que el administrador puede quitar a mano; al revés se perdería el
@@ -125,10 +154,11 @@ export function CollaboratorsProvider({ children }) {
     await deleteDoc(doc(db, "access", accessId));
   }, []);
 
-     const value = useMemo(
+  const value = useMemo(
     () => ({
       collaborators,
       myAccesses,
+      myAccessesLoaded,
       inviteCollaborator,
       setCollaboratorHorses,
       removeCollaborator,
@@ -137,6 +167,7 @@ export function CollaboratorsProvider({ children }) {
     [
       collaborators,
       myAccesses,
+      myAccessesLoaded,
       inviteCollaborator,
       setCollaboratorHorses,
       removeCollaborator,
